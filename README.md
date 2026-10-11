@@ -12,20 +12,31 @@
 
 Spring Boot 3.5 / Spring AI 1.1 / PostgreSQL(pgvector) / Docker Compose
 
-## 快速开始（阶段 0 版本）
+## 快速开始（阶段 1 版本）
 
 ```bash
-# 1. 配置模型 key（DeepSeek）
-set DEEPSEEK_API_KEY=sk-xxx        # Windows CMD
-# export DEEPSEEK_API_KEY=sk-xxx   # Git Bash / Linux
+# 1. 起数据库（pgvector 容器）
+docker run -d --name lender-pg -e POSTGRES_PASSWORD=<dev密码> -e POSTGRES_DB=lender_assistant \
+  -p 5432:5432 -v lender_pgdata:/var/lib/postgresql/data pgvector/pgvector:pg16
 
-# 2. 启动
+# 2. 建表
+docker exec -i lender-pg psql -U postgres -d lender_assistant < docs/schema_phase1.sql
+
+# 3. 启动应用（Embedding 默认用本地 Mock，无需任何 API key）
 mvn spring-boot:run
 
-# 3. 验证
-curl http://localhost:8080/health
-curl -X POST http://localhost:8080/api/chat -H "Content-Type: application/json" -d "{\"message\":\"你好\"}"
+# 4. 上传文档（解析→切分→向量化→入库，返回各环节统计）
+curl -X POST http://localhost:8080/api/admin/documents \
+  -F "file=@docs/sample_docs/华信银行_日末文件格式说明_v1.0.docx" -F "docId=huaxin_eod_format_v1"
+
+# 5. 混合检索
+curl -X POST http://localhost:8080/api/admin/documents/search \
+  -H "Content-Type: application/json" -d '{"query":"逾期文件第3列是什么","topK":3}'
 ```
+
+配置开关（application.yml）：
+- `rag.embedding.provider`: `hash`（本地 Mock，默认）/ `zhipu`（需 ZHIPU_API_KEY 环境变量）
+- `rag.split.strategy`: `section`（按标题段落，默认）/ `fixed`（固定字数滑动窗口）
 
 ## 模块分层
 

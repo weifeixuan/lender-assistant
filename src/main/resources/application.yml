@@ -1,6 +1,12 @@
 spring:
   application:
     name: lender-assistant
+  datasource:
+    # dev 默认值指向本地 Docker 容器（lender-pg），生产用环境变量覆盖
+    # 红线提示：开源前检查这里没有真实凭据，密码通过 PG_PASSWORD 环境变量注入
+    url: jdbc:postgresql://${PG_HOST:localhost}:${PG_PORT:5432}/${PG_DB:lender_assistant}
+    username: ${PG_USER:postgres}
+    password: ${PG_PASSWORD:lender123}
   ai:
     deepseek:
       # 从环境变量读取，不把 key 写进代码库（红线：仓库将来开源）
@@ -10,6 +16,18 @@ spring:
         options:
           model: deepseek-chat
           temperature: 0.7
+
+# 应用自定义配置（RAG 链路参数集中在这里，阶段 3 调优只动这里）
+rag:
+  embedding:
+    # provider: hash=本地Mock(开发联调) / zhipu=智谱API(有key后切换)
+    provider: ${RAG_EMBEDDING_PROVIDER:hash}
+    dimension: 1024
+  split:
+    # strategy: fixed=固定字数 / section=按标题段落
+    strategy: ${RAG_SPLIT_STRATEGY:section}
+    chunk-size: 500      # fixed 策略: 每块目标字符数
+    overlap: 100         # fixed 策略: 相邻块重叠字符数（防止语义被切断）
 
 server:
   port: 8080
