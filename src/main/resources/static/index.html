@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>资方接入智能助手 - 阶段1 操作台</title>
+<style>
+  /* 全部内联样式，单文件无构建依赖；配色跟随系统亮色主题 */
+  :root {
+    --bg: #f6f7f9; --card: #ffffff; --border: #e2e5ea;
+    --text: #1f2430; --muted: #6b7280; --accent: #2563eb;
+    --ok: #16a34a; --err: #dc2626;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: "Microsoft YaHei", system-ui, sans-serif; background: var(--bg); color: var(--text); padding: 24px; }
+  .wrap { max-width: 960px; margin: 0 auto; }
+  h1 { font-size: 20px; margin-bottom: 4px; }
+  .sub { color: var(--muted); font-size: 13px; margin-bottom: 20px; }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 18px; margin-bottom: 16px; }
+  .card h2 { font-size: 15px; margin-bottom: 12px; }
+  .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  input[type="text"], input[type="number"] {
+    flex: 1; min-width: 160px; padding: 8px 10px; border: 1px solid var(--border);
+    border-radius: 6px; font-size: 14px;
+  }
+  button {
+    padding: 8px 16px; border: none; border-radius: 6px; background: var(--accent);
+    color: #fff; font-size: 14px; cursor: pointer;
+  }
+  button:disabled { opacity: .5; cursor: not-allowed; }
+  button.ghost { background: transparent; color: var(--err); border: 1px solid var(--border); padding: 4px 10px; font-size: 12px; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 8px 6px; border-bottom: 1px solid var(--border); }
+  th { color: var(--muted); font-weight: 500; }
+  .hit { border-left: 3px solid var(--accent); padding-left: 10px; margin-bottom: 12px; }
+  .hit .score { color: var(--accent); font-size: 12px; }
+  .hit .path { color: var(--muted); font-size: 12px; margin: 2px 0; }
+  .hit pre { white-space: pre-wrap; font-family: inherit; font-size: 13px; line-height: 1.6; }
+  #result, #uploadResult { font-size: 13px; line-height: 1.7; }
+  .badge { display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: 12px; background: #eef2ff; color: var(--accent); }
+  .muted { color: var(--muted); }
+  .spin { display: inline-block; width: 12px; height: 12px; border: 2px solid var(--accent); border-top-color: transparent; border-radius: 50%; animation: r 0.8s linear infinite; vertical-align: -1px; }
+  @keyframes r { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>资方接入智能助手 · 阶段1 操作台</h1>
+  <div class="sub">纯静态单页，调用后端 REST 接口：<code>/api/admin/documents</code>。后端启动后访问本页即可，无任何前端框架。</div>
+
+  <!-- ① 上传入库 -->
+  <div class="card">
+    <h2>① 文档上传入库</h2>
+    <div class="row">
+      <input type="file" id="file" accept=".docx,.txt,.md">
+      <input type="text" id="docId" placeholder="docId，如 huaxin_corp_api_v1（重复上传=覆盖重建）" style="flex:1.2">
+      <button id="uploadBtn" onclick="upload()">上传入库</button>
+    </div>
+    <div id="uploadResult" style="margin-top:10px"></div>
+  </div>
+
+  <!-- ② 已入库文档 -->
+  <div class="card">
+    <h2>② 已入库文档 <button class="ghost" style="float:right" onclick="loadDocs()">刷新</button></h2>
+    <table>
+      <thead><tr><th>docId</th><th>文档标题</th><th>chunk 数</th><th></th></tr></thead>
+      <tbody id="docRows"><tr><td colspan="4" class="muted">加载中…</td></tr></tbody>
+    </table>
+  </div>
+
+  <!-- ③ 检索测试 -->
+  <div class="card">
+    <h2>③ 检索测试（阶段1 验收的就是这一步：召回质量）</h2>
+    <div class="row">
+      <input type="text" id="query" placeholder="例如：华信银行的逾期文件第3列是什么" onkeydown="if(event.key==='Enter')search()">
+      <input type="number" id="topK" value="3" min="1" max="10" style="max-width:80px" title="topK">
+      <button id="searchBtn" onclick="search()">检索</button>
+    </div>
+    <div id="result" style="margin-top:14px"></div>
+  </div>
+</div>
+
+<script>
+// ===== 基础请求封装：统一错误处理，全部走原生 fetch =====
+async function api(path, opts) {
+  const resp = await fetch('/api/admin/documents' + path, opts);
+  if (!resp.ok) {
+    let msg = resp.status + ' ' + resp.statusText;
+    try { msg = (await resp.json()).error || msg; } catch (e) { /* 非JSON错误体就用状态码 */ }
+    throw new Error(msg);
+  }
+  return resp.json();
+}
+
+// ===== ① 上传：multipart/form-data，对应后端 @RequestParam MultipartFile =====
+async function upload() {
+  const fileEl = document.getElementById('file');
+  const docId = document.getElementById('docId').value.trim();
+  const out = document.getElementById('uploadResult');
+  if (!fileEl.files.length) { out.innerHTML = '<span style="color:var(--err)">请先选择文件（.docx / .txt / .md）</span>'; return; }
+  if (!docId) { out.innerHTML = '<span style="color:var(--err)">请填写 docId</span>'; return; }
+  const btn = document.getElementById('uploadBtn');
+  btn.disabled = true;
+  out.innerHTML = '<span class="spin"></span> 入库中：解析 → 切分 → 向量化 → 写库…';
+  try {
+    // FormData 会自动构造 multipart 报文，与 curl -F 等价
+    const fd = new FormData();
+    fd.append('file', fileEl.files[0]);
+    fd.append('docId', docId);
+    const r = await api('', { method: 'POST', body: fd });
+    const m = r.millis || {};
+    out.innerHTML = '✅ <b>' + r.docId + '</b> 入库完成 —— <span class="badge">' + r.embeddingProvider + '</span><br>'
+      + 'blocks: ' + r.blocks + ' → chunks: <b>' + r.chunkCount + '</b>，平均 chunk 字符数: ' + r.avgChunkChars.toFixed(0)
+      + '<br><span class="muted">耗时: 解析 ' + m.parse + 'ms · 切分 ' + m.split + 'ms · 向量化 ' + m.embed + 'ms · 写库 ' + m.store + 'ms</span>';
+    loadDocs();
+  } catch (e) {
+    out.innerHTML = '❌ ' + e.message;
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+// ===== ② 文档列表 =====
+async function loadDocs() {
+  const rows = document.getElementById('docRows');
+  try {
+    const docs = await api('');
+    if (!docs.length) { rows.innerHTML = '<tr><td colspan="4" class="muted">暂无文档，先上传一份</td></tr>'; return; }
+    rows.innerHTML = docs.map(d =>
+      '<tr><td><b>' + esc(d.docId) + '</b></td><td>' + esc(d.docTitle) + '</td><td>' + d.chunkCount + '</td>'
+      + '<td><button class="ghost" onclick="del(\'' + esc(d.docId) + '\')">删除</button></td></tr>'
+    ).join('');
+  } catch (e) {
+    rows.innerHTML = '<tr><td colspan="4" style="color:var(--err)">加载失败: ' + e.message + '（后端起了吗？）</td></tr>';
+  }
+}
+
+async function del(docId) {
+  if (!confirm('删除 ' + docId + ' 的全部 chunk？')) return;
+  await api('/' + encodeURIComponent(docId), { method: 'DELETE' });
+  loadDocs();
+}
+
+// ===== ③ 检索：JSON 请求体，对应后端 @RequestBody =====
+async function search() {
+  const query = document.getElementById('query').value.trim();
+  const topK = parseInt(document.getElementById('topK').value) || 3;
+  const out = document.getElementById('result');
+  if (!query) { out.innerHTML = '<span style="color:var(--err)">请输入问题</span>'; return; }
+  const btn = document.getElementById('searchBtn');
+  btn.disabled = true;
+  out.innerHTML = '<span class="spin"></span> 检索中：query 向量化 → HNSW 向量召回 + trigram 关键词召回 → 合并排序…';
+  try {
+    const hits = await api('/search', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query: query, topK: topK })
+    });
+    if (!hits.length) { out.innerHTML = '<span class="muted">无召回结果</span>'; return; }
+    out.innerHTML = hits.map((h, i) =>
+      '<div class="hit">'
+      + '<span class="score">Top-' + (i + 1) + '</span> '
+      + (h.bothChannels ? '<span class="badge" style="background:#ecfdf5;color:var(--ok)">双通道命中</span> ' : '')
+      + '<span class="badge">' + esc(h.docId) + '</span> '
+      + '<span class="muted">' + esc(h.docTitle || '') + ' · 路径: ' + esc(h.sectionPath || '(无标题)') + '</span>'
+      + '<div class="path">向量距离: ' + fmt(h.vectorDistance) + '（越小越相似） · 关键词相似度: ' + fmt(h.keywordSimilarity) + '</div>'
+      + '<pre>' + esc(h.content) + '</pre>'
+      + '</div>'
+    ).join('');
+  } catch (e) {
+    out.innerHTML = '❌ ' + e.message;
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+function fmt(v) { return v == null ? '-' : Number(v).toFixed(4); }
+function esc(s) { const d = document.createElement('div'); d.textContent = String(s ?? ''); return d.innerHTML; }
+
+loadDocs();
+</script>
+</body>
+</html>
