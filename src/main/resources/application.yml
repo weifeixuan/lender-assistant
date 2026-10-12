@@ -19,6 +19,9 @@ spring:
 
 # 应用自定义配置（RAG 链路参数集中在这里，阶段 3 调优只动这里）
 rag:
+  chat:
+    # provider: mock=本地Mock(无key时开发联调) / deepseek=真实模型(有key后切换)
+    provider: ${RAG_CHAT_PROVIDER:mock}
   embedding:
     # provider: hash=本地Mock(开发联调) / zhipu=智谱API(有key后切换)
     provider: ${RAG_EMBEDDING_PROVIDER:hash}

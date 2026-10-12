@@ -4,6 +4,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
 import java.util.List;
+import java.util.stream.Collectors;
 
 /**
  * doc_chunk 表的读写。
@@ -75,23 +76,43 @@ public class DocumentStore {
     }
 
     /**
-     * 关键词召回：trigram 相似度 %（0~1，越大越像），
-     * 对"必须命中字面"的查询（如"逾期文件第3列"）比向量更可靠。
+     * 关键词召回 v2：分词后多词 OR 匹配，按命中词数排序。
+     *
+     * v1 的教训：整句 query 算 trigram 相似度，长句相似度被稀释基本不命中——
+     * "华信银行的逾期文件第3列是什么"整句和任何 chunk 都不相似，只有拆词才有效。
+     * 每个词 LIKE 匹配，命中词越多分越高；同分时短 chunk 优先（信息密度更高）。
+     * 注意：词是程序内白名单拼进 SQL 结构（只影响结构），词值本身仍走 ? 参数化，无注入面。
      */
-    public record KeywordHit(long id, String docId, String docTitle, String sectionPath, String content, double similarity) {}
+    public record KeywordHit(long id, String docId, String docTitle, String sectionPath, String content, int hits) {}
 
-    public List<KeywordHit> searchByKeyword(String query, int topK) {
-        return jdbc.query("""
+    public List<KeywordHit> searchByKeyword(List<String> tokens, int topK) {
+        if (tokens.isEmpty()) {
+            return List.of();
+        }
+        String where = tokens.stream().map(w -> "content LIKE ?").collect(Collectors.joining(" OR "));
+        String score = tokens.stream()
+                .map(w -> "(CASE WHEN content LIKE ? THEN 1 ELSE 0 END)")
+                .collect(Collectors.joining(" + "));
+        String sql = """
                 SELECT id, doc_id, doc_title, section_path, content,
-                       SIMILARITY(content, ?) AS similarity
+                       (%s) AS hits
                 FROM doc_chunk
-                WHERE content % ? OR content LIKE '%' || ? || '%'
-                ORDER BY similarity DESC
+                WHERE %s
+                ORDER BY hits DESC, char_count ASC
                 LIMIT ?
-                """,
+                """.formatted(score, where);
+
+        Object[] params = new Object[tokens.size() * 2 + 1];
+        for (int i = 0; i < tokens.size(); i++) {
+            params[i] = "%" + tokens.get(i) + "%";                 // WHERE 比较用
+            params[tokens.size() + i] = "%" + tokens.get(i) + "%"; // 计分用
+        }
+        params[tokens.size() * 2] = topK;
+
+        return jdbc.query(sql,
                 (rs, i) -> new KeywordHit(rs.getLong("id"), rs.getString("doc_id"), rs.getString("doc_title"),
-                        rs.getString("section_path"), rs.getString("content"), rs.getDouble("similarity")),
-                query, query, query, topK);
+                        rs.getString("section_path"), rs.getString("content"), rs.getInt("hits")),
+                params);
     }
 
     /** float[] -> pgvector 文本字面量 "[0.1,0.2,...]" */

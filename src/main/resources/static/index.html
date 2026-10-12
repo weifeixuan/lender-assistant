@@ -78,6 +78,16 @@
     </div>
     <div id="result" style="margin-top:14px"></div>
   </div>
+  <!-- ④ 问答区（阶段2）：SSE 流式 -->
+  <div class="card">
+    <h2>④ 问答（阶段2：检索 → 拼 Prompt → 模型生成 → SSE 流式）</h2>
+    <div class="row">
+      <input type="text" id="qaQuestion" placeholder="例如：华信银行的逾期文件第3列是什么" onkeydown="if(event.key==='Enter')ask()">
+      <button id="qaBtn" onclick="ask()">提问</button>
+    </div>
+    <div id="qaSources" class="muted" style="margin-top:10px;font-size:12px"></div>
+    <div id="qaAnswer" style="margin-top:8px;font-size:14px;line-height:1.8;white-space:pre-wrap;min-height:24px"></div>
+  </div>
 </div>
 
 <script>
@@ -163,7 +173,7 @@ async function search() {
       + (h.bothChannels ? '<span class="badge" style="background:#ecfdf5;color:var(--ok)">双通道命中</span> ' : '')
       + '<span class="badge">' + esc(h.docId) + '</span> '
       + '<span class="muted">' + esc(h.docTitle || '') + ' · 路径: ' + esc(h.sectionPath || '(无标题)') + '</span>'
-      + '<div class="path">向量距离: ' + fmt(h.vectorDistance) + '（越小越相似） · 关键词相似度: ' + fmt(h.keywordSimilarity) + '</div>'
+      + '<div class="path">向量距离: ' + fmt(h.vectorDistance) + '（越小越相似） · 关键词命中词数: ' + (h.keywordHits ?? '-') + '</div>'
       + '<pre>' + esc(h.content) + '</pre>'
       + '</div>'
     ).join('');
@@ -176,6 +186,72 @@ async function search() {
 
 function fmt(v) { return v == null ? '-' : Number(v).toFixed(4); }
 function esc(s) { const d = document.createElement('div'); d.textContent = String(s ?? ''); return d.innerHTML; }
+
+// ===== ④ 问答：POST /api/qa 消费 SSE 流 =====
+// 原生 EventSource 只支持 GET，这里用 fetch + ReadableStream 手工解析 SSE 报文：
+// 报文按空行分事件块，块内 "event: 名称" 行 + 若干 "data: 内容" 行（多行 data 拼回时补 \n）
+async function ask() {
+  const question = document.getElementById('qaQuestion').value.trim();
+  if (!question) return;
+  const btn = document.getElementById('qaBtn');
+  const answerEl = document.getElementById('qaAnswer');
+  const sourcesEl = document.getElementById('qaSources');
+  btn.disabled = true;
+  answerEl.textContent = '';
+  sourcesEl.textContent = '检索中…';
+  try {
+    const resp = await fetch('/api/qa', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ question: question, topK: 4 })
+    });
+    if (!resp.ok) throw new Error(resp.status + ' ' + resp.statusText);
+
+    const reader = resp.body.getReader();
+    const decoder = new TextDecoder('utf-8');
+    let buf = '';
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      let sep;
+      // 事件块以空行(\n\n)分隔，处理所有完整块
+      while ((sep = buf.indexOf('\n\n')) >= 0) {
+        const block = buf.slice(0, sep);
+        buf = buf.slice(sep + 2);
+        handleSseBlock(block, answerEl, sourcesEl);
+      }
+    }
+  } catch (e) {
+    answerEl.textContent += '\n[请求失败] ' + e.message;
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+function handleSseBlock(block, answerEl, sourcesEl) {
+  let event = 'message';
+  const dataLines = [];
+  for (const line of block.split('\n')) {
+    if (line.startsWith('event:')) event = line.slice(6).trim();
+    else if (line.startsWith('data:')) dataLines.push(line.slice(5).replace(/^ /, ''));
+  }
+  if (!dataLines.length) return;
+  const data = dataLines.join('\n');
+
+  if (event === 'sources') {
+    const src = JSON.parse(data);
+    sourcesEl.textContent = '引用 ' + src.length + ' 份来源：'
+      + src.map(s => '【来源' + s.idx + '】' + s.docTitle + ' / ' + (s.sectionPath || '（无小节）')).join(' ｜ ');
+  } else if (event === 'delta') {
+    answerEl.textContent += data;  // 增量拼接——这就是"流式"的体感来源
+  } else if (event === 'done') {
+    const d = JSON.parse(data);
+    answerEl.textContent += '\n\n—— ' + d.provider + ' · 耗时 ' + d.elapsedMillis + 'ms · 引用 ' + d.sourceCount + ' 条';
+  } else if (event === 'error') {
+    answerEl.textContent += '\n[错误] ' + data;
+  }
+}
 
 loadDocs();
 </script>

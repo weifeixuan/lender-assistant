@@ -1,6 +1,7 @@
 package com.lender.assistant.rag;
 
 import com.lender.assistant.rag.embedder.EmbeddingClient;
+import com.lender.assistant.rag.embedder.HashEmbeddingClient;
 import com.lender.assistant.rag.store.DocumentStore;
 import org.springframework.stereotype.Service;
 
@@ -43,27 +44,38 @@ public class SearchService {
             merged.put(hit.id(), m);
         }
 
-        // 通道 2：关键词召回，命中已存在的标记为双通道命中
-        for (DocumentStore.KeywordHit hit : store.searchByKeyword(query, topK)) {
+        // 通道 2：关键词召回——分词后多词 OR 匹配（v1 整句 trigram 的教训见 DocumentStore）
+        // 过滤：单字 token LIKE 命中面太宽（"的""是"满库都是），只留 2 字以上；去重后限 8 个防 SQL 过长
+        List<String> tokens = HashEmbeddingClient.tokenize(query).stream()
+                .filter(t -> t.length() >= 2)
+                .distinct()
+                .limit(8)
+                .toList();
+        for (DocumentStore.KeywordHit hit : store.searchByKeyword(tokens, topK)) {
             Map<String, Object> existing = merged.get(hit.id());
             if (existing != null) {
                 existing.put("bothChannels", true);
-                existing.put("keywordSimilarity", hit.similarity());
+                existing.put("keywordHits", hit.hits());
             } else {
                 Map<String, Object> m = base(hit.docId(), hit.docTitle(), hit.sectionPath(), hit.content());
-                m.put("keywordSimilarity", hit.similarity());
+                m.put("keywordHits", hit.hits());
                 m.put("bothChannels", false);
                 merged.put(hit.id(), m);
             }
         }
 
-        // 排序：双通道命中 > 向量距离小 > 关键词相似度高
+        // 排序：双通道命中 > 向量距离小 > 关键词命中词数多
         List<Map<String, Object>> result = new ArrayList<>(merged.values());
         result.sort((a, b) -> {
             boolean ab = (boolean) a.get("bothChannels");
             boolean bb = (boolean) b.get("bothChannels");
             if (ab != bb) {
                 return ab ? -1 : 1;
+            }
+            int ka = a.get("keywordHits") == null ? 0 : (int) a.get("keywordHits");
+            int kb = b.get("keywordHits") == null ? 0 : (int) b.get("keywordHits");
+            if (ka != kb) {
+                return Integer.compare(kb, ka);
             }
             double da = a.get("vectorDistance") == null ? 2 : (double) a.get("vectorDistance");
             double db = b.get("vectorDistance") == null ? 2 : (double) b.get("vectorDistance");

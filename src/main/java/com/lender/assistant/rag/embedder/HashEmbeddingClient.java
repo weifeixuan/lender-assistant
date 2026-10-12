@@ -58,8 +58,12 @@ public class HashEmbeddingClient implements EmbeddingClient {
         return dimension;
     }
 
-    /** 生成 token 流：中文 bigram + ASCII 词 */
-    static List<String> tokenize(String text) {
+    /**
+     * 生成 token 流：中文 bigram + ASCII 词。
+     * 双用途：① 本类向量化用；② 检索关键词通道分词用（SearchService），
+     * 故设为 public——同一个分词口径保证"入库时怎么切、查询时怎么切"一致。
+     */
+    public static List<String> tokenize(String text) {
         List<String> tokens = new java.util.ArrayList<>();
         if (text == null || text.isEmpty()) {
             return tokens;
