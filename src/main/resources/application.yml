@@ -29,6 +29,9 @@ rag:
   extract:
     # provider: mock=规则抽取(无key联调) / deepseek=JSON Schema抽取(有key后切换)
     provider: ${RAG_EXTRACT_PROVIDER:mock}
+  draft:
+    # provider: mock=模板渲染(无key联调) / deepseek=模型生成(有key后切换)
+    provider: ${RAG_DRAFT_PROVIDER:mock}
   resilience:
     # chaos=true 时模型调用确定性失败（测试/降级演练用，平时保持 false）
     chaos: ${RAG_RESILIENCE_CHAOS:false}

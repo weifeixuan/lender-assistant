@@ -99,6 +99,17 @@
     </div>
     <div id="extractResult" style="margin-top:14px"></div>
   </div>
+
+  <!-- ⑥ 代码草稿（阶段5）：映射表 → Java 适配层草稿 → 人工复核 -->
+  <div class="card">
+    <h2>⑥ 代码草稿生成（阶段5：字段映射表 → Java 适配层草稿 → 人工复核）</h2>
+    <div class="row">
+      <input type="text" id="draftDocId" placeholder="docId（须已完成抽取，如 ruijin_capital_api_v1）">
+      <button id="draftBtn" onclick="draftRun()">生成草稿</button>
+    </div>
+    <div id="draftNotice" style="display:none;margin-top:12px;padding:10px 12px;border:1px solid #d9a400;background:#fdf3d1;border-radius:8px;font-size:13px;color:#6b4d00"></div>
+    <div id="draftResult" style="margin-top:14px"></div>
+  </div>
 </div>
 
 <script>
@@ -340,6 +351,43 @@ async function confirmMapping(docId, fieldId) {
     body: JSON.stringify({ internalFieldId: fieldId, lenderValue: val })
   });
   extractLoad();
+}
+
+// ===== ⑥ 代码草稿：POST /api/draft/{docId}，响应固定带 reviewNotice =====
+async function draftRun() {
+  const docId = document.getElementById('draftDocId').value.trim();
+  const notice = document.getElementById('draftNotice');
+  const out = document.getElementById('draftResult');
+  if (!docId) { notice.style.display = 'block'; notice.textContent = '请输入 docId'; return; }
+  document.getElementById('draftBtn').disabled = true;
+  out.innerHTML = '<span class="muted">生成中…</span>';
+  try {
+    const resp = await fetch('/api/draft/' + encodeURIComponent(docId), { method: 'POST' });
+    const d = await resp.json();
+    if (!resp.ok) throw new Error(d.error || resp.status);
+    // 人工复核声明：醒目提示条，接口契约保证永远有
+    notice.style.display = 'block';
+    notice.textContent = '⚠ ' + d.reviewNotice + '（生成方: ' + d.provider + '，依据映射 ' + d.mappingsUsed + ' 条）';
+    out.innerHTML =
+      '<button class="ghost" onclick="draftCopy()">复制代码</button>' +
+      '<pre id="draftCode" style="background:#0f172a;color:#e2e8f0;padding:14px;border-radius:8px;'
+      + 'font-family:Consolas,monospace;font-size:12px;line-height:1.5;overflow-x:auto;white-space:pre">'
+      + escapeHtml(d.draft) + '</pre>';
+  } catch (e) {
+    notice.style.display = 'block';
+    notice.textContent = e.message;
+    out.innerHTML = '';
+  } finally {
+    document.getElementById('draftBtn').disabled = false;
+  }
+}
+
+function draftCopy() {
+  navigator.clipboard.writeText(document.getElementById('draftCode').textContent);
+}
+
+function escapeHtml(s) {
+  return s.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
 }
 
 loadDocs();

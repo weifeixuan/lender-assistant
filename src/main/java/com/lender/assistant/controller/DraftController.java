@@ -1,0 +1,47 @@
+package com.lender.assistant.controller;
+
+import com.lender.assistant.draft.DraftService;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
+
+import java.util.LinkedHashMap;
+import java.util.Map;
+
+/**
+ * 代码草稿接口（阶段5）：映射表 → Java 适配层草稿。
+ *
+ * 响应固定携带 reviewNotice（人工复核声明）——前端据此渲染醒目提示条，
+ * 这是"AI 代码必须人工复核"红线在 API 契约层的固化。
+ */
+@RestController
+@RequestMapping("/api/draft")
+public class DraftController {
+
+    private final DraftService draftService;
+
+    public DraftController(DraftService draftService) {
+        this.draftService = draftService;
+    }
+
+    @PostMapping("/{docId}")
+    public ResponseEntity<Map<String, Object>> generate(@PathVariable String docId) {
+        try {
+            DraftService.DraftResult r = draftService.generate(docId);
+            Map<String, Object> body = new LinkedHashMap<>();
+            body.put("docId", r.docId());
+            body.put("provider", r.provider());
+            body.put("reviewNotice", r.reviewNotice());
+            body.put("mappingsUsed", r.mappingsUsed());
+            body.put("draft", r.draft());
+            return ResponseEntity.ok(body);
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        } catch (Exception e) {
+            return ResponseEntity.internalServerError().body(Map.of(
+                    "error", "草稿生成链路故障（已留痕），可稍后重试或转人工实现: " + e.getMessage()));
+        }
+    }
+}

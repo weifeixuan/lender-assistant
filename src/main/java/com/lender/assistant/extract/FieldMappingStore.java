@@ -72,6 +72,24 @@ public class FieldMappingStore {
                 docId);
     }
 
+    /** 类型化查询：代码草稿生成（阶段5）的输入，避免调用方手工拆 Map */
+    public List<FieldMapping> listFieldMappings(String docId) {
+        return jdbc.query("""
+                SELECT internal_field_id, lender_field_name, lender_value, source_quote, confidence
+                FROM field_mapping WHERE doc_id = ? ORDER BY internal_field_id
+                """,
+                (rs, i) -> new FieldMapping(
+                        rs.getString("internal_field_id"),
+                        InternalFieldCatalog.byId(rs.getString("internal_field_id")) == null
+                                ? rs.getString("internal_field_id")
+                                : InternalFieldCatalog.byId(rs.getString("internal_field_id")).name(),
+                        rs.getString("lender_field_name"),
+                        rs.getString("lender_value"),
+                        rs.getString("source_quote"),
+                        rs.getDouble("confidence")),
+                docId);
+    }
+
     /**
      * 人工确认/修正。corrected 值非空时状态记 CORRECTED（留痕"人改过"），
      * 为空则只确认原文 CONFIRMED。
