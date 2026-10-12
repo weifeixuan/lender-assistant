@@ -28,10 +28,13 @@ public class QaService {
 
     private final SearchService searchService;
     private final AnswerGenerator generator;
+    private final com.lender.assistant.resilience.ResilientLlmExecutor executor;
 
-    public QaService(SearchService searchService, AnswerGenerator generator) {
+    public QaService(SearchService searchService, AnswerGenerator generator,
+                     com.lender.assistant.resilience.ResilientLlmExecutor executor) {
         this.searchService = searchService;
         this.generator = generator;
+        this.executor = executor;
     }
 
     public SseEmitter answer(String question, int topK) {
@@ -62,9 +65,15 @@ public class QaService {
             }
             send(emitter, "sources", sources);
 
-            // AnswerGenerator 契约：generate 返回时生成已结束，token 在调用线程上依次回调
-            generator.generate(systemPrompt(), userPrompt(question, hits),
-                    token -> send(emitter, "delta", token));
+            // AnswerGenerator 契约：generate 返回时生成已结束，token 在调用线程上依次回调。
+            // 韧性（阶段4）：经 ResilientLlmExecutor 走 qa 链路——留痕 + 熔断；
+            // allowRetry=false：SSE token 已推给用户，重试会导致内容重放
+            executor.execute("qa", generator.name(),
+                    () -> {
+                        generator.generate(systemPrompt(), userPrompt(question, hits),
+                                token -> send(emitter, "delta", token));
+                        return true;
+                    }, false);
 
             Map<String, Object> done = Map.of(
                     "provider", generator.name(),
@@ -72,6 +81,12 @@ public class QaService {
                     "sourceCount", sources.size());
             send(emitter, "done", done);
             emitter.complete();
+        } catch (io.github.resilience4j.circuitbreaker.CallNotPermittedException e) {
+            // 熔断打开：连续失败触发保护，快速失败。降级而非崩溃（手册验收线）——
+            // sources 已经推给前端，检索能力不受模型故障影响
+            send(emitter, "error", "模型服务熔断中（连续失败已触发保护），已转人工流程兜底；"
+                    + "上方召回来源仍可查看。模型恢复前请使用检索测试区块。");
+            emitter.completeWithError(e);
         } catch (Exception e) {
             // 模型超时/网络异常/DB 异常统一走 error 事件——前端能拿到可读信息而非静默断流
             send(emitter, "error", "问答失败：" + e.getMessage());

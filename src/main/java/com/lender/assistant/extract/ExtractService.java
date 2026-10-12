@@ -1,29 +1,29 @@
 package com.lender.assistant.extract;
 
-import com.lender.assistant.resilience.LlmCallLogger;
+import com.lender.assistant.resilience.ResilientLlmExecutor;
 import com.lender.assistant.rag.store.DocumentStore;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
 
 /**
- * 结构化抽取编排：按 docId 加载已入库文档 → 拼全文 → 经留痕调抽取器。
+ * 结构化抽取编排：按 docId 加载已入库文档 → 拼全文 → 经韧性执行器调抽取器。
  *
- * 和 QaService 的关系：两者都走"加载 → 拼 Prompt → 模型端口 → 留痕"的形态，
- * 但抽取是**非流式**的一锤子调用（JSON 进 JSON 出），
- * 韧性包装（超时/重试/熔断）在阶段4后半段由 ResilientLlmExecutor 统一接入。
+ * 和 QaService 的关系：两者都走"加载 → 模型端口 → 韧性 → 留痕"的形态。
+ * 抽取是**非流式**一锤子调用（JSON 进 JSON 出），allowRetry=true——
+ * 失败重试不影响用户侧一致性；问答 SSE 则禁止重试（token 已推给用户）。
  */
 @Service
 public class ExtractService {
 
     private final ExtractGenerator generator;
     private final DocumentStore store;
-    private final LlmCallLogger logger;
+    private final ResilientLlmExecutor executor;
 
-    public ExtractService(ExtractGenerator generator, DocumentStore store, LlmCallLogger logger) {
+    public ExtractService(ExtractGenerator generator, DocumentStore store, ResilientLlmExecutor executor) {
         this.generator = generator;
         this.store = store;
-        this.logger = logger;
+        this.executor = executor;
     }
 
     public List<FieldMapping> extractFromDoc(String docId) {
@@ -31,7 +31,7 @@ public class ExtractService {
         if (doc == null || doc.text().isBlank()) {
             throw new IllegalArgumentException("文档不存在或未入库: " + docId);
         }
-        return logger.record("extract", generator.name(),
-                () -> generator.extract(doc.docTitle(), doc.text()));
+        return executor.execute("extract", generator.name(),
+                () -> generator.extract(doc.docTitle(), doc.text()), true);
     }
 }

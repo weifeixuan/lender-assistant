@@ -55,7 +55,13 @@ class QaServiceTest {
     void setUp() {
         searchService = mock(SearchService.class);
         generator = new RecordingGenerator();
-        qaService = new QaService(searchService, generator);
+        // 真实韧性执行器（chaos=false 直通）+ mock JDBC 的留痕器
+        com.lender.assistant.resilience.ResilientLlmExecutor executor =
+                new com.lender.assistant.resilience.ResilientLlmExecutor(
+                        new com.lender.assistant.resilience.LlmCallLogger(
+                                mock(org.springframework.jdbc.core.JdbcTemplate.class)),
+                        3, 10, 2, false);
+        qaService = new QaService(searchService, generator, executor);
     }
 
     private Map<String, Object> hit(long chunkId, String title, String section, String content) {
@@ -128,7 +134,11 @@ class QaServiceTest {
                 return "Broken";
             }
         };
-        QaService svc = new QaService(searchService, broken);
+        QaService svc = new QaService(searchService, broken,
+                new com.lender.assistant.resilience.ResilientLlmExecutor(
+                        new com.lender.assistant.resilience.LlmCallLogger(
+                                mock(org.springframework.jdbc.core.JdbcTemplate.class)),
+                        3, 10, 2, false));
 
         assertDoesNotThrow(() -> svc.answer("问题", 4),
                 "阶段4韧性改造的契约底线：模型故障不允许把异常抛出 answer() 之外");

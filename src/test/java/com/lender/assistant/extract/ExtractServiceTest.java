@@ -1,6 +1,7 @@
 package com.lender.assistant.extract;
 
 import com.lender.assistant.resilience.LlmCallLogger;
+import com.lender.assistant.resilience.ResilientLlmExecutor;
 import com.lender.assistant.rag.store.DocumentStore;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -25,17 +26,18 @@ class ExtractServiceTest {
 
     private ExtractGenerator generator;
     private DocumentStore store;
-    private LlmCallLogger logger;
+    private ResilientLlmExecutor executor;
     private ExtractService service;
 
     @BeforeEach
     void setUp() {
         generator = mock(ExtractGenerator.class);
         store = mock(DocumentStore.class);
-        // 关键：用真实留痕器（supplier 真正执行、异常真正上抛）+ mock 掉 JDBC；
-        // 若把 logger 整个 mock 掉，record() 变空壳，编排契约根本测不到
-        logger = spy(new LlmCallLogger(mock(JdbcTemplate.class)));
-        service = new ExtractService(generator, store, logger);
+        // 真实韧性执行器（chaos=false 直通）+ mock JDBC 的留痕器：
+        // 编排契约（supplier 真执行、异常真上抛）必须走真实代码路径
+        executor = spy(new ResilientLlmExecutor(
+                new LlmCallLogger(mock(JdbcTemplate.class)), 3, 10, 2, false));
+        service = new ExtractService(generator, store, executor);
 
         when(generator.name()).thenReturn("Mock");
         when(generator.extract(anyString(), anyString())).thenReturn(List.of(
@@ -58,8 +60,8 @@ class ExtractServiceTest {
         assertEquals("瑞金租赁_资金对接接口文档_v1.0", title.getValue());
         assertTrue(text.getValue().contains("网关地址 https://fake-ruijin.example.com/openapi"));
         assertTrue(text.getValue().contains("接口路径 /openapi/loan/order/create"));
-        // 生成器调用必须经留痕器包装，scene=extract
-        verify(logger).record(eq("extract"), eq("Mock"), any(Supplier.class));
+        // 生成器调用必须经韧性执行器包装，scene=extract
+        verify(executor).execute(eq("extract"), eq("Mock"), any(Supplier.class), eq(true));
     }
 
     @Test
@@ -69,7 +71,7 @@ class ExtractServiceTest {
                 .thenThrow(new RuntimeException("模拟抽取超时"));
 
         assertThrows(RuntimeException.class, () -> service.extractFromDoc("doc1"));
-        verify(logger).record(eq("extract"), eq("Mock"), any(Supplier.class));
+        verify(executor).execute(eq("extract"), eq("Mock"), any(Supplier.class), eq(true));
     }
 
     @Test

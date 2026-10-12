@@ -67,6 +67,21 @@
             <version>5.3.0</version>
         </dependency>
 
+        <!-- Resilience4j 纯库（阶段4韧性）：不用 spring-boot3 starter 的注解 AOP——
+             编程式 decorateSupplier 一个纯 JUnit 测试就能驱动熔断状态机，
+             也符合"AI 代码必须看得懂"的红线。超时不在它管：DeepSeek 流自身
+             .timeout(60s) + SseEmitter 120s 已兜底 -->
+        <dependency>
+            <groupId>io.github.resilience4j</groupId>
+            <artifactId>resilience4j-circuitbreaker</artifactId>
+            <version>2.2.0</version>
+        </dependency>
+        <dependency>
+            <groupId>io.github.resilience4j</groupId>
+            <artifactId>resilience4j-retry</artifactId>
+            <version>2.2.0</version>
+        </dependency>
+
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-test</artifactId>
