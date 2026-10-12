@@ -30,6 +30,9 @@ public class FieldMappingStore {
                 WHERE field_mapping.status = 'PENDING'
             """;
 
+    private static final String DELETE_STALE_PENDING =
+            "DELETE FROM field_mapping WHERE doc_id = ? AND status = 'PENDING'";
+
     private final JdbcTemplate jdbc;
 
     public FieldMappingStore(JdbcTemplate jdbc) {
@@ -37,6 +40,10 @@ public class FieldMappingStore {
     }
 
     public int saveMappings(String docId, List<FieldMapping> mappings) {
+        // 先清掉本次没再抽出的 PENDING 旧映射（规则收紧/文档更新后消失的字段不留脏数据）。
+        // 人工成果（CONFIRMED/CORRECTED）不受影响：DELETE 只限 PENDING，
+        // 且下方 upsert 的 WHERE status='PENDING' 守门保证不会覆盖人工行。
+        jdbc.update(DELETE_STALE_PENDING, docId);
         int n = 0;
         for (FieldMapping m : mappings) {
             n += jdbc.update(UPSERT, docId, m.internalFieldId(), m.lenderFieldName(),

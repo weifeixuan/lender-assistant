@@ -42,10 +42,32 @@ class FieldMappingStoreTest {
 
         assertEquals(1, n);
         ArgumentCaptor<String> sql = ArgumentCaptor.forClass(String.class);
-        verify(jdbc).update(sql.capture(), any(Object[].class));
-        assertTrue(sql.getValue().contains("field_mapping"));
-        assertTrue(sql.getValue().toUpperCase().contains("ON CONFLICT"), "必须 upsert，同 doc 重抽不能撞唯一键");
-        assertTrue(sql.getValue().toUpperCase().contains("PENDING"), "初始状态必须是 PENDING 待人工确认");
+        verify(jdbc, atLeastOnce()).update(sql.capture(), any(Object[].class));
+        String insertSql = sql.getAllValues().stream()
+                .filter(s -> s.toUpperCase().contains("INSERT"))
+                .findFirst().orElse("");
+        assertTrue(insertSql.contains("field_mapping"), "必须有 INSERT 语句");
+        assertTrue(insertSql.toUpperCase().contains("ON CONFLICT"), "必须 upsert，同 doc 重抽不能撞唯一键");
+        assertTrue(insertSql.toUpperCase().contains("PENDING"), "初始状态必须是 PENDING 待人工确认");
+    }
+
+    @Test
+    @DisplayName("重复抽取：先清理该文档残留的 PENDING 旧映射（消失的字段不留脏数据），不动人工确认行")
+    void resaveCleansStalePendingOnly() {
+        when(jdbc.update(anyString(), any(Object[].class))).thenReturn(1);
+
+        store.saveMappings("doc1", List.of(sample()));
+
+        ArgumentCaptor<String> sql = ArgumentCaptor.forClass(String.class);
+        verify(jdbc, atLeastOnce()).update(sql.capture(), any(Object[].class));
+        String deleteSql = sql.getAllValues().stream()
+                .filter(s -> s.toUpperCase().startsWith("DELETE"))
+                .findFirst().orElse("");
+        assertFalse(deleteSql.isEmpty(), "重抽前必须有清理语句，否则消失的字段映射残留成脏数据");
+        assertTrue(deleteSql.contains("field_mapping"));
+        assertTrue(deleteSql.toUpperCase().contains("PENDING"),
+                "清理只能针对 PENDING 行——CONFIRMED/CORRECTED 的人工成果不能被重抽冲掉");
+        assertTrue(deleteSql.contains("doc_id = ?"), "清理范围必须限定在当前文档");
     }
 
     @Test
