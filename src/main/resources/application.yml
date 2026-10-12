@@ -26,6 +26,9 @@ rag:
     # provider: hash=本地Mock(开发联调) / zhipu=智谱API(有key后切换)
     provider: ${RAG_EMBEDDING_PROVIDER:hash}
     dimension: 1024
+  extract:
+    # provider: mock=规则抽取(无key联调) / deepseek=JSON Schema抽取(有key后切换)
+    provider: ${RAG_EXTRACT_PROVIDER:mock}
   split:
     # strategy: fixed=固定字数 / section=按标题段落
     strategy: ${RAG_SPLIT_STRATEGY:section}

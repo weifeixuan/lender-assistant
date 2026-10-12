@@ -44,6 +44,28 @@ public class DocumentStore {
         return n == null ? 0 : n;
     }
 
+    /** 文档全文（按 chunk 顺序拼接）+ 标题，结构化抽取（阶段4）的输入 */
+    public record DocContent(String docTitle, String text) {}
+
+    /**
+     * 拼接规则：每个 chunk 前置一行【章节】section_path。
+     * 原因：SectionSplitter 把标题只存进 section_path、content 里没有标题文本，
+     * 抽取器的"接口路径按章节分类"依赖章节标题，必须随全文一起给。
+     */
+    public DocContent loadDocContent(String docId) {
+        List<String> parts = jdbc.query(
+                "SELECT doc_title, section_path, content FROM doc_chunk WHERE doc_id = ? ORDER BY chunk_index",
+                (rs, i) -> "【章节】" + rs.getString(2) + "\n" + rs.getString(3),
+                docId);
+        if (parts.isEmpty()) {
+            return null;
+        }
+        String title = jdbc.queryForObject(
+                "SELECT doc_title FROM doc_chunk WHERE doc_id = ? LIMIT 1", String.class, docId);
+        String text = String.join("\n", parts);
+        return new DocContent(title, text);
+    }
+
     public void deleteByDoc(String docId) {
         jdbc.update("DELETE FROM doc_chunk WHERE doc_id = ?", docId);
     }

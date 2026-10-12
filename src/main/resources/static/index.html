@@ -45,8 +45,8 @@
 </head>
 <body>
 <div class="wrap">
-  <h1>资方接入智能助手 · 阶段1 操作台</h1>
-  <div class="sub">纯静态单页，调用后端 REST 接口：<code>/api/admin/documents</code>。后端启动后访问本页即可，无任何前端框架。</div>
+  <h1>资方接入智能助手 · 操作台</h1>
+  <div class="sub">纯静态单页，调用后端 REST 接口：<code>/api/admin/documents</code>、<code>/api/extract</code>。后端启动后访问本页即可，无任何前端框架。</div>
 
   <!-- ① 上传入库 -->
   <div class="card">
@@ -87,6 +87,17 @@
     </div>
     <div id="qaSources" class="muted" style="margin-top:10px;font-size:12px"></div>
     <div id="qaAnswer" style="margin-top:8px;font-size:14px;line-height:1.8;white-space:pre-wrap;min-height:24px"></div>
+  </div>
+
+  <!-- ⑤ 字段映射抽取（阶段4）：文档进 → 映射表出 → 人工确认/修正 -->
+  <div class="card">
+    <h2>⑤ 字段映射抽取（阶段4：新资方文档 → 内部字段映射表 → 人工确认）</h2>
+    <div class="row">
+      <input type="text" id="extractDocId" placeholder="docId（须已入库，如 ruijin_capital_api_v1）">
+      <button id="extractBtn" onclick="extractRun()">开始抽取</button>
+      <button class="ghost" style="color:var(--accent)" onclick="extractLoad()">查看已存映射</button>
+    </div>
+    <div id="extractResult" style="margin-top:14px"></div>
   </div>
 </div>
 
@@ -251,6 +262,84 @@ function handleSseBlock(block, answerEl, sourcesEl) {
   } else if (event === 'error') {
     answerEl.textContent += '\n[错误] ' + data;
   }
+}
+
+// ===== ⑤ 字段映射抽取（阶段4）：走 /api/extract 独立前缀，不经 api() 封装 =====
+function extractApi(path, opts) {
+  return fetch('/api/extract' + path, opts).then(async resp => {
+    if (!resp.ok) {
+      let msg = resp.status + ' ' + resp.statusText;
+      try { msg = (await resp.json()).error || msg; } catch (e) { /* 同上 */ }
+      throw new Error(msg);
+    }
+    return resp.json();
+  });
+}
+
+async function extractRun() {
+  const docId = document.getElementById('extractDocId').value.trim();
+  const out = document.getElementById('extractResult');
+  if (!docId) { out.innerHTML = '<span style="color:var(--err)">请填写 docId</span>'; return; }
+  const btn = document.getElementById('extractBtn');
+  btn.disabled = true;
+  out.innerHTML = '<span class="spin"></span> 抽取中：加载文档全文 → 生成器抽取 → 落库…';
+  try {
+    const r = await extractApi('/' + encodeURIComponent(docId), { method: 'POST' });
+    out.innerHTML = '✅ 抽到 <b>' + r.count + '</b> 条映射' + renderMappingTable(r.mappings, docId);
+  } catch (e) {
+    out.innerHTML = '❌ ' + e.message;
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function extractLoad() {
+  const docId = document.getElementById('extractDocId').value.trim();
+  const out = document.getElementById('extractResult');
+  if (!docId) { out.innerHTML = '<span style="color:var(--err)">请填写 docId</span>'; return; }
+  try {
+    const r = await extractApi('/' + encodeURIComponent(docId));
+    out.innerHTML = r.mappings.length ? renderMappingTable(r.mappings, docId)
+      : '<span class="muted">该文档还没有映射记录，先点「开始抽取」</span>';
+  } catch (e) {
+    out.innerHTML = '❌ ' + e.message;
+  }
+}
+
+// 置信度配色：>=0.9 绿（机器很确定）/ 0.7 橙（建议复核）
+function confBadge(c) {
+  const v = Number(c);
+  const color = v >= 0.9 ? 'var(--ok)' : '#d97706';
+  return '<span class="badge" style="background:transparent;color:' + color + ';border:1px solid ' + color + '">' + v.toFixed(2) + '</span>';
+}
+
+function renderMappingTable(mappings, docId) {
+  const statusText = { PENDING: '待确认', CONFIRMED: '已确认', CORRECTED: '已修正' };
+  return '<table><thead><tr><th>内部字段</th><th>资方字段</th><th>资方取值</th><th>置信度</th><th>状态</th><th>操作</th></tr></thead><tbody>'
+    + mappings.map(m =>
+      '<tr>'
+      + '<td><b>' + esc(m.internalFieldName || m.internalFieldId) + '</b><br><span class="muted" style="font-size:11px">' + esc(m.internalFieldId) + '</span></td>'
+      + '<td>' + esc(m.lenderFieldName || '-') + '</td>'
+      + '<td style="max-width:280px;word-break:break-all">' + esc(m.lenderValue || '（未抽出）')
+      + '<br><span class="muted" style="font-size:11px">出处: ' + esc((m.sourceQuote || '').slice(0, 60)) + '</span></td>'
+      + '<td>' + (m.confidence != null ? confBadge(m.confidence) : '-') + '</td>'
+      + '<td>' + (statusText[m.status] || esc(m.status || '-')) + '</td>'
+      + '<td><button class="ghost" style="color:var(--accent)" onclick="confirmMapping(\'' + esc(docId) + '\',\'' + esc(m.internalFieldId) + '\')">'
+      + (m.status === 'PENDING' ? '确认/修正' : '重新确认') + '</button></td>'
+      + '</tr>'
+    ).join('') + '</tbody></table>';
+}
+
+// 确认：prompt 空输入=仅确认原文；填了新值=修正（后端记 CORRECTED 留痕）
+async function confirmMapping(docId, fieldId) {
+  const val = prompt('确认该字段？若需修正请输入新值（留空=仅确认）:', '');
+  if (val === null) return;  // 用户取消
+  await extractApi('/' + encodeURIComponent(docId) + '/confirm', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ internalFieldId: fieldId, lenderValue: val })
+  });
+  extractLoad();
 }
 
 loadDocs();
