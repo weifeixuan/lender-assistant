@@ -33,59 +33,93 @@ public class SearchService {
     }
 
     public List<Map<String, Object>> hybridSearch(String query, int topK) {
+        return search(query, topK, "hybrid");
+    }
+
+    /**
+     * mode 参数是阶段 3 评估的实验开关：
+     * - vector  只走向量通道：量化"语义召回"的单独贡献
+     * - keyword 只走关键词通道：量化"字面召回"的单独贡献
+     * - hybrid  双通道合并（生产路径）
+     * 三模式跑同一评估集的对比，就是简历上"混合检索比单通道召回率提升 XX%"数据的来源。
+     */
+    public List<Map<String, Object>> search(String query, int topK, String mode) {
+        // 每条 chunk 记录它在各通道内的排名（1-based），hybrid 模式用 RRF 融合
         Map<Long, Map<String, Object>> merged = new LinkedHashMap<>();
+        Map<Long, Integer> vectorRank = new LinkedHashMap<>();
+        Map<Long, Integer> keywordRank = new LinkedHashMap<>();
 
         // 通道 1：向量召回
-        float[] queryVec = embeddingClient.embed(query);
-        for (DocumentStore.VectorHit hit : store.searchByVector(queryVec, topK)) {
-            Map<String, Object> m = base(hit.docId(), hit.docTitle(), hit.sectionPath(), hit.content());
-            m.put("vectorDistance", hit.distance());
-            m.put("bothChannels", false);
-            merged.put(hit.id(), m);
+        if (!"keyword".equals(mode)) {
+            float[] queryVec = embeddingClient.embed(query);
+            List<DocumentStore.VectorHit> hits = store.searchByVector(queryVec, topK);
+            for (int i = 0; i < hits.size(); i++) {
+                DocumentStore.VectorHit hit = hits.get(i);
+                Map<String, Object> m = base(hit.id(), hit.docId(), hit.docTitle(), hit.sectionPath(), hit.content());
+                m.put("vectorDistance", hit.distance());
+                m.put("bothChannels", false);
+                merged.put(hit.id(), m);
+                vectorRank.put(hit.id(), i + 1);
+            }
         }
 
         // 通道 2：关键词召回——分词后多词 OR 匹配（v1 整句 trigram 的教训见 DocumentStore）
         // 过滤：单字 token LIKE 命中面太宽（"的""是"满库都是），只留 2 字以上；去重后限 8 个防 SQL 过长
-        List<String> tokens = HashEmbeddingClient.tokenize(query).stream()
-                .filter(t -> t.length() >= 2)
-                .distinct()
-                .limit(8)
-                .toList();
-        for (DocumentStore.KeywordHit hit : store.searchByKeyword(tokens, topK)) {
-            Map<String, Object> existing = merged.get(hit.id());
-            if (existing != null) {
-                existing.put("bothChannels", true);
-                existing.put("keywordHits", hit.hits());
-            } else {
-                Map<String, Object> m = base(hit.docId(), hit.docTitle(), hit.sectionPath(), hit.content());
-                m.put("keywordHits", hit.hits());
-                m.put("bothChannels", false);
-                merged.put(hit.id(), m);
+        if (!"vector".equals(mode)) {
+            List<String> tokens = HashEmbeddingClient.tokenize(query).stream()
+                    .filter(t -> t.length() >= 2)
+                    .distinct()
+                    .limit(8)
+                    .toList();
+            List<DocumentStore.KeywordHit> hits = store.searchByKeyword(tokens, topK);
+            for (int i = 0; i < hits.size(); i++) {
+                DocumentStore.KeywordHit hit = hits.get(i);
+                keywordRank.put(hit.id(), i + 1);
+                Map<String, Object> m = merged.get(hit.id());
+                if (m != null) {
+                    m.put("bothChannels", true);
+                    m.put("keywordHits", hit.hits());
+                } else {
+                    m = base(hit.id(), hit.docId(), hit.docTitle(), hit.sectionPath(), hit.content());
+                    m.put("keywordHits", hit.hits());
+                    m.put("bothChannels", false);
+                    merged.put(hit.id(), m);
+                }
             }
         }
 
-        // 排序：双通道命中 > 向量距离小 > 关键词命中词数多
         List<Map<String, Object>> result = new ArrayList<>(merged.values());
-        result.sort((a, b) -> {
-            boolean ab = (boolean) a.get("bothChannels");
-            boolean bb = (boolean) b.get("bothChannels");
-            if (ab != bb) {
-                return ab ? -1 : 1;
-            }
-            int ka = a.get("keywordHits") == null ? 0 : (int) a.get("keywordHits");
-            int kb = b.get("keywordHits") == null ? 0 : (int) b.get("keywordHits");
-            if (ka != kb) {
-                return Integer.compare(kb, ka);
-            }
-            double da = a.get("vectorDistance") == null ? 2 : (double) a.get("vectorDistance");
-            double db = b.get("vectorDistance") == null ? 2 : (double) b.get("vectorDistance");
-            return Double.compare(da, db);
-        });
+
+        if ("hybrid".equals(mode)) {
+            // RRF 融合排序：score = Σ 1/(K + rank)，K=60 为论文常用平滑常数。
+            // v1 硬排序（双通道优先）是评估用例 8 暴露的缺陷——关键词通道的宽泛命中
+            // 会把向量通道第 1 名挤出 top4；RRF 按排名融合，不偏袒任何通道。
+            final int K = 60;
+            Map<Long, Double> rrf = new LinkedHashMap<>();
+            vectorRank.forEach((id, rank) -> rrf.merge(id, 1.0 / (K + rank), Double::sum));
+            keywordRank.forEach((id, rank) -> rrf.merge(id, 1.0 / (K + rank), Double::sum));
+            result.sort((a, b) -> Double.compare(
+                    rrf.getOrDefault(chunkId(b), 0.0), rrf.getOrDefault(chunkId(a), 0.0)));
+            result.forEach(m -> m.put("rrfScore",
+                    String.format("%.5f", rrf.getOrDefault(chunkId(m), 0.0))));
+        } else if ("keyword".equals(mode)) {
+            result.sort((a, b) -> Integer.compare(
+                    keywordRank.getOrDefault(chunkId(a), 99), keywordRank.getOrDefault(chunkId(b), 99)));
+        } else {
+            result.sort((a, b) -> Double.compare(
+                    a.get("vectorDistance") == null ? 2 : (double) a.get("vectorDistance"),
+                    b.get("vectorDistance") == null ? 2 : (double) b.get("vectorDistance")));
+        }
         return result.subList(0, Math.min(topK, result.size()));
     }
 
-    private Map<String, Object> base(String docId, String docTitle, String sectionPath, String content) {
+    private long chunkId(Map<String, Object> m) {
+        return ((Number) m.get("chunkId")).longValue();
+    }
+
+    private Map<String, Object> base(long id, String docId, String docTitle, String sectionPath, String content) {
         Map<String, Object> m = new LinkedHashMap<>();
+        m.put("chunkId", id);
         m.put("docId", docId);
         m.put("docTitle", docTitle);
         m.put("sectionPath", sectionPath);

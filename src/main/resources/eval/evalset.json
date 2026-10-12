@@ -1,0 +1,26 @@
+{
+  "version": "v1",
+  "description": "阶段3标准问答评估集 v1：20 条。ground truth 用 mustContain 关键词判定（任一命中即算相关 chunk）。type=NEGATIVE 的条目是'资料中不存在'的问题，不参与 recall/MRR 统计，用于语义验收时检验模型是否回答'资料中未提及'。",
+  "items": [
+    {"id": 1,  "type": "FACT", "question": "华信银行的逾期文件第3列是什么？",           "docId": "huaxin_eod_format_v1", "mustContain": ["逾期天数"],        "note": "阶段1验收原题，精确列号"},
+    {"id": 2,  "type": "FACT", "question": "华信银行逾期文件的第6列有哪些取值？",        "docId": "huaxin_eod_format_v1", "mustContain": ["M4PLUS"],          "note": "逾期阶段枚举"},
+    {"id": 3,  "type": "RULE", "question": "日末文件的命名规则是什么？",               "docId": "huaxin_eod_format_v1", "mustContain": ["机构编号_yyyyMMdd", "文件类型缩写"], "note": "文件命名格式串"},
+    {"id": 4,  "type": "RULE", "question": "日末文件用什么编码和分隔符？",             "docId": "huaxin_eod_format_v1", "mustContain": ["GBK", "竖线"],     "note": "编码+分隔符双要点"},
+    {"id": 5,  "type": "FACT", "question": "华信银行单笔代收的限额是多少？",           "docId": "huaxin_corp_api_v1",   "mustContain": ["500 万", "500万"], "note": "单笔与日累计限额"},
+    {"id": 6,  "type": "FACT", "question": "华信银行代收接口的路径是什么？",           "docId": "huaxin_corp_api_v1",   "mustContain": ["/v1/collections/single"], "note": "接口路径"},
+    {"id": 7,  "type": "FACT", "question": "华信银行代付接口的手续费承担字段是什么？",   "docId": "huaxin_corp_api_v1",   "mustContain": ["feeFlag"],         "note": "字段名英文原文"},
+    {"id": 8,  "type": "RULE", "question": "华信银行请求头的时间戳格式是什么？",         "docId": "huaxin_corp_api_v1",   "mustContain": ["yyyyMMddHHmmss"],  "note": "请求头字段表"},
+    {"id": 9,  "type": "RULE", "question": "华信银行的签名是怎么计算的？",             "docId": "huaxin_corp_api_v1",   "mustContain": ["SHA-256"],         "note": "签名规则段落"},
+    {"id": 10, "type": "FACT", "question": "错误码 SIGN_ERROR 是什么含义？",           "docId": "huaxin_corp_api_v1",   "mustContain": ["验签失败"],        "note": "错误码表"},
+    {"id": 11, "type": "FACT", "question": "华信银行交易查询接口支持按什么条件查询？",    "docId": "huaxin_corp_api_v1",   "mustContain": ["outBizNo", "hxSeqNo"], "note": "查询条件"},
+    {"id": 12, "type": "RULE", "question": "交易状态是 PROCESSING 时该怎么处理？",      "docId": "huaxin_corp_api_v1",   "mustContain": ["不得直接作为失败"], "note": "状态处理规则"},
+    {"id": 13, "type": "RULE", "question": "机构发现日末文件金额不一致时多久内反馈？",    "docId": "huaxin_eod_format_v1", "mustContain": ["T+1", "18:00"],    "note": "差错处理时限"},
+    {"id": 14, "type": "RULE", "question": "逾期阶段 M3 覆盖逾期多少天？",             "docId": "huaxin_eod_format_v1", "mustContain": ["61-90"],           "note": "阶段划分规则"},
+    {"id": 15, "type": "RULE", "question": "瑞金租赁用什么签名算法？",                "docId": "ruijin_api_v1",        "mustContain": ["RSA2"],            "note": "与华信对比题：防止跨文档混淆"},
+    {"id": 16, "type": "FACT", "question": "瑞金租赁放款指令接口的路径是什么？",         "docId": "ruijin_api_v1",        "mustContain": ["/openapi/loan/order/create"], "note": "接口路径"},
+    {"id": 17, "type": "RULE", "question": "瑞金租赁的对账单文件是什么格式？",          "docId": "ruijin_api_v1",        "mustContain": ["CSV", "逗号"],     "note": "对账单格式"},
+    {"id": 18, "type": "FACT", "question": "瑞金租赁对账单的第3列是什么字段？",         "docId": "ruijin_api_v1",        "mustContain": ["settle_amount"],   "note": "陷阱题：与华信逾期文件第3列区分资方"},
+    {"id": 19, "type": "RULE", "question": "瑞金租赁异步通知的重试策略是什么？",         "docId": "ruijin_api_v1",        "mustContain": ["重试 5 次", "最多重试"], "note": "异步通知规则"},
+    {"id": 20, "type": "NEGATIVE", "question": "华信银行的逾期罚息利率是多少？",        "docId": null,                   "mustContain": [],                  "note": "资料中不存在，recall 不统计；语义验收看模型是否答'资料中未提及'"}
+  ]
+}
