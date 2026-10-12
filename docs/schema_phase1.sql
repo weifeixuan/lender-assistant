@@ -3,6 +3,10 @@
 -- 执行方式: docker exec -i lender-pg psql -U postgres -d lender_assistant < schema_phase1.sql
 -- =============================================================
 
+-- pgvector: 向量类型与相似度算子（<=> 余弦距离）。必须建在 lender_assistant 库——
+-- vector 扩展不跨库，落到 postgres 库里本库照样报 "type vector does not exist"。
+CREATE EXTENSION IF NOT EXISTS vector;
+
 -- pg_trgm: 三元组(trigram)模糊匹配扩展。
 -- 用途: 阶段 2 混合检索的"关键词通道"——向量检索管语义，trigram 管
 -- 精确字段子串(如"逾期文件第3列"这类必须命中原词的查询)。

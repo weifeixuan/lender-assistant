@@ -1,0 +1,54 @@
+# 资方接入智能助手：一键起全套（应用 + pgvector 数据库）
+#
+# 用法：
+#   docker compose up -d          # 首次会构建应用镜像（约几分钟）
+#   打开 http://localhost:8080    # 操作台
+#
+# 国内网络：构建前设置镜像前缀，如
+#   REGISTRY_PREFIX=docker.1ms.run/ docker compose up -d
+
+services:
+  lender-pg:
+    image: pgvector/pgvector:pg16
+    container_name: lender-pg-compose
+    environment:
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: lender_assistant
+    ports:
+      # 宿主机用 15432，避开本地开发容器可能占用的 5432
+      - "15432:5432"
+    volumes:
+      # 首次初始化时自动建表（doc_chunk / field_mapping / llm_call_log）
+      - ./docs/schema_phase1.sql:/docker-entrypoint-initdb.d/01_schema.sql:ro
+      - ./docs/schema_phase4.sql:/docker-entrypoint-initdb.d/02_schema_phase4.sql:ro
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d lender_assistant"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  app:
+    build:
+      context: .
+      args:
+        REGISTRY_PREFIX: ${REGISTRY_PREFIX:-}
+    environment:
+      # 数据库指向 compose 内部服务名，不依赖宿主机端口
+      SPRING_DATASOURCE_URL: jdbc:postgresql://lender-pg:5432/lender_assistant
+      SPRING_DATASOURCE_USERNAME: postgres
+      SPRING_DATASOURCE_PASSWORD: postgres
+      # 模型端口默认 Mock（无需任何 key 即可跑通全链路）；有 key 后在这里切
+      RAG_CHAT_PROVIDER: ${RAG_CHAT_PROVIDER:-mock}
+      RAG_EMBEDDING_PROVIDER: ${RAG_EMBEDDING_PROVIDER:-hash}
+      RAG_EXTRACT_PROVIDER: ${RAG_EXTRACT_PROVIDER:-mock}
+      RAG_DRAFT_PROVIDER: ${RAG_DRAFT_PROVIDER:-mock}
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-no-key-set}
+    ports:
+      - "8080:8080"
+    depends_on:
+      lender-pg:
+        condition: service_healthy
+
+volumes:
+  pgdata:
