@@ -23,15 +23,22 @@ public class DeepSeekAnswerGenerator implements AnswerGenerator {
 
     private final org.springframework.ai.chat.client.ChatClient chatClient;
 
-    public DeepSeekAnswerGenerator(org.springframework.ai.chat.client.ChatClient.Builder builder) {
+    public DeepSeekAnswerGenerator(org.springframework.ai.chat.client.ChatClient.Builder builder,
+                                   com.lender.assistant.tools.LenderQueryTools lenderTools) {
         this.chatClient = builder.build();
+        this.lenderTools = lenderTools;
     }
+
+    private final com.lender.assistant.tools.LenderQueryTools lenderTools;
 
     @Override
     public void generate(String systemPrompt, String userPrompt, Consumer<String> onDelta) {
         Flux<String> flux = chatClient.prompt()
                 .system(systemPrompt)
                 .user(userPrompt)
+                // Function Calling：把业务查询工具挂给模型，由模型按工具 description
+                // 自主决定是否调用（真 Function Calling）。Mock 版的规则模拟见 ToolIntentRouter。
+                .tools(lenderTools)
                 .stream()
                 .content()
                 .timeout(Duration.ofSeconds(60));

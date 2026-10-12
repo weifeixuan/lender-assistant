@@ -11,6 +11,10 @@ import java.util.function.Consumer;
  * 用途与 HashEmbeddingClient 完全同构——key 没到位时让
  * "检索 → 拼 Prompt → 生成 → SSE 流式"整条管道可开发、可调试、可验收管道本身。
  *
+ * 工具路径（阶段4）：问题命中工具意图时，真实调用 LenderQueryTools 并把
+ * 工具结果直接编入回答，回答显式带【工具调用】标记——决策由 ToolIntentRouter
+ * 规则模拟（真实决策在 DeepSeek 版的 Spring AI .tools()）。
+ *
  * 诚实声明（对用户与面试官都一样）：它产生的是"检索结果摘要"，不是语义回答，
  * 不能用于评估回答质量——阶段 2 的 5 个验收用例要在 key 到位、切 deepseek 后复测。
  *
@@ -21,8 +25,39 @@ import java.util.function.Consumer;
 @ConditionalOnProperty(name = "rag.chat.provider", havingValue = "mock", matchIfMissing = true)
 public class MockAnswerGenerator implements AnswerGenerator {
 
+    private final com.lender.assistant.tools.LenderQueryTools lenderTools;
+    private final com.lender.assistant.tools.ToolIntentRouter toolRouter;
+
+    public MockAnswerGenerator(com.lender.assistant.tools.LenderQueryTools lenderTools,
+                               com.lender.assistant.tools.ToolIntentRouter toolRouter) {
+        this.lenderTools = lenderTools;
+        this.toolRouter = toolRouter;
+    }
+
     @Override
     public void generate(String systemPrompt, String userPrompt, Consumer<String> onDelta) {
+        streamAnswer(buildAnswer(userPrompt), onDelta);
+    }
+
+    private String buildAnswer(String userPrompt) {
+        // 问题在 userPrompt 末尾的【问题】行（QaService 约定的结构）
+        String question = extractQuestion(userPrompt);
+
+        // 工具意图 → 模拟"模型决定调用" → 真实查库 → 结果直接回答
+        // knownDocIds 惰性求值：普通问题零额外查询
+        var intent = toolRouter.route(question, lenderTools::knownDocIds);
+        if (intent.isPresent()) {
+            var i = intent.get();
+            String toolResult = "listIngestedDocs".equals(i.toolName())
+                    ? lenderTools.listIngestedDocs()
+                    : lenderTools.getDocChunkStats(i.argument());
+            return "【工具调用】" + i.toolName() + "（Mock 模式：规则模拟模型决策，"
+                    + "DeepSeek 版由模型按工具 description 自主决定）\n"
+                    + "调用理由: " + i.reason() + "\n\n"
+                    + "工具返回：\n" + toolResult + "\n\n"
+                    + "（以上为工具直查数据库的真实结果；语义总结需配置 DeepSeek key）";
+        }
+
         // userPrompt 的结构由 QaService 约定：铁律提示 + 【来源 N】上下文 + 问题。
         // Mock 直接基于上下文段落拼一个摘要式回答（截取每条来源的前 60 字）。
         StringBuilder answer = new StringBuilder();
@@ -45,8 +80,15 @@ public class MockAnswerGenerator implements AnswerGenerator {
             }
         }
         answer.append("\n（配置 DeepSeek key 并设置 rag.chat.provider=deepseek 后，这里将替换为真实模型回答）");
+        return answer.toString();
+    }
 
-        String full = answer.toString();
+    private String extractQuestion(String userPrompt) {
+        int idx = userPrompt.indexOf("【问题】");
+        return idx < 0 ? "" : userPrompt.substring(idx + "【问题】".length()).trim();
+    }
+
+    private void streamAnswer(String full, Consumer<String> onDelta) {
         for (int i = 0; i < full.length(); i += 12) {
             onDelta.accept(full.substring(i, Math.min(i + 12, full.length())));
             try {
