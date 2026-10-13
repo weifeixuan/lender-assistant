@@ -39,7 +39,7 @@ docx/txt 上传 ─▶ 解析(POI) ─▶ 切分(按章节/固定) ─▶ 向量
 ### 方式一：Docker Compose 一键起（推荐）
 
 ```bash
-git clone <本仓库地址>
+git clone https://github.com/weifeixuan/lender-assistant.git
 cd lender-assistant
 
 # 国内网络先设镜像前缀（可选）
