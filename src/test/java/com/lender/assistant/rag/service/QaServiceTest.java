@@ -64,7 +64,7 @@ class QaServiceTest {
         com.lender.assistant.resilience.ResilientLlmExecutor executor =
                 new com.lender.assistant.resilience.ResilientLlmExecutor(
                         new com.lender.assistant.resilience.LlmCallLogger(
-                                mock(org.springframework.jdbc.core.JdbcTemplate.class)),
+                                mock(com.lender.assistant.resilience.mapper.LlmCallLogMapper.class)),
                         3, 10, 2, false);
         qaService = new QaServiceImpl(searchService, generator, executor);
     }
@@ -164,7 +164,7 @@ class QaServiceTest {
         QaService svc = new QaServiceImpl(searchService, broken,
                 new com.lender.assistant.resilience.ResilientLlmExecutor(
                         new com.lender.assistant.resilience.LlmCallLogger(
-                                mock(org.springframework.jdbc.core.JdbcTemplate.class)),
+                                mock(com.lender.assistant.resilience.mapper.LlmCallLogMapper.class)),
                         3, 10, 2, false));
 
         assertDoesNotThrow(() -> svc.answer("问题", 4),

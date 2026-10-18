@@ -5,11 +5,11 @@ import com.lender.assistant.extract.FieldMappingStore;
 import com.lender.assistant.extract.model.FieldMapping;
 import com.lender.assistant.resilience.LlmCallLogger;
 import com.lender.assistant.resilience.ResilientLlmExecutor;
+import com.lender.assistant.resilience.mapper.LlmCallLogMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentMatchers;
-import org.springframework.jdbc.core.JdbcTemplate;
 
 import java.util.List;
 import java.util.function.Supplier;
@@ -34,7 +34,7 @@ class DraftServiceTest {
         store = mock(FieldMappingStore.class);
         // 真实留痕器（supplier 真执行、异常真上抛）+ mock 掉 JDBC；
         // 韧性执行器也用真实实例（chaos=false），验证 scene=draft 确实经过它
-        logger = spy(new LlmCallLogger(mock(JdbcTemplate.class)));
+        logger = spy(new LlmCallLogger(mock(LlmCallLogMapper.class)));
         ResilientLlmExecutor executor = new ResilientLlmExecutor(logger, 3, 30, 2, false);
         service = new DraftServiceImpl(generator, store, executor);
 

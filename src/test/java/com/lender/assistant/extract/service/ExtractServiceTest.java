@@ -4,12 +4,12 @@ import com.lender.assistant.extract.model.FieldMapping;
 import com.lender.assistant.extract.service.impl.ExtractServiceImpl;
 import com.lender.assistant.resilience.LlmCallLogger;
 import com.lender.assistant.resilience.ResilientLlmExecutor;
+import com.lender.assistant.resilience.mapper.LlmCallLogMapper;
 import com.lender.assistant.rag.store.DocumentStore;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
-import org.springframework.jdbc.core.JdbcTemplate;
 
 import java.util.List;
 import java.util.function.Supplier;
@@ -38,7 +38,7 @@ class ExtractServiceTest {
         // 真实韧性执行器（chaos=false 直通）+ mock JDBC 的留痕器：
         // 编排契约（supplier 真执行、异常真上抛）必须走真实代码路径
         executor = spy(new ResilientLlmExecutor(
-                new LlmCallLogger(mock(JdbcTemplate.class)), 3, 10, 2, false));
+                new LlmCallLogger(mock(LlmCallLogMapper.class)), 3, 10, 2, false));
         service = new ExtractServiceImpl(generator, store, executor);
 
         when(generator.name()).thenReturn("Mock");
