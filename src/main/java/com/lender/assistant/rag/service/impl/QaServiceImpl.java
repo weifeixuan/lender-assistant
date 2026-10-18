@@ -1,6 +1,8 @@
-package com.lender.assistant.rag.qa;
+package com.lender.assistant.rag.service.impl;
 
 import com.lender.assistant.rag.service.SearchService;
+import com.lender.assistant.rag.service.QaService;
+import com.lender.assistant.rag.service.AnswerGenerator;
 import jakarta.annotation.PreDestroy;
 import org.springframework.stereotype.Service;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
@@ -27,7 +29,7 @@ import java.util.concurrent.Executors;
  * - error:   纯文本，服务端异常信息（之后 completeWithError 断流）
  */
 @Service
-public class QaService {
+public class QaServiceImpl implements QaService {
 
     private final SearchService searchService;
     private final AnswerGenerator generator;
@@ -44,13 +46,14 @@ public class QaService {
         return t;
     });
 
-    public QaService(SearchService searchService, AnswerGenerator generator,
+    public QaServiceImpl(SearchService searchService, AnswerGenerator generator,
                      com.lender.assistant.resilience.ResilientLlmExecutor executor) {
         this.searchService = searchService;
         this.generator = generator;
         this.executor = executor;
     }
 
+    @Override
     public SseEmitter answer(String question, int topK) {
         // 120s 超时：覆盖"检索 + 模型生成全流程"，DeepSeek 正常问答远快于这个值
         SseEmitter emitter = new SseEmitter(120_000L);

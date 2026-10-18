@@ -1,4 +1,4 @@
-package com.lender.assistant.rag.qa;
+package com.lender.assistant.rag.service;
 
 import com.lender.assistant.rag.store.DocumentStore;
 import com.lender.assistant.tools.LenderQueryTools;

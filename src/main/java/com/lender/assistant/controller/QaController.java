@@ -1,6 +1,6 @@
 package com.lender.assistant.controller;
 
-import com.lender.assistant.rag.qa.QaService;
+import com.lender.assistant.rag.service.QaService;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;

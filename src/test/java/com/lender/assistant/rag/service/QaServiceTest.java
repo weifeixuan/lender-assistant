@@ -1,6 +1,7 @@
-package com.lender.assistant.rag.qa;
+package com.lender.assistant.rag.service;
 
 import com.lender.assistant.rag.service.SearchService;
+import com.lender.assistant.rag.service.impl.QaServiceImpl;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -65,7 +66,7 @@ class QaServiceTest {
                         new com.lender.assistant.resilience.LlmCallLogger(
                                 mock(org.springframework.jdbc.core.JdbcTemplate.class)),
                         3, 10, 2, false);
-        qaService = new QaService(searchService, generator, executor);
+        qaService = new QaServiceImpl(searchService, generator, executor);
     }
 
     private Map<String, Object> hit(long chunkId, String title, String section, String content) {
@@ -160,7 +161,7 @@ class QaServiceTest {
                 return "Broken";
             }
         };
-        QaService svc = new QaService(searchService, broken,
+        QaService svc = new QaServiceImpl(searchService, broken,
                 new com.lender.assistant.resilience.ResilientLlmExecutor(
                         new com.lender.assistant.resilience.LlmCallLogger(
                                 mock(org.springframework.jdbc.core.JdbcTemplate.class)),
