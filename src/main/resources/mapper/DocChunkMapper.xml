@@ -1,0 +1,104 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<!--
+  doc_chunk 读写。pgvector 语法集中在本文件（§6.7）：
+  向量以文本字面量 "[0.1,...]" 传入，统一 CAST(... AS vector)；
+  距离排序用 <=> 余弦距离操作符（HNSW 索引在此生效）。
+  结果映射用位置式 <constructor>（select 列顺序 == record 组件顺序），
+  不依赖 argNameBasedConstructorAutoMapping。
+-->
+<mapper namespace="com.lender.assistant.rag.mapper.DocChunkMapper">
+
+    <resultMap id="docSummaryMap" type="com.lender.assistant.rag.model.DocSummary">
+        <constructor>
+            <arg column="doc_id" javaType="java.lang.String"/>
+            <arg column="doc_title" javaType="java.lang.String"/>
+            <arg column="chunk_count" javaType="int"/>
+        </constructor>
+    </resultMap>
+
+    <resultMap id="chunkLineMap" type="com.lender.assistant.rag.model.DocChunkLine">
+        <constructor>
+            <arg column="doc_title" javaType="java.lang.String"/>
+            <arg column="section_path" javaType="java.lang.String"/>
+            <arg column="content" javaType="java.lang.String"/>
+        </constructor>
+    </resultMap>
+
+    <resultMap id="vectorHitMap" type="com.lender.assistant.rag.model.VectorHit">
+        <constructor>
+            <arg column="id" javaType="long"/>
+            <arg column="doc_id" javaType="java.lang.String"/>
+            <arg column="doc_title" javaType="java.lang.String"/>
+            <arg column="section_path" javaType="java.lang.String"/>
+            <arg column="content" javaType="java.lang.String"/>
+            <arg column="distance" javaType="double"/>
+        </constructor>
+    </resultMap>
+
+    <resultMap id="keywordHitMap" type="com.lender.assistant.rag.model.KeywordHit">
+        <constructor>
+            <arg column="id" javaType="long"/>
+            <arg column="doc_id" javaType="java.lang.String"/>
+            <arg column="doc_title" javaType="java.lang.String"/>
+            <arg column="section_path" javaType="java.lang.String"/>
+            <arg column="content" javaType="java.lang.String"/>
+            <arg column="hits" javaType="int"/>
+        </constructor>
+    </resultMap>
+
+    <delete id="deleteByDoc">
+        DELETE FROM doc_chunk WHERE doc_id = #{docId}
+    </delete>
+
+    <!-- 单条多行 INSERT：一次往返写完整文档（比逐行 BATCH 少 N-1 次网络往返）。
+         与旧 DocumentStore 的循环 INSERT 语义等价，唯一区别是 SQL 条数 -->
+    <insert id="insertChunks">
+        INSERT INTO doc_chunk
+            (doc_id, doc_title, source_path, section_path, chunk_index, content, char_count, embedding)
+        VALUES
+        <foreach collection="rows" item="r" separator=",">
+            (#{docId}, #{docTitle}, #{sourcePath}, #{r.sectionPath}, #{r.index},
+             #{r.content}, #{r.charCount}, CAST(#{r.embedding} AS vector))
+        </foreach>
+    </insert>
+
+    <select id="countByDoc" resultType="int">
+        SELECT COUNT(*) FROM doc_chunk WHERE doc_id = #{docId}
+    </select>
+
+    <select id="listDocuments" resultMap="docSummaryMap">
+        SELECT doc_id, doc_title, COUNT(*) AS chunk_count
+        FROM doc_chunk
+        GROUP BY doc_id, doc_title
+        ORDER BY doc_id
+    </select>
+
+    <select id="listChunkLines" resultMap="chunkLineMap">
+        SELECT doc_title, section_path, content
+        FROM doc_chunk
+        WHERE doc_id = #{docId}
+        ORDER BY chunk_index
+    </select>
+
+    <select id="searchByVector" resultMap="vectorHitMap">
+        SELECT id, doc_id, doc_title, section_path, content,
+               embedding &lt;=&gt; CAST(#{vec} AS vector) AS distance
+        FROM doc_chunk
+        ORDER BY embedding &lt;=&gt; CAST(#{vec} AS vector)
+        LIMIT #{topK}
+    </select>
+
+    <!-- 分词后多词 OR 匹配，按命中词数 hits 降序；同分短 chunk 优先（char_count 升序）。
+         旧 v1 整句 trigram 的教训见 SearchServiceImpl 注释。词值一律 #{} 参数化，无注入面 -->
+    <select id="searchByKeyword" resultMap="keywordHitMap">
+        SELECT id, doc_id, doc_title, section_path, content,
+               (<foreach collection="tokens" item="t" separator=" + ">(CASE WHEN content LIKE CONCAT('%', #{t}, '%') THEN 1 ELSE 0 END)</foreach>) AS hits
+        FROM doc_chunk
+        WHERE <foreach collection="tokens" item="t" separator=" OR ">content LIKE CONCAT('%', #{t}, '%')</foreach>
+        ORDER BY hits DESC, char_count ASC
+        LIMIT #{topK}
+    </select>
+
+</mapper>
