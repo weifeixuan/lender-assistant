@@ -1,6 +1,7 @@
 package com.lender.assistant.rag.service;
 
-import com.lender.assistant.rag.store.DocumentStore;
+import com.lender.assistant.rag.model.DocSummary;
+import com.lender.assistant.rag.service.DocumentService;
 import com.lender.assistant.tools.LenderQueryTools;
 import com.lender.assistant.tools.ToolIntentRouter;
 import org.junit.jupiter.api.BeforeEach;
@@ -19,16 +20,16 @@ import static org.mockito.Mockito.*;
  */
 class MockToolAnswerTest {
 
-    private DocumentStore store;
+    private DocumentService documentService;
     private MockAnswerGenerator generator;
 
     @BeforeEach
     void setUp() {
-        store = mock(DocumentStore.class);
-        when(store.listDocuments()).thenReturn(List.of(
-                new DocumentStore.DocSummary("ruijin_api_v1", "瑞金租赁_资金对接接口文档_v1.0", 5)));
-        when(store.countByDoc("ruijin_api_v1")).thenReturn(5);
-        generator = new MockAnswerGenerator(new LenderQueryTools(store), new ToolIntentRouter());
+        documentService = mock(DocumentService.class);
+        when(documentService.listDocuments()).thenReturn(List.of(
+                new DocSummary("ruijin_api_v1", "瑞金租赁_资金对接接口文档_v1.0", 5)));
+        when(documentService.countByDoc("ruijin_api_v1")).thenReturn(5);
+        generator = new MockAnswerGenerator(new LenderQueryTools(documentService), new ToolIntentRouter());
     }
 
     private String userPromptWith(String question) {
@@ -49,7 +50,7 @@ class MockToolAnswerTest {
         assertTrue(answer.contains("工具调用"), "必须显式标注走了工具调用（溯源红线）");
         assertTrue(answer.contains("listIngestedDocs"));
         assertTrue(answer.contains("ruijin_api_v1"), "回答内容必须来自真实工具结果");
-        verify(store).listDocuments();
+        verify(documentService).listDocuments();
     }
 
     @Test
@@ -59,7 +60,7 @@ class MockToolAnswerTest {
 
         assertTrue(answer.contains("getDocChunkStats"));
         assertTrue(answer.contains("5"));
-        verify(store).countByDoc("ruijin_api_v1");
+        verify(documentService).countByDoc("ruijin_api_v1");
     }
 
     @Test
@@ -69,7 +70,7 @@ class MockToolAnswerTest {
 
         assertFalse(answer.contains("工具调用"));
         assertTrue(answer.contains("Mock 模式回答"));
-        verify(store, never()).listDocuments();
-        verify(store, never()).countByDoc(anyString());
+        verify(documentService, never()).listDocuments();
+        verify(documentService, never()).countByDoc(anyString());
     }
 }

@@ -5,7 +5,8 @@ import com.lender.assistant.extract.service.impl.ExtractServiceImpl;
 import com.lender.assistant.resilience.LlmCallLogger;
 import com.lender.assistant.resilience.ResilientLlmExecutor;
 import com.lender.assistant.resilience.mapper.LlmCallLogMapper;
-import com.lender.assistant.rag.store.DocumentStore;
+import com.lender.assistant.rag.model.DocContent;
+import com.lender.assistant.rag.service.DocumentService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -27,26 +28,26 @@ import static org.mockito.Mockito.*;
 class ExtractServiceTest {
 
     private ExtractGenerator generator;
-    private DocumentStore store;
+    private DocumentService documentService;
     private ResilientLlmExecutor executor;
     private ExtractService service;
 
     @BeforeEach
     void setUp() {
         generator = mock(ExtractGenerator.class);
-        store = mock(DocumentStore.class);
+        documentService = mock(DocumentService.class);
         // 真实韧性执行器（chaos=false 直通）+ mock JDBC 的留痕器：
         // 编排契约（supplier 真执行、异常真上抛）必须走真实代码路径
         executor = spy(new ResilientLlmExecutor(
                 new LlmCallLogger(mock(LlmCallLogMapper.class)), 3, 10, 2, false));
-        service = new ExtractServiceImpl(generator, store, executor);
+        service = new ExtractServiceImpl(generator, documentService, executor);
 
         when(generator.name()).thenReturn("Mock");
         when(generator.extract(anyString(), anyString())).thenReturn(List.of(
                 new FieldMapping("gateway_url", "生产网关地址", "网关地址",
                         "https://fake-x.example.com", "网关地址 https://fake-x.example.com", 0.9)));
-        when(store.loadDocContent("doc1")).thenReturn(
-                new DocumentStore.DocContent("瑞金租赁_资金对接接口文档_v1.0",
+        when(documentService.loadDocContent("doc1")).thenReturn(
+                new DocContent("瑞金租赁_资金对接接口文档_v1.0",
                         "网关地址 https://fake-ruijin.example.com/openapi。\n接口路径 /openapi/loan/order/create。"));
     }
 
@@ -79,7 +80,7 @@ class ExtractServiceTest {
     @Test
     @DisplayName("文档不存在：给出可读异常而非 NPE")
     void missingDocGivesReadableError() {
-        when(store.loadDocContent("nope")).thenReturn(null);
+        when(documentService.loadDocContent("nope")).thenReturn(null);
         IllegalArgumentException e = assertThrows(IllegalArgumentException.class,
                 () -> service.extractFromDoc("nope"));
         assertTrue(e.getMessage().contains("nope"));

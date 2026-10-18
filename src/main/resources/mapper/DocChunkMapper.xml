@@ -91,7 +91,9 @@
     </select>
 
     <!-- 分词后多词 OR 匹配，按命中词数 hits 降序；同分短 chunk 优先（char_count 升序）。
-         旧 v1 整句 trigram 的教训见 SearchServiceImpl 注释。词值一律 #{} 参数化，无注入面 -->
+         为何用多词 OR 而非旧 v1 的整句 trigram 相似度：整句 query 越长，与任何 chunk 的相似度被稀释得越
+         低越不命中（"华信银行的逾期文件第3列是什么"整句几乎和任何 chunk 都不相似），只有拆成多词分别匹配才有效。
+         词值一律 #{} 参数化，无注入面 -->
     <select id="searchByKeyword" resultMap="keywordHitMap">
         SELECT id, doc_id, doc_title, section_path, content,
                (<foreach collection="tokens" item="t" separator=" + ">(CASE WHEN content LIKE CONCAT('%', #{t}, '%') THEN 1 ELSE 0 END)</foreach>) AS hits

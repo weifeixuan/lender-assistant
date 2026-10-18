@@ -1,9 +1,12 @@
 package com.lender.assistant.rag.service.impl;
 
+import com.lender.assistant.common.util.PgVectorUtils;
 import com.lender.assistant.rag.embedder.EmbeddingClient;
 import com.lender.assistant.rag.embedder.HashEmbeddingClient;
+import com.lender.assistant.rag.mapper.DocChunkMapper;
+import com.lender.assistant.rag.model.KeywordHit;
+import com.lender.assistant.rag.model.VectorHit;
 import com.lender.assistant.rag.service.SearchService;
-import com.lender.assistant.rag.store.DocumentStore;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
@@ -27,7 +30,7 @@ import java.util.Map;
 public class SearchServiceImpl implements SearchService {
 
     private final EmbeddingClient embeddingClient;
-    private final DocumentStore store;
+    private final DocChunkMapper docChunkMapper;
 
     /**
      * 向量通道相似度阈值：余弦距离大于该值的召回被丢弃，用于挡住"完全不相关"的命中。
@@ -36,10 +39,10 @@ public class SearchServiceImpl implements SearchService {
      */
     private final double maxDistance;
 
-    public SearchServiceImpl(EmbeddingClient embeddingClient, DocumentStore store,
+    public SearchServiceImpl(EmbeddingClient embeddingClient, DocChunkMapper docChunkMapper,
                              @Value("${rag.search.max-distance:-1}") double maxDistance) {
         this.embeddingClient = embeddingClient;
-        this.store = store;
+        this.docChunkMapper = docChunkMapper;
         this.maxDistance = maxDistance;
     }
 
@@ -65,9 +68,9 @@ public class SearchServiceImpl implements SearchService {
         // 通道 1：向量召回
         if (!"keyword".equals(mode)) {
             float[] queryVec = embeddingClient.embed(query);
-            List<DocumentStore.VectorHit> hits = store.searchByVector(queryVec, topK);
+            List<VectorHit> hits = docChunkMapper.searchByVector(PgVectorUtils.toLiteral(queryVec), topK);
             int rank = 0;
-            for (DocumentStore.VectorHit hit : hits) {
+            for (VectorHit hit : hits) {
                 if (maxDistance >= 0 && hit.distance() > maxDistance) {
                     continue;   // 超出阈值的召回丢弃（maxDistance<0 时该开关关闭）
                 }
@@ -80,7 +83,7 @@ public class SearchServiceImpl implements SearchService {
             }
         }
 
-        // 通道 2：关键词召回——分词后多词 OR 匹配（v1 整句 trigram 的教训见 DocumentStore）
+        // 通道 2：关键词召回——分词后多词 OR 匹配（整句算相似度会被长句稀释基本不命中，拆词才有效）
         // 过滤：单字 token LIKE 命中面太宽（"的""是"满库都是），只留 2 字以上；去重后限 8 个防 SQL 过长
         if (!"vector".equals(mode)) {
             List<String> tokens = HashEmbeddingClient.tokenize(query).stream()
@@ -88,9 +91,11 @@ public class SearchServiceImpl implements SearchService {
                     .distinct()
                     .limit(8)
                     .toList();
-            List<DocumentStore.KeywordHit> hits = store.searchByKeyword(tokens, topK);
+            // 空 token 守卫下沉到 Service：MyBatis <foreach> 空集合会生成非法 SQL
+            //（旧 DocumentStore 在方法内部处理 tokens.isEmpty()）
+            List<KeywordHit> hits = tokens.isEmpty() ? List.of() : docChunkMapper.searchByKeyword(tokens, topK);
             for (int i = 0; i < hits.size(); i++) {
-                DocumentStore.KeywordHit hit = hits.get(i);
+                KeywordHit hit = hits.get(i);
                 keywordRank.put(hit.id(), i + 1);
                 Map<String, Object> m = merged.get(hit.id());
                 if (m != null) {

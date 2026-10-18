@@ -1,11 +1,14 @@
 package com.lender.assistant.rag.controller;
 
+import com.lender.assistant.common.util.PgVectorUtils;
 import com.lender.assistant.rag.embedder.EmbeddingClient;
+import com.lender.assistant.rag.model.ChunkRow;
+import com.lender.assistant.rag.model.DocSummary;
 import com.lender.assistant.rag.parser.DocumentParser;
+import com.lender.assistant.rag.service.DocumentService;
 import com.lender.assistant.rag.service.SearchService;
 import com.lender.assistant.rag.splitter.Chunk;
 import com.lender.assistant.rag.splitter.ChunkSplitter;
-import com.lender.assistant.rag.store.DocumentStore;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -35,16 +38,16 @@ public class DocumentAdminController {
     private final List<DocumentParser> parsers;
     private final ChunkSplitter splitter;
     private final EmbeddingClient embeddingClient;
-    private final DocumentStore store;
+    private final DocumentService documentService;
     private final SearchService searchService;
 
     public DocumentAdminController(List<DocumentParser> parsers, ChunkSplitter splitter,
-                                   EmbeddingClient embeddingClient, DocumentStore store,
+                                   EmbeddingClient embeddingClient, DocumentService documentService,
                                    SearchService searchService) {
         this.parsers = parsers;
         this.splitter = splitter;
         this.embeddingClient = embeddingClient;
-        this.store = store;
+        this.documentService = documentService;
         this.searchService = searchService;
     }
 
@@ -68,39 +71,39 @@ public class DocumentAdminController {
         List<Chunk> chunks = splitter.split(parsed);
         long t2 = System.currentTimeMillis();
 
-        List<DocumentStore.ChunkRow> rows = new ArrayList<>(chunks.size());
+        List<ChunkRow> rows = new ArrayList<>(chunks.size());
         for (Chunk c : chunks) {
             // 拼接 sectionPath 进向量化输入：标题是强语义信号，丢掉太可惜
             String embedInput = c.sectionPath() == null || c.sectionPath().isEmpty()
                     ? c.content()
                     : c.sectionPath() + "\n" + c.content();
-            rows.add(new DocumentStore.ChunkRow(c.sectionPath(), c.index(), c.content(),
-                    c.charCount(), embeddingClient.embed(embedInput)));
+            rows.add(new ChunkRow(c.sectionPath(), c.index(), c.content(),
+                    c.charCount(), PgVectorUtils.toLiteral(embeddingClient.embed(embedInput))));
         }
         long t3 = System.currentTimeMillis();
 
-        store.replaceDocument(docId, stripExtension(fileName), fileName, rows);
+        documentService.replaceDocument(docId, stripExtension(fileName), fileName, rows);
         long t4 = System.currentTimeMillis();
 
         Map<String, Object> result = new HashMap<>();
         result.put("docId", docId);
         result.put("blocks", parsed.blocks().size());
         result.put("chunkCount", rows.size());
-        result.put("avgChunkChars", rows.stream().mapToInt(DocumentStore.ChunkRow::charCount).average().orElse(0));
+        result.put("avgChunkChars", rows.stream().mapToInt(ChunkRow::charCount).average().orElse(0));
         result.put("millis", Map.of("parse", t1 - t0, "split", t2 - t1, "embed", t3 - t2, "store", t4 - t3));
         result.put("embeddingProvider", embeddingClient.getClass().getSimpleName());
         return result;
     }
 
     @GetMapping
-    public List<DocumentStore.DocSummary> list() {
-        return store.listDocuments();
+    public List<DocSummary> list() {
+        return documentService.listDocuments();
     }
 
     @DeleteMapping("/{docId}")
     public Map<String, Object> delete(@PathVariable String docId) {
-        int before = store.countByDoc(docId);
-        store.deleteByDoc(docId);
+        int before = documentService.countByDoc(docId);
+        documentService.deleteByDoc(docId);
         return Map.of("docId", docId, "deletedChunks", before);
     }
 

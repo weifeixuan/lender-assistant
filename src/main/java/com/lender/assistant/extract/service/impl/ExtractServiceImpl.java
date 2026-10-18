@@ -3,8 +3,9 @@ package com.lender.assistant.extract.service.impl;
 import com.lender.assistant.extract.model.FieldMapping;
 import com.lender.assistant.extract.service.ExtractGenerator;
 import com.lender.assistant.extract.service.ExtractService;
+import com.lender.assistant.rag.model.DocContent;
+import com.lender.assistant.rag.service.DocumentService;
 import com.lender.assistant.resilience.ResilientLlmExecutor;
-import com.lender.assistant.rag.store.DocumentStore;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
@@ -20,18 +21,18 @@ import java.util.List;
 public class ExtractServiceImpl implements ExtractService {
 
     private final ExtractGenerator generator;
-    private final DocumentStore store;
+    private final DocumentService documentService;
     private final ResilientLlmExecutor executor;
 
-    public ExtractServiceImpl(ExtractGenerator generator, DocumentStore store, ResilientLlmExecutor executor) {
+    public ExtractServiceImpl(ExtractGenerator generator, DocumentService documentService, ResilientLlmExecutor executor) {
         this.generator = generator;
-        this.store = store;
+        this.documentService = documentService;
         this.executor = executor;
     }
 
     @Override
     public List<FieldMapping> extractFromDoc(String docId) {
-        DocumentStore.DocContent doc = store.loadDocContent(docId);
+        DocContent doc = documentService.loadDocContent(docId);
         if (doc == null || doc.text().isBlank()) {
             throw new IllegalArgumentException("文档不存在或未入库: " + docId);
         }
