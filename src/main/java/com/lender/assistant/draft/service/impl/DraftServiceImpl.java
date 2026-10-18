@@ -2,8 +2,8 @@ package com.lender.assistant.draft.service.impl;
 
 import com.lender.assistant.draft.service.DraftGenerator;
 import com.lender.assistant.draft.service.DraftService;
-import com.lender.assistant.extract.FieldMappingStore;
 import com.lender.assistant.extract.model.FieldMapping;
+import com.lender.assistant.extract.service.ExtractService;
 import com.lender.assistant.resilience.ResilientLlmExecutor;
 import org.springframework.stereotype.Service;
 
@@ -25,18 +25,18 @@ public class DraftServiceImpl implements DraftService {
             "代码草稿由 AI 依据字段映射表生成，必须逐行人工复核、补全报文组装与签名逻辑后方可使用，严禁直接上生产。";
 
     private final DraftGenerator generator;
-    private final FieldMappingStore store;
+    private final ExtractService extractService;
     private final ResilientLlmExecutor executor;
 
-    public DraftServiceImpl(DraftGenerator generator, FieldMappingStore store, ResilientLlmExecutor executor) {
+    public DraftServiceImpl(DraftGenerator generator, ExtractService extractService, ResilientLlmExecutor executor) {
         this.generator = generator;
-        this.store = store;
+        this.extractService = extractService;
         this.executor = executor;
     }
 
     @Override
     public DraftService.DraftResult generate(String docId) {
-        List<FieldMapping> mappings = store.listFieldMappings(docId);
+        List<FieldMapping> mappings = extractService.listFieldMappings(docId);
         if (mappings.isEmpty()) {
             throw new IllegalArgumentException(
                     "该文档暂无字段映射，请先执行字段抽取：POST /api/extract/" + docId);

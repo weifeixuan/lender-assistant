@@ -1,6 +1,5 @@
 package com.lender.assistant.extract.controller;
 
-import com.lender.assistant.extract.FieldMappingStore;
 import com.lender.assistant.extract.service.ExtractService;
 import com.lender.assistant.extract.service.InternalFieldCatalog;
 import org.springframework.http.ResponseEntity;
@@ -24,11 +23,9 @@ import java.util.Map;
 public class ExtractController {
 
     private final ExtractService extractService;
-    private final FieldMappingStore store;
 
-    public ExtractController(ExtractService extractService, FieldMappingStore store) {
+    public ExtractController(ExtractService extractService) {
         this.extractService = extractService;
-        this.store = store;
     }
 
     @PostMapping("/{docId}")
@@ -36,7 +33,7 @@ public class ExtractController {
         try {
             // 只调一次模型：结果先落库再转响应，三处复用同一份结果
             var mappings = extractService.extractFromDoc(docId);
-            store.saveMappings(docId, mappings);
+            extractService.saveMappings(docId, mappings);
             List<Map<String, Object>> rows = mappings.stream()
                     .map(m -> {
                         Map<String, Object> row = new LinkedHashMap<>();
@@ -60,7 +57,7 @@ public class ExtractController {
 
     @GetMapping("/{docId}")
     public Map<String, Object> list(@PathVariable String docId) {
-        return Map.of("docId", docId, "mappings", store.listMappings(docId));
+        return Map.of("docId", docId, "mappings", extractService.listMappings(docId));
     }
 
     public record ConfirmRequest(String internalFieldId, String lenderFieldName, String lenderValue) {}
@@ -71,7 +68,7 @@ public class ExtractController {
         if (req.internalFieldId() == null || req.internalFieldId().isBlank()) {
             return ResponseEntity.badRequest().body(Map.of("error", "internalFieldId 必填"));
         }
-        store.confirm(docId, req.internalFieldId(), req.lenderFieldName(), req.lenderValue());
+        extractService.confirm(docId, req.internalFieldId(), req.lenderFieldName(), req.lenderValue());
         return ResponseEntity.ok(Map.of("ok", true));
     }
 

@@ -1,0 +1,89 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<!--
+  field_mapping 读写。两条人工成果保护规则必须留在 SQL 里（§6.8）：
+  1) 清理只针对 PENDING 行 —— CONFIRMED/CORRECTED 的人工成果不被重抽冲掉；
+  2) upsert 的 ON CONFLICT ... WHERE field_mapping.status = 'PENDING' —— 人工已确认行不被覆盖。
+  null → "" 的响应兜底下沉到 COALESCE（旧实现写在 Java RowMapper 里）。
+  结果映射用位置式 <constructor>（select 列顺序 == record 组件顺序）。
+-->
+<mapper namespace="com.lender.assistant.extract.mapper.FieldMappingMapper">
+
+    <resultMap id="rowMap" type="com.lender.assistant.extract.model.FieldMappingRow">
+        <constructor>
+            <arg column="id" javaType="long"/>
+            <arg column="doc_id" javaType="java.lang.String"/>
+            <arg column="internal_field_id" javaType="java.lang.String"/>
+            <arg column="lender_field_name" javaType="java.lang.String"/>
+            <arg column="lender_value" javaType="java.lang.String"/>
+            <arg column="source_quote" javaType="java.lang.String"/>
+            <arg column="confidence" javaType="double"/>
+            <arg column="status" javaType="java.lang.String"/>
+        </constructor>
+    </resultMap>
+
+    <resultMap id="rawMap" type="com.lender.assistant.extract.model.FieldMappingRaw">
+        <constructor>
+            <arg column="doc_id" javaType="java.lang.String"/>
+            <arg column="internal_field_id" javaType="java.lang.String"/>
+            <arg column="lender_field_name" javaType="java.lang.String"/>
+            <arg column="lender_value" javaType="java.lang.String"/>
+            <arg column="source_quote" javaType="java.lang.String"/>
+            <arg column="confidence" javaType="double"/>
+        </constructor>
+    </resultMap>
+
+    <delete id="deleteStalePending">
+        DELETE FROM field_mapping WHERE doc_id = #{docId} AND status = 'PENDING'
+    </delete>
+
+    <insert id="upsertAll">
+        INSERT INTO field_mapping
+            (doc_id, internal_field_id, lender_field_name, lender_value, source_quote, confidence, status)
+        VALUES
+        <foreach collection="raws" item="r" separator=",">
+            (#{r.docId}, #{r.internalFieldId}, #{r.lenderFieldName}, #{r.lenderValue},
+             #{r.sourceQuote}, #{r.confidence}, 'PENDING')
+        </foreach>
+        ON CONFLICT (doc_id, internal_field_id) DO UPDATE
+            SET lender_field_name = EXCLUDED.lender_field_name,
+                lender_value      = EXCLUDED.lender_value,
+                source_quote      = EXCLUDED.source_quote,
+                confidence        = EXCLUDED.confidence,
+                status            = 'PENDING'
+            WHERE field_mapping.status = 'PENDING'
+    </insert>
+
+    <select id="listRows" resultMap="rowMap">
+        SELECT id, doc_id, internal_field_id,
+               COALESCE(lender_field_name, '') AS lender_field_name,
+               COALESCE(lender_value, '')      AS lender_value,
+               COALESCE(source_quote, '')      AS source_quote,
+               confidence, status
+        FROM field_mapping
+        WHERE doc_id = #{docId}
+        ORDER BY internal_field_id
+    </select>
+
+    <select id="listForDraft" resultMap="rawMap">
+        SELECT doc_id, internal_field_id, lender_field_name, lender_value, source_quote, confidence
+        FROM field_mapping
+        WHERE doc_id = #{docId}
+        ORDER BY internal_field_id
+    </select>
+
+    <update id="confirmCorrected">
+        UPDATE field_mapping
+        SET lender_value      = COALESCE(#{correctedValue}, lender_value),
+            lender_field_name = COALESCE(#{correctedFieldName}, lender_field_name),
+            status            = 'CORRECTED'
+        WHERE doc_id = #{docId} AND internal_field_id = #{internalFieldId}
+    </update>
+
+    <update id="confirmAsIs">
+        UPDATE field_mapping SET status = 'CONFIRMED'
+        WHERE doc_id = #{docId} AND internal_field_id = #{internalFieldId}
+    </update>
+
+</mapper>
