@@ -77,7 +77,7 @@ com.lender.assistant
 
 1. 类名 `UpperCamelCase`；方法名、变量名 `lowerCamelCase`；常量全大写下划线分隔。
 2. 抽象类 `Abstract` / `Base` 开头；异常类 `Exception` 结尾；枚举成员全大写。
-3. **Service 接口不写 `I` 前缀**；实现类以「策略名 + 接口名」结尾。
+3. **Service 接口不写 `I` 前缀**；实现类以「接口名 + Impl」结尾（策略实现为「策略名 + 接口名 + Impl」，见 §1）。
 4. boolean 变量不加 `is` 前缀（避免序列化丢前缀）。
 5. **杜绝不表意的命名**：`data`、`result2`、`temp`、`flag`、单字母（循环变量 `i/j/k` 除外）。
 6. 包名全小写单词、**不用复数**（`rag.splitter`，不是 `rag.splitters`）。
