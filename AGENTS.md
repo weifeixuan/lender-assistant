@@ -24,20 +24,25 @@
 com.lender.assistant
 ├── rag/                       # RAG 领域
 │   ├── controller/            #   QaController EvalController DocumentAdminController
-│   ├── service/               #   QaService(+impl/) EvalService(+impl/)；策略组件平铺：AnswerGenerator / Mock·DeepSeekAnswerGenerator / EmbeddingClient
-│   ├── mapper/                #   DocChunkMapper（原 rag/store/DocumentStore，待迁 §11）
+│   ├── service/               #   QaService(+impl/) EvalService(+impl/) SearchService(+impl/) DocumentService(+impl/)
+│   │                          #   ；策略组件平铺：AnswerGenerator / Mock·DeepSeekAnswerGenerator
+│   ├── mapper/                #   DocChunkMapper（+ resources/mapper/DocChunkMapper.xml）
+│   ├── model/                 #   跨层 record：ChunkRow / DocChunkLine / DocContent / DocSummary / VectorHit / KeywordHit
 │   ├── parser/ splitter/ embedder/   # 领域内组件，保留自有子包（不硬塞进三层）
-│   └── eval/                  #   评估逻辑 + evalset.json
+│   └── （评估逻辑在 service/；评估集资源固定在 resources/eval/evalset.json）
 ├── extract/                   # 结构化抽取领域
-│   ├── controller/ service/ mapper/ model/
+│   ├── controller/ service/ service/impl/ mapper/ model/
 ├── draft/                     # 代码草稿生成领域
-│   ├── controller/ service/
+│   ├── controller/ service/ service/impl/
 ├── tools/                     # Function Calling 工具（LenderQueryTools 等）——无 HTTP 入口，不建 controller/
-├── resilience/                # 韧性（ResilientLlmExecutor 等）——无 HTTP 入口
-│   └── mapper/                #   LlmCallLogMapper（原 resilience/LlmCallLogger，待迁 §11）
+├── resilience/                # 韧性（ResilientLlmExecutor / LlmCallLogger）——无 HTTP 入口
+│   ├── mapper/                #   LlmCallLogMapper（+ resources/mapper/LlmCallLogMapper.xml）
+│   └── model/                 #   LlmCallLogRecord
+├── ops/                       # 运维领域（无业务语义）
+│   └── controller/            #   HealthController（GET /health）
 ├── common/                    # 跨领域内容（领域包装不下时才进这里）
 │   ├── constant/              #   *Constants（禁实例化）
-│   ├── util/                  #   *Utils（静态方法 + private 构造器）
+│   ├── util/                  #   *Utils（静态方法 + private 构造器，如 PgVectorUtils）
 │   └── dto/                   #   跨模块 DTO
 ├── config/                    #   @Configuration / @Bean 装配，集中于此
 ├── exception/                 #   全局异常处理 + 业务异常
@@ -165,8 +170,8 @@ com.lender.assistant
 **数据访问迁移（MyBatis 化）**
 
 - [ ] `rag/store/DocumentStore`（JdbcTemplate）→ `rag/mapper/DocChunkMapper`（+ `resources/mapper/DocChunkMapper.xml`）
-- [ ] `extract/store/FieldMappingStore` → `extract/mapper/FieldMappingMapper`
-- [ ] `resilience/LlmCallLogger`（JdbcTemplate 留痕）→ `resilience/mapper/LlmCallLogMapper`
+- [ ] `extract/FieldMappingStore`（实际在 extract 根，不在 extract/store）→ `extract/mapper/FieldMappingMapper`（+ XML）
+- [ ] `resilience/LlmCallLogger`（JdbcTemplate 留痕）→ 写库部分落到 `resilience/mapper/LlmCallLogMapper`（+ XML），LlmCallLogger 保留为调用侧装饰器
 - [ ] 迁移要求：**一处一次迁完**，不留「半个方法 JdbcTemplate、半个 Mapper」；迁移后既有测试基线（如 `SearchServiceTest`）必须仍通过。
 
 **包结构迁移（按领域归位；迁移前新 Controller 禁止再进顶层包）**
@@ -178,14 +183,14 @@ com.lender.assistant
 | `controller/DocumentAdminController` | `rag/controller` |
 | `controller/ExtractController` | `extract/controller` |
 | `controller/DraftController` | `draft/controller` |
-| `controller/ChatController` + `service/ChatService` | 待定（阶段0连通件；候选：并入 `rag/service` 或删除——**删除需用户确认**） |
-| `controller/HealthController` | 待定（候选：`common/` 或删除——**删除需用户确认**） |
+| `controller/ChatController` + `service/ChatService` | 删除（阶段0 连通件，已被 /api/qa 覆盖） |
+| `controller/HealthController` | `ops/controller`（新建 ops 运维领域） |
 | `rag/qa/QaService` 等 | `rag/service` |
 | `rag/eval/EvalService` | `rag/service`（`evalset.json` 资源位置不变） |
 | `extract` 下 `*Service` / `*Generator` / `InternalFieldCatalog` | `extract/service` |
 | `FieldMapping` / `InternalField` | `extract/model` |
 
-- [ ] 迁移完成后删除顶层 `controller/`、`service/` 空包，此后**禁止再创建**。
+- [x] 迁移已完成：顶层 `controller/`、`service/` 空包已删除（A5/A6），此后**禁止再创建**。
 
 **代码治理**
 
