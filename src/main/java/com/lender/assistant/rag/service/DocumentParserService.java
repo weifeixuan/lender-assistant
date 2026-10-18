@@ -1,12 +1,14 @@
-package com.lender.assistant.rag.parser;
+package com.lender.assistant.rag.service;
+
+import com.lender.assistant.rag.model.ParsedDocument;
 
 /**
  * 文档解析器抽象：文件字节流 -> 带结构信息的 ParsedDocument。
  *
- * 按扩展名路由到具体实现（TextParser / DocxParser），
+ * 按扩展名路由到具体实现（TextParserImpl / DocxParserImpl），
  * 后续加 PDF 只需新增实现类，调用方无感。
  */
-public interface DocumentParser {
+public interface DocumentParserService {
 
     /** 是否支持该文件名（按扩展名判断） */
     boolean supports(String fileName);

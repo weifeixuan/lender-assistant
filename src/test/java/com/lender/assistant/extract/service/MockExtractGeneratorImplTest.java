@@ -1,6 +1,7 @@
 package com.lender.assistant.extract.service;
 
 import com.lender.assistant.extract.model.FieldMapping;
+import com.lender.assistant.extract.service.impl.MockExtractGeneratorImpl;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -18,9 +19,9 @@ import static org.junit.jupiter.api.Assertions.*;
  * 不验证"抽取效果好不好"（那是 DeepSeek 版的事），
  * 验证"抽取链路和输出结构对不对"——字段落位、置信度、缺失字段的处理。
  */
-class MockExtractGeneratorTest {
+class MockExtractGeneratorImplTest {
 
-    private final MockExtractGenerator generator = new MockExtractGenerator();
+    private final MockExtractGeneratorImpl generator = new MockExtractGeneratorImpl();
 
     /** 瑞金租赁（虚构）文档的正文片段 + 标题，字段拼写与 gen_sample_docs.py 保持一致 */
     private static final String RUIJIN_TEXT = """

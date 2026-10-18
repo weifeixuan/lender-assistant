@@ -1,5 +1,6 @@
-package com.lender.assistant.rag.service;
+package com.lender.assistant.rag.service.impl;
 
+import com.lender.assistant.rag.service.AnswerGeneratorService;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
@@ -23,13 +24,13 @@ import java.util.function.Consumer;
  */
 @Component
 @ConditionalOnProperty(name = "rag.chat.provider", havingValue = "mock", matchIfMissing = true)
-public class MockAnswerGenerator implements AnswerGenerator {
+public class MockAnswerGeneratorImpl implements AnswerGeneratorService {
 
     private final com.lender.assistant.tools.LenderQueryTools lenderTools;
     private final com.lender.assistant.tools.ToolIntentRouter toolRouter;
 
-    public MockAnswerGenerator(com.lender.assistant.tools.LenderQueryTools lenderTools,
-                               com.lender.assistant.tools.ToolIntentRouter toolRouter) {
+    public MockAnswerGeneratorImpl(com.lender.assistant.tools.LenderQueryTools lenderTools,
+                                   com.lender.assistant.tools.ToolIntentRouter toolRouter) {
         this.lenderTools = lenderTools;
         this.toolRouter = toolRouter;
     }

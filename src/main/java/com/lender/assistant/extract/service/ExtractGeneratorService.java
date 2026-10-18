@@ -7,12 +7,12 @@ import java.util.List;
 /**
  * 结构化抽取的端口：新资方文档文本进 → 内部字段映射表出。
  *
- * 与 AnswerGenerator 同一套端口模式：
- * - mock    -> MockExtractGenerator（规则+正则，无 key 开发联调用，默认）
- * - deepseek-> DeepSeekExtractGenerator（真实模型，JSON Schema 抽取，key 到位后切换）
+ * 与 AnswerGeneratorService 同一套端口模式：
+ * - mock    -> MockExtractGeneratorImpl（规则+正则，无 key 开发联调用，默认）
+ * - deepseek-> DeepSeekExtractGeneratorImpl（真实模型，JSON Schema 抽取，key 到位后切换）
  * 装配由 rag.extract.provider 配置决定。
  */
-public interface ExtractGenerator {
+public interface ExtractGeneratorService {
 
     /**
      * @param docTitle 文档标题（lender_name 通常在这里）

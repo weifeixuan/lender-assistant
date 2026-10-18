@@ -13,7 +13,7 @@ import java.util.function.Consumer;
  * 实现契约：onDelta 会被多个线程/多次回调调用 token 增量，实现方保证顺序性；
  * generate 返回即代表生成结束（同步流式：回调在 generate 调用线程上依次发生）。
  */
-public interface AnswerGenerator {
+public interface AnswerGeneratorService {
 
     /**
      * @param systemPrompt 系统提示词（角色与三条铁律）

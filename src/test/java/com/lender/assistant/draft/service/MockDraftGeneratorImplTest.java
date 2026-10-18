@@ -1,5 +1,6 @@
 package com.lender.assistant.draft.service;
 
+import com.lender.assistant.draft.service.impl.MockDraftGeneratorImpl;
 import com.lender.assistant.extract.model.FieldMapping;
 
 import org.junit.jupiter.api.DisplayName;
@@ -17,9 +18,9 @@ import static org.junit.jupiter.api.Assertions.*;
  * - 映射表缺的字段 → 占位符渲染成 "// TODO 人工补充"，宁缺勿编
  * - status_enum 是唯一需要代码整形的字段（值 → STATUS_MAP.put 行）
  */
-class MockDraftGeneratorTest {
+class MockDraftGeneratorImplTest {
 
-    private final MockDraftGenerator generator = new MockDraftGenerator();
+    private final MockDraftGeneratorImpl generator = new MockDraftGeneratorImpl();
 
     /** ruijin 真实抽取结果的字段值（来自阶段4验收运行） */
     private List<FieldMapping> ruijinMappings() {

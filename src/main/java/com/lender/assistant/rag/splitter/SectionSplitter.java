@@ -1,6 +1,6 @@
 package com.lender.assistant.rag.splitter;
 
-import com.lender.assistant.rag.parser.ParsedDocument;
+import com.lender.assistant.rag.model.ParsedDocument;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;

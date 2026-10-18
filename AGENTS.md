@@ -25,10 +25,10 @@ com.lender.assistant
 ├── rag/                       # RAG 领域
 │   ├── controller/            #   QaController EvalController DocumentAdminController
 │   ├── service/               #   QaService(+impl/) EvalService(+impl/) SearchService(+impl/) DocumentService(+impl/)
-│   │                          #   ；策略组件平铺：AnswerGenerator / Mock·DeepSeekAnswerGenerator
+│   │                          #   ；策略接口：AnswerGeneratorService / DocumentParserService；实现（Mock·DeepSeek·Docx·Text）在 impl/
 │   ├── mapper/                #   DocChunkMapper（+ resources/mapper/DocChunkMapper.xml）
-│   ├── model/                 #   跨层 record：ChunkRow / DocChunkLine / DocContent / DocSummary / VectorHit / KeywordHit
-│   ├── parser/ splitter/ embedder/   # 领域内组件，保留自有子包（不硬塞进三层）
+│   ├── model/                 #   跨层 record：ChunkRow / DocChunkLine / DocContent / DocSummary / VectorHit / KeywordHit / ParsedDocument
+│   ├── splitter/ embedder/    # 领域内组件保留自有子包（不硬塞进三层）；解析器已并入 service/
 │   └── （评估逻辑在 service/；评估集资源固定在 resources/eval/evalset.json）
 ├── extract/                   # 结构化抽取领域
 │   ├── controller/ service/ service/impl/ mapper/ model/
@@ -68,8 +68,8 @@ com.lender.assistant
 | `common/util/` | 无状态静态方法 | 持有 Spring Bean、实例状态 |
 
 - **依赖方向**：`controller → service → mapper`；**禁止反向依赖与跨层**。跨领域只允许 service → 另一个领域的 service。
-- **可替换实现必须有接口**：凡存在「Mock / 真实」或「多策略」可能的组件，一律**接口 + `@ConditionalOnProperty` 切换**（项目既有惯例：`EmbeddingClient`、`AnswerGenerator`、`ExtractGenerator`、`DraftGenerator`）。新增同类组件照此办理，**不允许写死单一实现**。
-- **编排型 Service 统一接口 + Impl**：`XxxService`（接口）+ `service/impl/XxxServiceImpl`；策略实现类命名「策略名 + 接口名」（如 `MockExtractGenerator` / `DeepSeekExtractGenerator`）。
+- **可替换实现必须有接口**：凡存在「Mock / 真实」或「多策略」可能的组件，一律**接口 + `@ConditionalOnProperty` 切换**（项目既有惯例：`EmbeddingClient`、`AnswerGeneratorService`、`ExtractGeneratorService`、`DraftGeneratorService`）。新增同类组件照此办理，**不允许写死单一实现**。
+- **编排型 Service 统一接口 + Impl**：`XxxService`（接口）+ `service/impl/XxxServiceImpl`；策略实现类命名「策略名 + 接口名 + Impl」（如 `MockExtractGeneratorImpl` / `DeepSeekExtractGeneratorImpl`）。
 - **多实现的选择逻辑禁止散落**：provider 切换靠 Spring 装配，**禁止在业务代码里 `if-else` 判断「当前是 mock 还是 deepseek」**。
 - **跨层传值一律 `record`**（项目惯例：`FieldMapping`、`DocContent`、`KeywordHit`），禁止可变 DTO + setter 满天飞。
 

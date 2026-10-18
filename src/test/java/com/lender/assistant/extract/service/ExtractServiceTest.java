@@ -34,7 +34,7 @@ import static org.mockito.Mockito.*;
  */
 class ExtractServiceTest {
 
-    private ExtractGenerator generator;
+    private ExtractGeneratorService generator;
     private DocumentService documentService;
     private FieldMappingMapper mapper;
     private ResilientLlmExecutor executor;
@@ -42,7 +42,7 @@ class ExtractServiceTest {
 
     @BeforeEach
     void setUp() {
-        generator = mock(ExtractGenerator.class);
+        generator = mock(ExtractGeneratorService.class);
         documentService = mock(DocumentService.class);
         mapper = mock(FieldMappingMapper.class);
         // 真实韧性执行器（chaos=false 直通）+ mock JDBC 的留痕器：

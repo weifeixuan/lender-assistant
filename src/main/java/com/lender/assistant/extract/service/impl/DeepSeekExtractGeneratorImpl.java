@@ -1,9 +1,11 @@
-package com.lender.assistant.extract.service;
+package com.lender.assistant.extract.service.impl;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lender.assistant.extract.model.FieldMapping;
 import com.lender.assistant.extract.model.InternalField;
+import com.lender.assistant.extract.service.ExtractGeneratorService;
+import com.lender.assistant.extract.service.InternalFieldCatalog;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
@@ -15,7 +17,7 @@ import java.util.List;
  * DeepSeek 真实抽取：JSON Schema 抽取，非流式一锤子调用。
  *
  * 补上 rag.extract.provider=deepseek 分支——此前该分支无任何实现，
- * 切换开关会因容器内缺少 ExtractGenerator Bean 而启动失败。
+ * 切换开关会因容器内缺少 ExtractGeneratorService Bean 而启动失败。
  *
  * 宁缺勿编的落实（与 Mock 版同一条红线）：
  * - Prompt 明确要求"文档没写的信息不得输出"；
@@ -28,14 +30,14 @@ import java.util.List;
  */
 @Component
 @ConditionalOnProperty(name = "rag.extract.provider", havingValue = "deepseek")
-public class DeepSeekExtractGenerator implements ExtractGenerator {
+public class DeepSeekExtractGeneratorImpl implements ExtractGeneratorService {
 
     private static final double DEFAULT_CONFIDENCE = 0.8;
 
     private final ChatClient chatClient;
     private final ObjectMapper objectMapper;
 
-    public DeepSeekExtractGenerator(ChatClient.Builder builder, ObjectMapper objectMapper) {
+    public DeepSeekExtractGeneratorImpl(ChatClient.Builder builder, ObjectMapper objectMapper) {
         this.chatClient = builder.build();
         this.objectMapper = objectMapper;
     }

@@ -1,5 +1,6 @@
-package com.lender.assistant.rag.service;
+package com.lender.assistant.rag.service.impl;
 
+import com.lender.assistant.rag.service.AnswerGeneratorService;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 import reactor.core.publisher.Flux;
@@ -19,12 +20,12 @@ import java.util.function.Consumer;
  */
 @Component
 @ConditionalOnProperty(name = "rag.chat.provider", havingValue = "deepseek")
-public class DeepSeekAnswerGenerator implements AnswerGenerator {
+public class DeepSeekAnswerGeneratorImpl implements AnswerGeneratorService {
 
     private final org.springframework.ai.chat.client.ChatClient chatClient;
 
-    public DeepSeekAnswerGenerator(org.springframework.ai.chat.client.ChatClient.Builder builder,
-                                   com.lender.assistant.tools.LenderQueryTools lenderTools) {
+    public DeepSeekAnswerGeneratorImpl(org.springframework.ai.chat.client.ChatClient.Builder builder,
+                                       com.lender.assistant.tools.LenderQueryTools lenderTools) {
         this.chatClient = builder.build();
         this.lenderTools = lenderTools;
     }

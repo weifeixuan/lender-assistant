@@ -5,7 +5,7 @@ import com.lender.assistant.extract.model.FieldMapping;
 import com.lender.assistant.extract.model.FieldMappingRaw;
 import com.lender.assistant.extract.model.FieldMappingRow;
 import com.lender.assistant.extract.model.InternalField;
-import com.lender.assistant.extract.service.ExtractGenerator;
+import com.lender.assistant.extract.service.ExtractGeneratorService;
 import com.lender.assistant.extract.service.ExtractService;
 import com.lender.assistant.extract.service.InternalFieldCatalog;
 import com.lender.assistant.rag.model.DocContent;
@@ -27,12 +27,12 @@ import java.util.List;
 @Service
 public class ExtractServiceImpl implements ExtractService {
 
-    private final ExtractGenerator generator;
+    private final ExtractGeneratorService generator;
     private final DocumentService documentService;
     private final FieldMappingMapper mapper;
     private final ResilientLlmExecutor executor;
 
-    public ExtractServiceImpl(ExtractGenerator generator, DocumentService documentService,
+    public ExtractServiceImpl(ExtractGeneratorService generator, DocumentService documentService,
                               FieldMappingMapper mapper, ResilientLlmExecutor executor) {
         this.generator = generator;
         this.documentService = documentService;

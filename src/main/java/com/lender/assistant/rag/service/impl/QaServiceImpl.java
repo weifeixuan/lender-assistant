@@ -2,7 +2,7 @@ package com.lender.assistant.rag.service.impl;
 
 import com.lender.assistant.rag.service.SearchService;
 import com.lender.assistant.rag.service.QaService;
-import com.lender.assistant.rag.service.AnswerGenerator;
+import com.lender.assistant.rag.service.AnswerGeneratorService;
 import jakarta.annotation.PreDestroy;
 import org.springframework.stereotype.Service;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
@@ -32,7 +32,7 @@ import java.util.concurrent.Executors;
 public class QaServiceImpl implements QaService {
 
     private final SearchService searchService;
-    private final AnswerGenerator generator;
+    private final AnswerGeneratorService generator;
     private final com.lender.assistant.resilience.ResilientLlmExecutor executor;
 
     /**
@@ -46,7 +46,7 @@ public class QaServiceImpl implements QaService {
         return t;
     });
 
-    public QaServiceImpl(SearchService searchService, AnswerGenerator generator,
+    public QaServiceImpl(SearchService searchService, AnswerGeneratorService generator,
                      com.lender.assistant.resilience.ResilientLlmExecutor executor) {
         this.searchService = searchService;
         this.generator = generator;
@@ -89,7 +89,7 @@ public class QaServiceImpl implements QaService {
             }
             send(emitter, "sources", sources);
 
-            // AnswerGenerator 契约：generate 返回时生成已结束，token 在调用线程上依次回调。
+            // AnswerGeneratorService 契约：generate 返回时生成已结束，token 在调用线程上依次回调。
             // 韧性（阶段4）：经 ResilientLlmExecutor 走 qa 链路——留痕 + 熔断；
             // allowRetry=false：SSE token 已推给用户，重试会导致内容重放
             executor.execute("qa", generator.name(),

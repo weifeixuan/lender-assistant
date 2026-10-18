@@ -24,7 +24,7 @@ import static org.mockito.Mockito.when;
  * 阶段 4 开工前的测试基线：锁住 Prompt 两段式拼装契约。
  *
  * 测的是公共契约而非私有方法：QaService.answer 内部把 systemPrompt/userPrompt
- * 交给 AnswerGenerator——用桩生成器把两个 Prompt 抓出来断言。
+ * 交给 AnswerGeneratorService——用桩生成器把两个 Prompt 抓出来断言。
  * Prompt 三铁律和【来源N】格式是模型行为的根基，改动前必须先有这道护栏。
  *
  * 异步契约（2026-10-17 SSE 真流式改造后）：answer() 立即 return emitter，检索/生成/send
@@ -37,8 +37,8 @@ class QaServiceTest {
     private RecordingGenerator generator;
     private QaService qaService;
 
-    /** 测试专用 AnswerGenerator：记录入参，不做任何模型调用 */
-    static class RecordingGenerator implements AnswerGenerator {
+    /** 测试专用 AnswerGeneratorService：记录入参，不做任何模型调用 */
+    static class RecordingGenerator implements AnswerGeneratorService {
         String system;
         String user;
         final List<String> deltas = new java.util.ArrayList<>();
@@ -150,7 +150,7 @@ class QaServiceTest {
     void generatorExceptionDoesNotPropagate() {
         when(searchService.hybridSearch(any(), anyInt()))
                 .thenReturn(List.of(hit(1, "某文档", "某节", "内容")));
-        AnswerGenerator broken = new AnswerGenerator() {
+        AnswerGeneratorService broken = new AnswerGeneratorService() {
             @Override
             public void generate(String s, String u, Consumer<String> onDelta) {
                 throw new RuntimeException("模拟模型超时");

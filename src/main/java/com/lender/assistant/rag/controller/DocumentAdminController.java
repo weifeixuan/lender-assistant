@@ -4,7 +4,7 @@ import com.lender.assistant.common.util.PgVectorUtils;
 import com.lender.assistant.rag.embedder.EmbeddingClient;
 import com.lender.assistant.rag.model.ChunkRow;
 import com.lender.assistant.rag.model.DocSummary;
-import com.lender.assistant.rag.parser.DocumentParser;
+import com.lender.assistant.rag.service.DocumentParserService;
 import com.lender.assistant.rag.service.DocumentService;
 import com.lender.assistant.rag.service.SearchService;
 import com.lender.assistant.rag.splitter.Chunk;
@@ -35,13 +35,13 @@ import java.util.Map;
 @RequestMapping("/api/admin/documents")
 public class DocumentAdminController {
 
-    private final List<DocumentParser> parsers;
+    private final List<DocumentParserService> parsers;
     private final ChunkSplitter splitter;
     private final EmbeddingClient embeddingClient;
     private final DocumentService documentService;
     private final SearchService searchService;
 
-    public DocumentAdminController(List<DocumentParser> parsers, ChunkSplitter splitter,
+    public DocumentAdminController(List<DocumentParserService> parsers, ChunkSplitter splitter,
                                    EmbeddingClient embeddingClient, DocumentService documentService,
                                    SearchService searchService) {
         this.parsers = parsers;
@@ -59,7 +59,7 @@ public class DocumentAdminController {
     public Map<String, Object> upload(@RequestParam("file") MultipartFile file,
                                       @RequestParam("docId") String docId) throws Exception {
         String fileName = file.getOriginalFilename() == null ? "unknown" : file.getOriginalFilename();
-        DocumentParser parser = parsers.stream()
+        DocumentParserService parser = parsers.stream()
                 .filter(p -> p.supports(fileName))
                 .findFirst()
                 .orElseThrow(() -> new IllegalArgumentException("不支持的文件类型: " + fileName

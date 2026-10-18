@@ -1,7 +1,5 @@
 package com.lender.assistant.rag.splitter;
 
-import com.lender.assistant.rag.parser.ParsedDocument;
-
 import java.util.List;
 
 /**

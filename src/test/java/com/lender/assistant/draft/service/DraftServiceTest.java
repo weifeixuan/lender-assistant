@@ -23,14 +23,14 @@ import static org.mockito.Mockito.*;
  */
 class DraftServiceTest {
 
-    private DraftGenerator generator;
+    private DraftGeneratorService generator;
     private ExtractService extractService;
     private LlmCallLogger logger;
     private DraftService service;
 
     @BeforeEach
     void setUp() {
-        generator = mock(DraftGenerator.class);
+        generator = mock(DraftGeneratorService.class);
         extractService = mock(ExtractService.class);
         // 真实留痕器（supplier 真执行、异常真上抛）+ mock 掉 JDBC；
         // 韧性执行器也用真实实例（chaos=false），验证 scene=draft 确实经过它

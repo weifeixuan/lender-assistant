@@ -1,5 +1,7 @@
-package com.lender.assistant.rag.parser;
+package com.lender.assistant.rag.service.impl;
 
+import com.lender.assistant.rag.model.ParsedDocument;
+import com.lender.assistant.rag.service.DocumentParserService;
 import org.apache.poi.xwpf.usermodel.XWPFDocument;
 import org.apache.poi.xwpf.usermodel.XWPFParagraph;
 import org.apache.poi.xwpf.usermodel.XWPFTable;
@@ -21,7 +23,7 @@ import java.util.List;
  * "逾期天数在第几列"这类问题的答案会以自然语言形式出现在 chunk 里。
  */
 @Component
-public class DocxParser implements DocumentParser {
+public class DocxParserImpl implements DocumentParserService {
 
     @Override
     public boolean supports(String fileName) {

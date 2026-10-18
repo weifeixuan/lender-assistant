@@ -1,6 +1,8 @@
-package com.lender.assistant.extract.service;
+package com.lender.assistant.extract.service.impl;
 
 import com.lender.assistant.extract.model.FieldMapping;
+import com.lender.assistant.extract.service.ExtractGeneratorService;
+import com.lender.assistant.extract.service.InternalFieldCatalog;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
@@ -26,7 +28,7 @@ import java.util.regex.Pattern;
  */
 @Component
 @ConditionalOnProperty(name = "rag.extract.provider", havingValue = "mock", matchIfMissing = true)
-public class MockExtractGenerator implements ExtractGenerator {
+public class MockExtractGeneratorImpl implements ExtractGeneratorService {
 
     private static final double CONF_EXACT = 0.9;
     private static final double CONF_SENTENCE = 0.7;

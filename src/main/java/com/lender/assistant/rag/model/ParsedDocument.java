@@ -1,4 +1,4 @@
-package com.lender.assistant.rag.parser;
+package com.lender.assistant.rag.model;
 
 import java.util.List;
 
