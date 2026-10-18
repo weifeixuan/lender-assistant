@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<!-- llm_call_log 留痕写入。cost_cny 有 DEFAULT 0，不在 INSERT 列里（与旧 SQL 一致） -->
+<mapper namespace="com.lender.assistant.resilience.mapper.LlmCallLogMapper">
+
+    <insert id="insert">
+        INSERT INTO llm_call_log
+            (scene, provider, duration_ms, prompt_tokens, completion_tokens, status, error_msg)
+        VALUES
+            (#{log.scene}, #{log.provider}, #{log.durationMs}, #{log.promptTokens},
+             #{log.completionTokens}, #{log.status}, #{log.errorMsg})
+    </insert>
+
+</mapper>
