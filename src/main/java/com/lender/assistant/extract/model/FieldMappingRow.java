@@ -7,6 +7,6 @@ package com.lender.assistant.extract.model;
  * 保证 JSON 契约（前端渲染映射表）在迁移后零变化。
  * lenderFieldName / lenderValue / sourceQuote 的 null→"" 兜底由 XML 的 COALESCE 完成。
  */
-public record FieldMappingRow(long id, String docId, String internalFieldId, String lenderFieldName,
-                             String lenderValue, String sourceQuote, double confidence, String status) {
+public record FieldMappingRow(Long id, String docId, String internalFieldId, String lenderFieldName,
+                             String lenderValue, String sourceQuote, Double confidence, String status) {
 }

@@ -7,6 +7,8 @@
   距离排序用 <=> 余弦距离操作符（HNSW 索引在此生效）。
   结果映射用位置式 <constructor>（select 列顺序 == record 组件顺序），
   不依赖 argNameBasedConstructorAutoMapping。
+  数值 javaType 必须写包装类（java.lang.Integer/Long/Double）：MyBatis 把别名 int/long/double
+  解析为包装类，映射时传入 boxed 值，record 用 primitive 会 NoSuchMethodException（§6.6）。
 -->
 <mapper namespace="com.lender.assistant.rag.mapper.DocChunkMapper">
 
@@ -14,7 +16,7 @@
         <constructor>
             <arg column="doc_id" javaType="java.lang.String"/>
             <arg column="doc_title" javaType="java.lang.String"/>
-            <arg column="chunk_count" javaType="int"/>
+            <arg column="chunk_count" javaType="java.lang.Integer"/>
         </constructor>
     </resultMap>
 
@@ -28,23 +30,23 @@
 
     <resultMap id="vectorHitMap" type="com.lender.assistant.rag.model.VectorHit">
         <constructor>
-            <arg column="id" javaType="long"/>
+            <arg column="id" javaType="java.lang.Long"/>
             <arg column="doc_id" javaType="java.lang.String"/>
             <arg column="doc_title" javaType="java.lang.String"/>
             <arg column="section_path" javaType="java.lang.String"/>
             <arg column="content" javaType="java.lang.String"/>
-            <arg column="distance" javaType="double"/>
+            <arg column="distance" javaType="java.lang.Double"/>
         </constructor>
     </resultMap>
 
     <resultMap id="keywordHitMap" type="com.lender.assistant.rag.model.KeywordHit">
         <constructor>
-            <arg column="id" javaType="long"/>
+            <arg column="id" javaType="java.lang.Long"/>
             <arg column="doc_id" javaType="java.lang.String"/>
             <arg column="doc_title" javaType="java.lang.String"/>
             <arg column="section_path" javaType="java.lang.String"/>
             <arg column="content" javaType="java.lang.String"/>
-            <arg column="hits" javaType="int"/>
+            <arg column="hits" javaType="java.lang.Integer"/>
         </constructor>
     </resultMap>
 

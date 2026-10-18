@@ -123,7 +123,7 @@ com.lender.assistant
 3. **参数占位铁律**：一律 `#{}`，**严禁 `${}`**（拼接 = 注入；Tool 的参数来自模型，属外部输入，风险最高）。
 4. 禁止 `SELECT *`，明确列名；动态条件用 `<where>` + `<if>`；重复 SQL 片段抽 `<sql>` + `<include>`。
 5. **分页**：手写 `LIMIT #{limit} OFFSET #{offset}`，总数另查 `COUNT(*)`；**不引分页插件**；分页逻辑重复 ≥3 处再抽公共方法。
-6. **结果映射**：返回 PO / DTO 并显式 `<resultMap>`；用 `record` 时须配 `<constructor>` 或开 `argNameBasedConstructorAutoMapping`。**禁止返回 `Map<String,Object>`**。
+6. **结果映射**：返回 PO / DTO 并显式 `<resultMap>`；用 `record` 时须配 `<constructor>` 或开 `argNameBasedConstructorAutoMapping`。**禁止返回 `Map<String,Object>`**。**`<constructor>` 映射的 record，数值组件必须用包装类型（`Integer` / `Long` / `Double`）**：MyBatis 会把 `javaType` 别名 `int` / `long` / `double` 解析为包装类，映射时传入 boxed 值，record 用 primitive 会 `NoSuchMethodException`（真实库冒烟事故）。同理 XML 的 `javaType` 建议写显式包装类名（如 `java.lang.Long`），可空的数值列用 `COALESCE(col, 0)` 兜底避免拆箱 NPE。
 7. **pgvector 专用语法只允许出现在 Mapper XML**：向量以字符串（如 `"[0.1,0.2,...]"`）传入，SQL 里 `CAST(#{vec} AS vector)`；距离排序 `ORDER BY embedding <=> CAST(#{vec} AS vector)`；关键词相似度 `SIMILARITY(content, #{kw})`。不得泄漏到 service。
 8. **幂等写入用 upsert**（`ON CONFLICT ... DO UPDATE`，项目惯例）；**先删后插的场景必须在注释说明为什么不用 upsert**。
 9. 新表必须有 `COMMENT ON` 说明用途；**schema 变更必须同步回写 `docs/` 下的 schema SQL**（唯一建表事实源）——手动 psql 补的东西不回写 = 下一台全新环境必挂（历史事故：`CREATE EXTENSION vector` 没回写，compose 全新库直接报 `type vector does not exist`）。

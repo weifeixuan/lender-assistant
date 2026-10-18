@@ -7,18 +7,21 @@
   2) upsert 的 ON CONFLICT ... WHERE field_mapping.status = 'PENDING' —— 人工已确认行不被覆盖。
   null → "" 的响应兜底下沉到 COALESCE（旧实现写在 Java RowMapper 里）。
   结果映射用位置式 <constructor>（select 列顺序 == record 组件顺序）。
+  数值 javaType 必须写包装类（java.lang.Long/Double）：MyBatis 把别名 long/double 解析为包装类，
+  映射时传入 boxed 值，record 用 primitive 会 NoSuchMethodException（§6.6）。
+  confidence 列可空，取数时用 COALESCE(confidence, 0) 兜底为 0（旧实现行为）。
 -->
 <mapper namespace="com.lender.assistant.extract.mapper.FieldMappingMapper">
 
     <resultMap id="rowMap" type="com.lender.assistant.extract.model.FieldMappingRow">
         <constructor>
-            <arg column="id" javaType="long"/>
+            <arg column="id" javaType="java.lang.Long"/>
             <arg column="doc_id" javaType="java.lang.String"/>
             <arg column="internal_field_id" javaType="java.lang.String"/>
             <arg column="lender_field_name" javaType="java.lang.String"/>
             <arg column="lender_value" javaType="java.lang.String"/>
             <arg column="source_quote" javaType="java.lang.String"/>
-            <arg column="confidence" javaType="double"/>
+            <arg column="confidence" javaType="java.lang.Double"/>
             <arg column="status" javaType="java.lang.String"/>
         </constructor>
     </resultMap>
@@ -30,7 +33,7 @@
             <arg column="lender_field_name" javaType="java.lang.String"/>
             <arg column="lender_value" javaType="java.lang.String"/>
             <arg column="source_quote" javaType="java.lang.String"/>
-            <arg column="confidence" javaType="double"/>
+            <arg column="confidence" javaType="java.lang.Double"/>
         </constructor>
     </resultMap>
 
@@ -60,14 +63,16 @@
                COALESCE(lender_field_name, '') AS lender_field_name,
                COALESCE(lender_value, '')      AS lender_value,
                COALESCE(source_quote, '')      AS source_quote,
-               confidence, status
+               COALESCE(confidence, 0)         AS confidence,
+               status
         FROM field_mapping
         WHERE doc_id = #{docId}
         ORDER BY internal_field_id
     </select>
 
     <select id="listForDraft" resultMap="rawMap">
-        SELECT doc_id, internal_field_id, lender_field_name, lender_value, source_quote, confidence
+        SELECT doc_id, internal_field_id, lender_field_name, lender_value, source_quote,
+               COALESCE(confidence, 0) AS confidence
         FROM field_mapping
         WHERE doc_id = #{docId}
         ORDER BY internal_field_id
