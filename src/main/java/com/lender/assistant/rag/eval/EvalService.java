@@ -42,7 +42,7 @@ public class EvalService {
     public record EvalItem(int id, String type, String question, String docId,
                            List<String> mustContain, String note) {}
 
-    public record ItemResult(int id, String question, boolean hit, int firstHitRank,
+    public record ItemResult(int id, String type, String question, boolean hit, int firstHitRank,
                              int recallTopK, long millis, String note) {}
 
     public Map<String, Object> run(int topK, String mode) throws Exception {
@@ -53,7 +53,7 @@ public class EvalService {
         for (EvalItem item : items) {
             if ("NEGATIVE".equals(item.type())) {
                 // 否定条目不参与 recall/MRR（没有"正确召回"可言），语义验收时单独看
-                results.add(new ItemResult(item.id(), item.question(), false, 0, topK, 0, item.note()));
+                results.add(new ItemResult(item.id(), item.type(), item.question(), false, 0, topK, 0, item.note()));
                 continue;
             }
             long t0 = System.currentTimeMillis();
@@ -69,11 +69,12 @@ public class EvalService {
                     break;
                 }
             }
-            results.add(new ItemResult(item.id(), item.question(), firstHitRank > 0,
+            results.add(new ItemResult(item.id(), item.type(), item.question(), firstHitRank > 0,
                     firstHitRank, topK, millis, item.note()));
         }
 
-        List<ItemResult> positive = results.stream().filter(r -> r.millis() > 0).toList();
+        // 正/负样本按 type 判别（NEGATIVE 不参与 recall/MRR）；不可用耗时判别——真实正样本可能恰好耗时 0ms 而被误剔
+        List<ItemResult> positive = results.stream().filter(r -> !"NEGATIVE".equals(r.type())).toList();
         long recall = positive.stream().filter(ItemResult::hit).count();
         double recallAtK = positive.isEmpty() ? 0 : (double) recall / positive.size();
         double mrr = positive.isEmpty() ? 0
@@ -124,7 +125,7 @@ public class EvalService {
         for (ItemResult r : results) {
             sb.append("| ").append(r.id())
               .append(" | ").append(r.question())
-              .append(" | ").append(r.millis() == 0 ? "-" : (r.hit() ? "✅" : "❌"))
+              .append(" | ").append("NEGATIVE".equals(r.type()) ? "-" : (r.hit() ? "✅" : "❌"))
               .append(" | ").append(r.firstHitRank() > 0 ? r.firstHitRank() : "-")
               .append(" | ").append(r.millis())
               .append(" | ").append(r.note())

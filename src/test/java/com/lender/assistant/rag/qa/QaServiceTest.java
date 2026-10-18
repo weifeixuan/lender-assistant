@@ -8,6 +8,7 @@ import org.junit.jupiter.api.Test;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -24,6 +25,9 @@ import static org.mockito.Mockito.when;
  * 测的是公共契约而非私有方法：QaService.answer 内部把 systemPrompt/userPrompt
  * 交给 AnswerGenerator——用桩生成器把两个 Prompt 抓出来断言。
  * Prompt 三铁律和【来源N】格式是模型行为的根基，改动前必须先有这道护栏。
+ *
+ * 异步契约（2026-10-17 SSE 真流式改造后）：answer() 立即 return emitter，检索/生成/send
+ * 在独立工作线程执行——故所有断言都必须用 awaitAsyncDone 等流程真正跑完，不能按"同步返回即已推完"写。
  */
 class QaServiceTest {
 
@@ -74,6 +78,22 @@ class QaServiceTest {
         return m;
     }
 
+    /** 阻塞等待异步 SSE 流程达成条件（answer() 已在独立线程执行），超时即判失败。 */
+    private static void awaitAsyncDone(BooleanSupplier done) {
+        long deadline = System.currentTimeMillis() + 5_000;
+        while (!done.getAsBoolean()) {
+            if (System.currentTimeMillis() > deadline) {
+                fail("等待 SSE 异步流程结束超时（5s）");
+            }
+            try {
+                Thread.sleep(10);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                fail("等待被中断");
+            }
+        }
+    }
+
     @Test
     @DisplayName("systemPrompt 包含三条铁律的核心约束")
     void systemPromptContainsThreeRules() {
@@ -81,6 +101,7 @@ class QaServiceTest {
                 .thenReturn(List.of(hit(1, "华信银行_日末文件格式说明", "3 逾期文件", "逾期阶段 M1/M2/M3")));
 
         qaService.answer("逾期阶段怎么划分", 4);
+        awaitAsyncDone(() -> generator.system != null);   // answer() 已异步：等生成器真正被调用
 
         assertNotNull(generator.system);
         assertTrue(generator.system.contains("三条铁律"));
@@ -96,6 +117,7 @@ class QaServiceTest {
                 hit(2, "华信银行_对公收付接口文档", "2 单笔代收接口", "单笔限额 500 万元")));
 
         qaService.answer("逾期阶段怎么划分", 4);
+        awaitAsyncDone(() -> generator.user != null);   // answer() 已异步：等生成器真正被调用
 
         assertNotNull(generator.user);
         assertTrue(generator.user.startsWith("【召回资料】"));
@@ -113,9 +135,13 @@ class QaServiceTest {
         when(searchService.hybridSearch(any(), anyInt())).thenReturn(List.of());
 
         qaService.answer("随便问", 4);
+        // 等异步流程确认 hybridSearch 确实被调用过，再断言生成器全程未被调用
+        awaitAsyncDone(() -> {
+            try { verify(searchService).hybridSearch("随便问", 4); return true; }
+            catch (AssertionError notYet) { return false; }
+        });
 
         assertEquals(null, generator.system, "生成器不应被调用");
-        verify(searchService).hybridSearch("随便问", 4);
     }
 
     @Test
@@ -142,6 +168,10 @@ class QaServiceTest {
 
         assertDoesNotThrow(() -> svc.answer("问题", 4),
                 "阶段4韧性改造的契约底线：模型故障不允许把异常抛出 answer() 之外");
-        verify(searchService).hybridSearch(any(), anyInt());
+        // 生成器异常发生在工作线程内：等异步流程跑到检索这一步即证明异常未外泄
+        awaitAsyncDone(() -> {
+            try { verify(searchService).hybridSearch(any(), anyInt()); return true; }
+            catch (AssertionError notYet) { return false; }
+        });
     }
 }

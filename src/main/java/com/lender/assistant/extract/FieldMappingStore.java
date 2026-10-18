@@ -2,6 +2,7 @@ package com.lender.assistant.extract;
 
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.Map;
@@ -39,6 +40,7 @@ public class FieldMappingStore {
         this.jdbc = jdbc;
     }
 
+    @Transactional
     public int saveMappings(String docId, List<FieldMapping> mappings) {
         // 先清掉本次没再抽出的 PENDING 旧映射（规则收紧/文档更新后消失的字段不留脏数据）。
         // 人工成果（CONFIRMED/CORRECTED）不受影响：DELETE 只限 PENDING，

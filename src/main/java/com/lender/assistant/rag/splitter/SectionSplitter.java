@@ -33,6 +33,11 @@ public class SectionSplitter implements ChunkSplitter {
 
     public SectionSplitter(@Value("${rag.split.chunk-size}") int chunkSize,
                            @Value("${rag.split.overlap}") int overlap) {
+        // 与 FixedSizeSplitter 同一条约束：二次切分步长 = chunkSize - overlap，
+        // overlap >= chunkSize 时步长 <= 0，flush() 的循环将无法前进（死循环/OOM）。
+        if (overlap >= chunkSize) {
+            throw new IllegalArgumentException("overlap 必须小于 chunk-size，否则二次切分永远无法前进");
+        }
         this.chunkSize = chunkSize;
         this.overlap = overlap;
     }

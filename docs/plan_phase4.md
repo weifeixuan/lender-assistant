@@ -56,7 +56,7 @@ LlmCallLogger         llm_call_log 留痕(耗时/token/成本)
 3. **Mock 的"模型决策"是规则模拟**：问题命中工具意图关键词（"已入库/哪些文件/chunk数"）→ 真实调 LenderQueryTools → 答案带 `[工具调用]` 标记；DeepSeek 版走 Spring AI `.tools()` 真决策。Mock 决策逻辑独立成 `ToolIntentRouter`，可单测。
 4. **降级不吞检索**：熔断只影响生成段，sources 照常 SSE 下发，错误事件带"已转人工"文案——手册验收"系统降级不崩"。
 
-## 四、数据库变更（docs/schema_phase4.sql）
+## 四、数据库变更（权威定义见 `docs/schema.sql`，下方为当时的规划快照）
 
 ```sql
 CREATE TABLE IF NOT EXISTS field_mapping (

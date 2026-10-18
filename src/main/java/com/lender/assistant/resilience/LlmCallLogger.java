@@ -57,7 +57,7 @@ public class LlmCallLogger {
         try {
             jdbc.update(INSERT, scene, provider, durationMs, promptTokens, completionTokens, status, errorMsg);
         } catch (RuntimeException ignored) {
-            // 留痕是旁路：log 表写不进去（没跑 schema_phase4.sql 等）不允许拖垮问答/抽取主链路
+            // 留痕是旁路：log 表写不进去（没跑 docs/schema.sql 等）不允许拖垮问答/抽取主链路
         }
     }
 }

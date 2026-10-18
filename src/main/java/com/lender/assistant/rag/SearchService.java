@@ -3,6 +3,7 @@ package com.lender.assistant.rag;
 import com.lender.assistant.rag.embedder.EmbeddingClient;
 import com.lender.assistant.rag.embedder.HashEmbeddingClient;
 import com.lender.assistant.rag.store.DocumentStore;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
@@ -27,9 +28,18 @@ public class SearchService {
     private final EmbeddingClient embeddingClient;
     private final DocumentStore store;
 
-    public SearchService(EmbeddingClient embeddingClient, DocumentStore store) {
+    /**
+     * 向量通道相似度阈值：余弦距离大于该值的召回被丢弃，用于挡住"完全不相关"的命中。
+     * 默认 -1 = 关闭（不改变现有召回行为）——是否开启由阶段 3 评估数据决定，
+     * 故此处只提供开关而非直接改默认语义。
+     */
+    private final double maxDistance;
+
+    public SearchService(EmbeddingClient embeddingClient, DocumentStore store,
+                         @Value("${rag.search.max-distance:-1}") double maxDistance) {
         this.embeddingClient = embeddingClient;
         this.store = store;
+        this.maxDistance = maxDistance;
     }
 
     public List<Map<String, Object>> hybridSearch(String query, int topK) {
@@ -53,13 +63,17 @@ public class SearchService {
         if (!"keyword".equals(mode)) {
             float[] queryVec = embeddingClient.embed(query);
             List<DocumentStore.VectorHit> hits = store.searchByVector(queryVec, topK);
-            for (int i = 0; i < hits.size(); i++) {
-                DocumentStore.VectorHit hit = hits.get(i);
+            int rank = 0;
+            for (DocumentStore.VectorHit hit : hits) {
+                if (maxDistance >= 0 && hit.distance() > maxDistance) {
+                    continue;   // 超出阈值的召回丢弃（maxDistance<0 时该开关关闭）
+                }
+                rank++;
                 Map<String, Object> m = base(hit.id(), hit.docId(), hit.docTitle(), hit.sectionPath(), hit.content());
                 m.put("vectorDistance", hit.distance());
                 m.put("bothChannels", false);
                 merged.put(hit.id(), m);
-                vectorRank.put(hit.id(), i + 1);
+                vectorRank.put(hit.id(), rank);
             }
         }
 

@@ -27,8 +27,22 @@ public class EvalController {
 
     @PostMapping("/run")
     public Map<String, Object> run(@RequestBody Map<String, Object> body) throws Exception {
-        int topK = body.get("topK") == null ? 4 : (Integer) body.get("topK");
         String mode = body.get("mode") == null ? "hybrid" : (String) body.get("mode");
-        return evalService.run(topK, mode);
+        return evalService.run(topK(body.get("topK"), 4), mode);
+    }
+
+    /** topK 统一校验：非整数或非正数直接拒绝，避免 ClassCastException / subList 越界 */
+    private static int topK(Object raw, int fallback) {
+        if (raw == null) {
+            return fallback;
+        }
+        if (!(raw instanceof Number n)) {
+            throw new IllegalArgumentException("topK 必须是整数");
+        }
+        int v = n.intValue();
+        if (v <= 0) {
+            throw new IllegalArgumentException("topK 必须为正整数");
+        }
+        return v;
     }
 }

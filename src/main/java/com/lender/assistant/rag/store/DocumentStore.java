@@ -2,6 +2,7 @@ package com.lender.assistant.rag.store;
 
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.stream.Collectors;
@@ -25,7 +26,8 @@ public class DocumentStore {
         this.jdbc = jdbc;
     }
 
-    /** 先删旧块再插新块：同一 doc_id 重复入库不会留脏数据（幂等） */
+    /** 先删旧块再插新块：同一 doc_id 重复入库不会留脏数据（幂等）。@Transactional 保证删+插原子，中途失败不会留半删状态 */
+    @Transactional
     public void replaceDocument(String docId, String docTitle, String sourcePath, List<ChunkRow> rows) {
         jdbc.update("DELETE FROM doc_chunk WHERE doc_id = ?", docId);
         for (ChunkRow row : rows) {

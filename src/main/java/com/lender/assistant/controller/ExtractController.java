@@ -17,7 +17,7 @@ import java.util.Map;
  * - POST /api/extract/{docId}/confirm  人工确认/修正一条映射
  * - GET  /api/extract/fields          内部标准字段目录（前端渲染映射表表头用）
  *
- * 错误处理：文档不存在 → 400；模型/链路故障 → 502 + 可读信息（降级不 500 裸奔）。
+ * 错误处理：文档不存在 → 400；模型/链路故障 → 500 + 可读信息（降级不裸奔）。
  */
 @RestController
 @RequestMapping("/api/extract")

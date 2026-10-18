@@ -32,7 +32,21 @@ public class QaController {
         if (question == null || question.isBlank()) {
             throw new IllegalArgumentException("question 不能为空");
         }
-        int topK = body.get("topK") == null ? 4 : (Integer) body.get("topK");
-        return qaService.answer(question.trim(), topK);
+        return qaService.answer(question.trim(), topK(body.get("topK"), 4));
+    }
+
+    /** topK 统一校验：非整数或非正数直接拒绝，避免 ClassCastException / subList 越界 */
+    private static int topK(Object raw, int fallback) {
+        if (raw == null) {
+            return fallback;
+        }
+        if (!(raw instanceof Number n)) {
+            throw new IllegalArgumentException("topK 必须是整数");
+        }
+        int v = n.intValue();
+        if (v <= 0) {
+            throw new IllegalArgumentException("topK 必须为正整数");
+        }
+        return v;
     }
 }

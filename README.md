@@ -6,13 +6,13 @@
 
 ## 核心能力
 
-| 能力 | 说明 | 验收数字 |
-|---|---|---|
-| 混合检索问答 | 向量 + 关键词双通道，RRF 融合排序，SSE 流式回答带【来源N】溯源 | 20条评估集 recall@4=100%（Mock向量，构造性） |
-| 字段映射抽取 | 新资方文档 → 12 个内部标准字段的映射表 → 界面人工确认/修正 | 三份样例文档精确率/召回率 100%（Mock规则，构造性） |
-| Function Calling | 模型可调用"查已入库文件 / 查文档chunk数"两个真实业务查询 | SSE 真库验证两意图均正确触发 |
-| 韧性与留痕 | 熔断 + 重试（编程式 Resilience4j）+ 每次模型调用留痕；熔断走人工降级 | chaos 演练：3次失败→OPEN→快速失败，系统不崩 |
-| 代码草稿生成 | 字段映射表 + 策略模式骨架 → Java 适配层草稿 + 人工复核声明 | 映射9条→草稿零占位残留 |
+| 能力               | 说明                                          | 验收数字                             |
+| ---------------- | ------------------------------------------- | -------------------------------- |
+| 混合检索问答           | 向量 + 关键词双通道，RRF 融合排序，SSE 流式回答带【来源N】溯源       | 20条评估集 recall@4=100%（Mock向量，构造性） |
+| 字段映射抽取           | 新资方文档 → 12 个内部标准字段的映射表 → 界面人工确认/修正          | 三份样例文档精确率/召回率 100%（Mock规则，构造性）   |
+| Function Calling | 模型可调用"查已入库文件 / 查文档chunk数"两个真实业务查询           | SSE 真库验证两意图均正确触发                 |
+| 韧性与留痕            | 熔断 + 重试（编程式 Resilience4j）+ 每次模型调用留痕；熔断走人工降级 | chaos 演练：3次失败→OPEN→快速失败，系统不崩     |
+| 代码草稿生成           | 字段映射表 + 策略模式骨架 → Java 适配层草稿 + 人工复核声明        | 映射9条→草稿零占位残留                     |
 
 **诚实声明**：Mock 实现产生的是构造性结果，只证明链路正确；真实模型效果待接入 DeepSeek/智谱 key 后复测（provider 开关一键切换）。
 
@@ -61,38 +61,37 @@ docker run -d --name lender-pg -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=lend
   -p 5432:5432 pgvector/pgvector:pg16
 
 # 2. 建表
-docker exec -i lender-pg psql -U postgres -d lender_assistant < docs/schema_phase1.sql
-docker exec -i lender-pg psql -U postgres -d lender_assistant < docs/schema_phase4.sql
+docker exec -i lender-pg psql -U postgres -d lender_assistant < docs/schema.sql
 
 # 3. 打包并启动
 mvn package -DskipTests
 java -jar target/lender-assistant-0.1.0-SNAPSHOT.jar --server.port=8080
 ```
 
-打开 http://localhost:8080 操作台，六个区块依次体验：① 上传文档 → ② 查看入库 → ③ 检索 → ④ 问答（SSE）→ ⑤ 字段抽取与人工确认 → ⑥ 代码草稿生成。
+打开 <http://localhost:8080> 操作台，六个区块依次体验：① 上传文档 → ② 查看入库 → ③ 检索 → ④ 问答（SSE）→ ⑤ 字段抽取与人工确认 → ⑥ 代码草稿生成。
 
 ### 接入真实模型（可选）
 
-| 开关 | 值 | 说明 |
-|---|---|---|
-| `RAG_CHAT_PROVIDER` | `mock` / `deepseek` | 对话模型 |
-| `RAG_EMBEDDING_PROVIDER` | `hash` / `zhipu` | 向量化 |
-| `RAG_EXTRACT_PROVIDER` | `mock` / `deepseek` | 字段抽取 |
-| `RAG_DRAFT_PROVIDER` | `mock` / `deepseek` | 代码草稿 |
+| 开关                       | 值                   | 说明   |
+| ------------------------ | ------------------- | ---- |
+| `RAG_CHAT_PROVIDER`      | `mock` / `deepseek` | 对话模型 |
+| `RAG_EMBEDDING_PROVIDER` | `hash` / `zhipu`    | 向量化  |
+| `RAG_EXTRACT_PROVIDER`   | `mock` / `deepseek` | 字段抽取 |
+| `RAG_DRAFT_PROVIDER`     | `mock` / `deepseek` | 代码草稿 |
 
 配 `DEEPSEEK_API_KEY` / `ZHIPU_API_KEY` 环境变量即可，key 不进代码库（compose 里走环境变量透传）。
 
 ## 设计决策（为什么）
 
-| 决策 | 理由 | 详见 |
-|---|---|---|
-| RRF 融合替代"双通道优先"硬排序 | 硬排序让单一通道的宽泛命中挤掉双通道命中；RRF 按排名倒数求和，recall 94.7%→100% | docs/评估报告与阶段3记录 |
-| 全链路 Mock 先行（端口双实现） | key 没到位也能开发、调试、验收链路本身；真实效果单独复测不混数据 | docs/plan_phase4.md |
-| 编程式熔断（decorateSupplier）而非注解 | 单测不起容器即可驱动熔断状态机红绿循环 | docs/阶段4_完成记录.md |
-| CB 在外 Retry 在内 | 重试的每次尝试计入熔断统计，避免重试掩盖故障导致熔断永不打开 | 同上 |
-| SSE 禁重试 | token 已推给用户，重放即重复播报事故 | 同上 |
-| 抽取/草稿"宁缺勿编" | 缺失字段渲染 TODO 而非编造值；错误参数的调用比不调用更糟 | docs/plan_phase5.md |
-| pgvector + JdbcTemplate（不用 JPA） | 需要大量 PG 扩展语法（HNSW/trigram/`<=>`），JPA 抽象反而挡路 | docs/阶段1 记录 |
+| 决策                              | 理由                                                 | 详见                  |
+| ------------------------------- | -------------------------------------------------- | ------------------- |
+| RRF 融合替代"双通道优先"硬排序              | 硬排序让单一通道的宽泛命中挤掉双通道命中；RRF 按排名倒数求和，recall 94.7%→100% | docs/评估报告与阶段3记录     |
+| 全链路 Mock 先行（端口双实现）              | key 没到位也能开发、调试、验收链路本身；真实效果单独复测不混数据                 | docs/plan_phase4.md |
+| 编程式熔断（decorateSupplier）而非注解     | 单测不起容器即可驱动熔断状态机红绿循环                                | docs/阶段4_完成记录.md    |
+| CB 在外 Retry 在内                  | 重试的每次尝试计入熔断统计，避免重试掩盖故障导致熔断永不打开                     | 同上                  |
+| SSE 禁重试                         | token 已推给用户，重放即重复播报事故                              | 同上                  |
+| 抽取/草稿"宁缺勿编"                     | 缺失字段渲染 TODO 而非编造值；错误参数的调用比不调用更糟                    | docs/plan_phase5.md |
+| pgvector + JdbcTemplate（不用 JPA） | 需要大量 PG 扩展语法（HNSW/trigram/`<=>`），JPA 抽象反而挡路        | docs/阶段1 记录         |
 
 ## 技术栈
 

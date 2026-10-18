@@ -1,6 +1,7 @@
 package com.lender.assistant.rag.qa;
 
 import com.lender.assistant.rag.SearchService;
+import jakarta.annotation.PreDestroy;
 import org.springframework.stereotype.Service;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
@@ -8,6 +9,8 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 /**
  * 问答编排（阶段 2 核心）：检索 → 拼 Prompt → 模型生成 → SSE 流式推给前端。
@@ -30,6 +33,17 @@ public class QaService {
     private final AnswerGenerator generator;
     private final com.lender.assistant.resilience.ResilientLlmExecutor executor;
 
+    /**
+     * SSE 工作线程池：检索+生成+send 必须脱离请求线程执行，否则 Spring 会把事件缓冲到
+     * 控制器返回时才一次性 flush（假流式 + Chrome net::ERR_ABORTED），详见 answer()。
+     * daemon 线程不阻塞 JVM 退出；固定 8 线程——SSE 是长连接，避免无界膨胀。
+     */
+    private final ExecutorService streamExecutor = Executors.newFixedThreadPool(8, r -> {
+        Thread t = new Thread(r, "qa-sse-worker");
+        t.setDaemon(true);
+        return t;
+    });
+
     public QaService(SearchService searchService, AnswerGenerator generator,
                      com.lender.assistant.resilience.ResilientLlmExecutor executor) {
         this.searchService = searchService;
@@ -42,15 +56,22 @@ public class QaService {
         SseEmitter emitter = new SseEmitter(120_000L);
         long t0 = System.currentTimeMillis();
 
-        // 检索与 Prompt 组装在请求线程完成（快，且有 DB 异常要立刻暴露）；
-        // 模型流式生成也在同一线程（AnswerGenerator 契约是同步回调），
-        // SseEmitter 的 send 线程安全，无需额外切换线程池。
+        // 关键：立即返回 emitter，把检索+生成+send 放到独立线程。
+        // 旧写法在请求线程内 send，Spring 的 ResponseBodyEmitter 会把数据先堆进
+        // earlySendAttempts（此时 handler 还未挂上），直到控制器返回才一次性写出——
+        // 结果是 TTFB≈TOTAL 的"假流式"，且突发写入后立刻断连会让 Chrome 记 net::ERR_ABORTED。
+        streamExecutor.execute(() -> streamAnswer(emitter, question, topK, t0));
+        return emitter;
+    }
+
+    /** SSE 推送主流程，运行在 streamExecutor 工作线程上；每个 send 都是即时 flush 的真流式。 */
+    private void streamAnswer(SseEmitter emitter, String question, int topK, long t0) {
         try {
             List<Map<String, Object>> hits = searchService.hybridSearch(question, topK);
             if (hits.isEmpty()) {
                 send(emitter, "delta", "资料库中没有检索到相关内容，请先在上方上传并入库文档。");
                 emitter.complete();
-                return emitter;
+                return;
             }
 
             // 先推来源列表，前端立刻能展示"引用了哪些资料"
@@ -92,7 +113,6 @@ public class QaService {
             send(emitter, "error", "问答失败：" + e.getMessage());
             emitter.completeWithError(e);
         }
-        return emitter;
     }
 
     private String systemPrompt() {
@@ -123,5 +143,10 @@ public class QaService {
         } catch (Exception ignored) {
             // 客户端断开（用户关页面/取消）时 send 抛异常，静默结束即可
         }
+    }
+
+    @PreDestroy
+    void shutdownExecutor() {
+        streamExecutor.shutdownNow();
     }
 }

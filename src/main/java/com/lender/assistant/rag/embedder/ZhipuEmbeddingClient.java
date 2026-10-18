@@ -25,15 +25,18 @@ public class ZhipuEmbeddingClient implements EmbeddingClient {
 
     private static final String API_URL = "https://open.bigmodel.cn/api/paas/v4/embeddings";
 
+    /** 与 application.yml 中 rag.embedding.api-key 的假值占位保持一致；命中即视为未配置 */
+    private static final String PLACEHOLDER_KEY = "fake-zhipu-api-key";
+
     private final RestClient restClient;
     private final int dimension;
 
-    public ZhipuEmbeddingClient(@Value("${ZHIPU_API_KEY:}") String apiKey,
+    public ZhipuEmbeddingClient(@Value("${rag.embedding.api-key:}") String apiKey,
                                 @Value("${rag.embedding.dimension}") int dimension) {
-        if (apiKey == null || apiKey.isBlank()) {
+        if (apiKey == null || apiKey.isBlank() || PLACEHOLDER_KEY.equals(apiKey)) {
             throw new IllegalStateException(
-                    "rag.embedding.provider=zhipu 但未配置 ZHIPU_API_KEY 环境变量。"
-                    + "请在 .env / 系统环境变量中配置，或切回 provider=hash 使用本地 Mock。");
+                    "rag.embedding.provider=zhipu 但未配置真实 ZHIPU_API_KEY（当前为假值占位）。"
+                    + "请在 .env / 系统环境变量中配置真实 key，或切回 provider=hash 使用本地 Mock。");
         }
         this.dimension = dimension;
         this.restClient = RestClient.builder()

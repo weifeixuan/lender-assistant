@@ -36,7 +36,7 @@ class SearchServiceTest {
     void setUp() {
         embeddingClient = mock(EmbeddingClient.class);
         store = mock(DocumentStore.class);
-        service = new SearchService(embeddingClient, store);
+        service = new SearchService(embeddingClient, store, -1);   // -1 = 相似度阈值关闭，保持本测试锁定的原有 RRF 行为
     }
 
     private DocumentStore.VectorHit vec(long id, String content, double dist) {
