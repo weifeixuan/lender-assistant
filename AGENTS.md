@@ -169,26 +169,26 @@ com.lender.assistant
 
 **数据访问迁移（MyBatis 化）**
 
-- [ ] `rag/store/DocumentStore`（JdbcTemplate）→ `rag/mapper/DocChunkMapper`（+ `resources/mapper/DocChunkMapper.xml`）
-- [ ] `extract/FieldMappingStore`（实际在 extract 根，不在 extract/store）→ `extract/mapper/FieldMappingMapper`（+ XML）
-- [ ] `resilience/LlmCallLogger`（JdbcTemplate 留痕）→ 写库部分落到 `resilience/mapper/LlmCallLogMapper`（+ XML），LlmCallLogger 保留为调用侧装饰器
+- [x] `rag/store/DocumentStore`（JdbcTemplate）→ `rag/mapper/DocChunkMapper`（+ `resources/mapper/DocChunkMapper.xml`）
+- [x] `extract/FieldMappingStore`（实际在 extract 根，不在 extract/store）→ `extract/mapper/FieldMappingMapper`（+ XML）
+- [x] `resilience/LlmCallLogger`（JdbcTemplate 留痕）→ 写库部分落到 `resilience/mapper/LlmCallLogMapper`（+ XML），LlmCallLogger 保留为调用侧装饰器
 - [ ] 迁移要求：**一处一次迁完**，不留「半个方法 JdbcTemplate、半个 Mapper」；迁移后既有测试基线（如 `SearchServiceTest`）必须仍通过。
 
 **包结构迁移（按领域归位；迁移前新 Controller 禁止再进顶层包）**
 
-| 现位置 | 目标位置 |
-|---|---|
-| `controller/QaController` | `rag/controller` |
-| `controller/EvalController` | `rag/controller`（评估逻辑并入 `rag/service`；评估集资源在 `resources/eval/`） |
-| `controller/DocumentAdminController` | `rag/controller` |
-| `controller/ExtractController` | `extract/controller` |
-| `controller/DraftController` | `draft/controller` |
-| `controller/ChatController` + `service/ChatService` | 删除（阶段0 连通件，已被 /api/qa 覆盖） |
-| `controller/HealthController` | `ops/controller`（新建 ops 运维领域） |
-| `rag/qa/QaService` 等 | `rag/service` |
-| `rag/eval/EvalService` | `rag/service`（`evalset.json` 资源位置不变） |
-| `extract` 下 `*Service` / `*Generator` / `InternalFieldCatalog` | `extract/service` |
-| `FieldMapping` / `InternalField` | `extract/model` |
+| 现位置 | 目标位置 | 状态 |
+|---|---|---|
+| `controller/QaController` | `rag/controller` | ✅ |
+| `controller/EvalController` | `rag/controller`（评估逻辑并入 `rag/service`；评估集资源在 `resources/eval/`） | ✅ |
+| `controller/DocumentAdminController` | `rag/controller` | ✅ |
+| `controller/ExtractController` | `extract/controller` | ✅ |
+| `controller/DraftController` | `draft/controller` | ✅ |
+| `controller/ChatController` + `service/ChatService` | 删除（阶段0 连通件，已被 /api/qa 覆盖） | ✅ |
+| `controller/HealthController` | `ops/controller`（新建 ops 运维领域） | ✅ |
+| `rag/qa/QaService` 等 | `rag/service` | ✅ |
+| `rag/eval/EvalService` | `rag/service`（`evalset.json` 资源位置不变） | ✅ |
+| `extract` 下 `*Service` / `*Generator` / `InternalFieldCatalog` | `extract/service` | ✅ |
+| `FieldMapping` / `InternalField` | `extract/model` | ✅ |
 
 - [x] 迁移已完成：顶层 `controller/`、`service/` 空包已删除（A5/A6），此后**禁止再创建**。
 
