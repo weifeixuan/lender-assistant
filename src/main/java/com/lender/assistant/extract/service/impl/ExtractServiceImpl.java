@@ -1,5 +1,8 @@
-package com.lender.assistant.extract;
+package com.lender.assistant.extract.service.impl;
 
+import com.lender.assistant.extract.model.FieldMapping;
+import com.lender.assistant.extract.service.ExtractGenerator;
+import com.lender.assistant.extract.service.ExtractService;
 import com.lender.assistant.resilience.ResilientLlmExecutor;
 import com.lender.assistant.rag.store.DocumentStore;
 import org.springframework.stereotype.Service;
@@ -14,18 +17,19 @@ import java.util.List;
  * 失败重试不影响用户侧一致性；问答 SSE 则禁止重试（token 已推给用户）。
  */
 @Service
-public class ExtractService {
+public class ExtractServiceImpl implements ExtractService {
 
     private final ExtractGenerator generator;
     private final DocumentStore store;
     private final ResilientLlmExecutor executor;
 
-    public ExtractService(ExtractGenerator generator, DocumentStore store, ResilientLlmExecutor executor) {
+    public ExtractServiceImpl(ExtractGenerator generator, DocumentStore store, ResilientLlmExecutor executor) {
         this.generator = generator;
         this.store = store;
         this.executor = executor;
     }
 
+    @Override
     public List<FieldMapping> extractFromDoc(String docId) {
         DocumentStore.DocContent doc = store.loadDocContent(docId);
         if (doc == null || doc.text().isBlank()) {

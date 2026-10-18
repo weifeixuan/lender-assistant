@@ -1,8 +1,8 @@
 package com.lender.assistant.controller;
 
-import com.lender.assistant.extract.ExtractService;
 import com.lender.assistant.extract.FieldMappingStore;
-import com.lender.assistant.extract.InternalFieldCatalog;
+import com.lender.assistant.extract.service.ExtractService;
+import com.lender.assistant.extract.service.InternalFieldCatalog;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 

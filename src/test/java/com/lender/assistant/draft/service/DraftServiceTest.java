@@ -1,7 +1,8 @@
-package com.lender.assistant.draft;
+package com.lender.assistant.draft.service;
 
-import com.lender.assistant.extract.FieldMapping;
+import com.lender.assistant.draft.service.impl.DraftServiceImpl;
 import com.lender.assistant.extract.FieldMappingStore;
+import com.lender.assistant.extract.model.FieldMapping;
 import com.lender.assistant.resilience.LlmCallLogger;
 import com.lender.assistant.resilience.ResilientLlmExecutor;
 import org.junit.jupiter.api.BeforeEach;
@@ -35,7 +36,7 @@ class DraftServiceTest {
         // 韧性执行器也用真实实例（chaos=false），验证 scene=draft 确实经过它
         logger = spy(new LlmCallLogger(mock(JdbcTemplate.class)));
         ResilientLlmExecutor executor = new ResilientLlmExecutor(logger, 3, 30, 2, false);
-        service = new DraftService(generator, store, executor);
+        service = new DraftServiceImpl(generator, store, executor);
 
         when(generator.name()).thenReturn("Mock");
         when(generator.generateDraft(anyString(), ArgumentMatchers.anyList()))

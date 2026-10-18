@@ -1,7 +1,9 @@
-package com.lender.assistant.extract;
+package com.lender.assistant.extract.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.lender.assistant.extract.model.FieldMapping;
+import com.lender.assistant.extract.model.InternalField;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;

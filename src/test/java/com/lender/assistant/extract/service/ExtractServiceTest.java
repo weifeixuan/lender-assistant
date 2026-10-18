@@ -1,5 +1,7 @@
-package com.lender.assistant.extract;
+package com.lender.assistant.extract.service;
 
+import com.lender.assistant.extract.model.FieldMapping;
+import com.lender.assistant.extract.service.impl.ExtractServiceImpl;
 import com.lender.assistant.resilience.LlmCallLogger;
 import com.lender.assistant.resilience.ResilientLlmExecutor;
 import com.lender.assistant.rag.store.DocumentStore;
@@ -37,7 +39,7 @@ class ExtractServiceTest {
         // 编排契约（supplier 真执行、异常真上抛）必须走真实代码路径
         executor = spy(new ResilientLlmExecutor(
                 new LlmCallLogger(mock(JdbcTemplate.class)), 3, 10, 2, false));
-        service = new ExtractService(generator, store, executor);
+        service = new ExtractServiceImpl(generator, store, executor);
 
         when(generator.name()).thenReturn("Mock");
         when(generator.extract(anyString(), anyString())).thenReturn(List.of(

@@ -1,4 +1,4 @@
-package com.lender.assistant.extract;
+package com.lender.assistant.extract.model;
 
 /**
  * 内部标准字段：映射表"我方一侧"的字段定义。

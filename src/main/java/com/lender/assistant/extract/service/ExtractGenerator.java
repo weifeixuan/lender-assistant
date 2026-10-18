@@ -1,4 +1,6 @@
-package com.lender.assistant.extract;
+package com.lender.assistant.extract.service;
+
+import com.lender.assistant.extract.model.FieldMapping;
 
 import java.util.List;
 

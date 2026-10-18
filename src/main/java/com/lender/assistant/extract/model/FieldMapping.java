@@ -1,4 +1,4 @@
-package com.lender.assistant.extract;
+package com.lender.assistant.extract.model;
 
 /**
  * 一条字段映射：内部标准字段 ↔ 资方侧的对应信息。

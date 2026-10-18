@@ -1,5 +1,6 @@
-package com.lender.assistant.extract;
+package com.lender.assistant.extract.service;
 
+import com.lender.assistant.extract.model.InternalField;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 

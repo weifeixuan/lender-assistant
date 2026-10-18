@@ -1,5 +1,7 @@
 package com.lender.assistant.extract;
 
+import com.lender.assistant.extract.model.FieldMapping;
+import com.lender.assistant.extract.service.InternalFieldCatalog;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Transactional;

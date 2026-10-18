@@ -1,5 +1,6 @@
-package com.lender.assistant.extract;
+package com.lender.assistant.extract.service;
 
+import com.lender.assistant.extract.model.FieldMapping;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 

@@ -1,4 +1,6 @@
-package com.lender.assistant.extract;
+package com.lender.assistant.extract.service;
+
+import com.lender.assistant.extract.model.InternalField;
 
 import java.util.LinkedHashMap;
 import java.util.List;

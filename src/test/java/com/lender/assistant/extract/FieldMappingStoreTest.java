@@ -1,5 +1,6 @@
 package com.lender.assistant.extract;
 
+import com.lender.assistant.extract.model.FieldMapping;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;

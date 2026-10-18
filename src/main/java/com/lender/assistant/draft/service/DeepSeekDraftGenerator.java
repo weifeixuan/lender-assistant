@@ -1,6 +1,6 @@
-package com.lender.assistant.draft;
+package com.lender.assistant.draft.service;
 
-import com.lender.assistant.extract.FieldMapping;
+import com.lender.assistant.extract.model.FieldMapping;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
