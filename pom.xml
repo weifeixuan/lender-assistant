@@ -53,6 +53,14 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-jdbc</artifactId>
         </dependency>
+        <!-- MyBatis：统一数据访问口径（AGENTS.md §6）。
+             不引 MyBatis-Plus（谓词构造器会诱导把业务判断写进数据层）；
+             版本 3.0.5 对应 MyBatis 3.5.x，兼容 Spring Boot 3.5 -->
+        <dependency>
+            <groupId>org.mybatis.spring.boot</groupId>
+            <artifactId>mybatis-spring-boot-starter</artifactId>
+            <version>3.0.5</version>
+        </dependency>
         <dependency>
             <groupId>org.postgresql</groupId>
             <artifactId>postgresql</artifactId>

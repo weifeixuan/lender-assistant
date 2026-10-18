@@ -17,6 +17,13 @@ spring:
           model: deepseek-chat
           temperature: 0.7
 
+mybatis:
+  # Mapper XML 统一放 resources/mapper（§6.2），与接口不在同一 classpath 位置，必须显式指定
+  mapper-locations: classpath:mapper/*.xml
+  configuration:
+    # 下划线列名 → 驼峰属性（resultMap 的 <arg column> 仍显式写出，不依赖隐式映射）
+    map-underscore-to-camel-case: true
+
 # 应用自定义配置（RAG 链路参数集中在这里，阶段 3 调优只动这里）
 rag:
   chat:
