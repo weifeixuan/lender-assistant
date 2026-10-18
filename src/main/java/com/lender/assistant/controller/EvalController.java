@@ -1,6 +1,6 @@
 package com.lender.assistant.controller;
 
-import com.lender.assistant.rag.eval.EvalService;
+import com.lender.assistant.rag.service.EvalService;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;

@@ -1,7 +1,8 @@
-package com.lender.assistant.rag.eval;
+package com.lender.assistant.rag.service.impl;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.lender.assistant.rag.service.EvalService;
 import com.lender.assistant.rag.service.SearchService;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.stereotype.Service;
@@ -29,12 +30,12 @@ import java.util.Map;
  * 换实现不换评估，前后对比天然成立。
  */
 @Service
-public class EvalService {
+public class EvalServiceImpl implements EvalService {
 
     private final SearchService searchService;
     private final ObjectMapper objectMapper;
 
-    public EvalService(SearchService searchService, ObjectMapper objectMapper) {
+    public EvalServiceImpl(SearchService searchService, ObjectMapper objectMapper) {
         this.searchService = searchService;
         this.objectMapper = objectMapper;
     }
@@ -45,6 +46,7 @@ public class EvalService {
     public record ItemResult(int id, String type, String question, boolean hit, int firstHitRank,
                              int recallTopK, long millis, String note) {}
 
+    @Override
     public Map<String, Object> run(int topK, String mode) throws Exception {
         List<EvalItem> items = loadEvalSet();
 
