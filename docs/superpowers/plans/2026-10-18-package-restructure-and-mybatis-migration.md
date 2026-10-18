@@ -590,8 +590,15 @@ git commit -m "重构(包结构): 删除阶段0 Chat 连通件（已被 /api/qa 
 
 **Files:**
 - Create: `src/main/java/com/lender/assistant/ops/controller/HealthController.java`
+- Move: `src/main/java/com/lender/assistant/controller/DocumentAdminController.java` → `src/main/java/com/lender/assistant/rag/controller/DocumentAdminController.java`
+- Move: `src/main/java/com/lender/assistant/controller/QaController.java` → `src/main/java/com/lender/assistant/rag/controller/QaController.java`
+- Move: `src/main/java/com/lender/assistant/controller/EvalController.java` → `src/main/java/com/lender/assistant/rag/controller/EvalController.java`
+- Move: `src/main/java/com/lender/assistant/controller/ExtractController.java` → `src/main/java/com/lender/assistant/extract/controller/ExtractController.java`
+- Move: `src/main/java/com/lender/assistant/controller/DraftController.java` → `src/main/java/com/lender/assistant/draft/controller/DraftController.java`
 - Delete: `src/main/java/com/lender/assistant/controller/HealthController.java`
 - Delete: `src/main/java/com/lender/assistant/controller/`（整包）
+
+> **计划补漏（2026-10-18 执行时发现）**：本节原 Files 清单只列了 HealthController 的搬迁，但 Step 4 的终态结构要求 `rag/controller` / `extract/controller` / `draft/controller`，且 `AGENTS.md` §11 迁移表早已把 5 个业务 Controller 的目标位置定为领域 `controller/`。原清单遗漏这 5 个文件的搬迁，导致「删除顶层 `controller/`」实际无法完成。此处补上。
 
 - [ ] **Step 1: 新建 `ops/controller/HealthController.java`**
 
@@ -625,14 +632,37 @@ public class HealthController {
 }
 ```
 
-- [ ] **Step 2: 删除旧文件与顶层包**
+- [ ] **Step 2: 搬迁 5 个业务 Controller 到领域 `controller/` 包**
+
+**只改每个文件的 `package` 行**（类体逐字保留；全仓 Grep 已确认没有任何其它文件以 FQN 引用这些 Controller，故无调用方需改）：
+
+```text
+controller/DocumentAdminController.java  →  rag/controller/DocumentAdminController.java
+  package com.lender.assistant.controller;  →  package com.lender.assistant.rag.controller;
+
+controller/QaController.java             →  rag/controller/QaController.java
+  package com.lender.assistant.controller;  →  package com.lender.assistant.rag.controller;
+
+controller/EvalController.java           →  rag/controller/EvalController.java
+  package com.lender.assistant.controller;  →  package com.lender.assistant.rag.controller;
+
+controller/ExtractController.java        →  extract/controller/ExtractController.java
+  package com.lender.assistant.controller;  →  package com.lender.assistant.extract.controller;
+
+controller/DraftController.java          →  draft/controller/DraftController.java
+  package com.lender.assistant.controller;  →  package com.lender.assistant.draft.controller;
+```
+
+（这 5 个 Controller 各自 import 的服务类已用全限定名，搬迁后无需改 import。）
+
+- [ ] **Step 3: 删除旧文件与顶层包**
 
 ```text
 删除：src/main/java/com/lender/assistant/controller/HealthController.java
-删除目录：src/main/java/com/lender/assistant/controller/   （搬迁完毕后已无其他类）
+删除目录：src/main/java/com/lender/assistant/controller/   （5 个业务 Controller 已搬迁、Health 已重建到 ops，本目录应已无 .java）
 ```
 
-- [ ] **Step 3: 校验包结构终态**
+- [ ] **Step 4: 校验包结构终态**
 
 用 Glob `src/main/java/**/*.java` 逐项核对，终态应为：
 
@@ -648,7 +678,7 @@ com.lender.assistant
 ```
 （`mapper` / `model` 下多项在阶段 B 落地；本步只需确认**不存在**顶层 `controller/`、`service/`、`rag/store/`、`rag/qa/`、`rag/eval/`。）
 
-- [ ] **Step 4: 编译并跑测试**
+- [ ] **Step 5: 编译并跑测试**
 
 ```powershell
 mvn -q test-compile
@@ -656,11 +686,11 @@ mvn -q test
 ```
 Expected: `BUILD SUCCESS`，56 例全绿。
 
-- [ ] **Step 5: 提交**
+- [ ] **Step 6: 提交**
 
 ```powershell
-git add src/main/java/com/lender/assistant/ops src/main/java/com/lender/assistant/controller
-git commit -m "重构(包结构): 新建 ops 运维领域承载 /health，删除顶层 controller 包"
+git add src/main/java/com/lender/assistant/ops src/main/java/com/lender/assistant/controller src/main/java/com/lender/assistant/rag/controller src/main/java/com/lender/assistant/extract/controller src/main/java/com/lender/assistant/draft/controller
+git commit -m "阶段6(part6): 新建 ops 运维领域承载 /health，业务 Controller 归位领域包，删除顶层 controller 包"
 ```
 
 ---
