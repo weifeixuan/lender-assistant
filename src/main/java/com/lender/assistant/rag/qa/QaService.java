@@ -1,6 +1,6 @@
 package com.lender.assistant.rag.qa;
 
-import com.lender.assistant.rag.SearchService;
+import com.lender.assistant.rag.service.SearchService;
 import jakarta.annotation.PreDestroy;
 import org.springframework.stereotype.Service;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;

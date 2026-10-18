@@ -1,6 +1,6 @@
 package com.lender.assistant.rag.qa;
 
-import com.lender.assistant.rag.SearchService;
+import com.lender.assistant.rag.service.SearchService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;

@@ -1,8 +1,8 @@
 package com.lender.assistant.controller;
 
-import com.lender.assistant.rag.SearchService;
 import com.lender.assistant.rag.embedder.EmbeddingClient;
 import com.lender.assistant.rag.parser.DocumentParser;
+import com.lender.assistant.rag.service.SearchService;
 import com.lender.assistant.rag.splitter.Chunk;
 import com.lender.assistant.rag.splitter.ChunkSplitter;
 import com.lender.assistant.rag.store.DocumentStore;

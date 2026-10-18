@@ -1,7 +1,8 @@
-package com.lender.assistant.rag;
+package com.lender.assistant.rag.service.impl;
 
 import com.lender.assistant.rag.embedder.EmbeddingClient;
 import com.lender.assistant.rag.embedder.HashEmbeddingClient;
+import com.lender.assistant.rag.service.SearchService;
 import com.lender.assistant.rag.store.DocumentStore;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -23,7 +24,7 @@ import java.util.Map;
  *   权重融合（RRF 等）是阶段 3 调优的内容。
  */
 @Service
-public class SearchService {
+public class SearchServiceImpl implements SearchService {
 
     private final EmbeddingClient embeddingClient;
     private final DocumentStore store;
@@ -35,13 +36,14 @@ public class SearchService {
      */
     private final double maxDistance;
 
-    public SearchService(EmbeddingClient embeddingClient, DocumentStore store,
-                         @Value("${rag.search.max-distance:-1}") double maxDistance) {
+    public SearchServiceImpl(EmbeddingClient embeddingClient, DocumentStore store,
+                             @Value("${rag.search.max-distance:-1}") double maxDistance) {
         this.embeddingClient = embeddingClient;
         this.store = store;
         this.maxDistance = maxDistance;
     }
 
+    @Override
     public List<Map<String, Object>> hybridSearch(String query, int topK) {
         return search(query, topK, "hybrid");
     }
@@ -53,6 +55,7 @@ public class SearchService {
      * - hybrid  双通道合并（生产路径）
      * 三模式跑同一评估集的对比，就是简历上"混合检索比单通道召回率提升 XX%"数据的来源。
      */
+    @Override
     public List<Map<String, Object>> search(String query, int topK, String mode) {
         // 每条 chunk 记录它在各通道内的排名（1-based），hybrid 模式用 RRF 融合
         Map<Long, Map<String, Object>> merged = new LinkedHashMap<>();

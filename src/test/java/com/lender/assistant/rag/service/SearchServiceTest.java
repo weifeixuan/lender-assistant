@@ -1,6 +1,7 @@
-package com.lender.assistant.rag;
+package com.lender.assistant.rag.service;
 
 import com.lender.assistant.rag.embedder.EmbeddingClient;
+import com.lender.assistant.rag.service.impl.SearchServiceImpl;
 import com.lender.assistant.rag.store.DocumentStore;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -36,7 +37,7 @@ class SearchServiceTest {
     void setUp() {
         embeddingClient = mock(EmbeddingClient.class);
         store = mock(DocumentStore.class);
-        service = new SearchService(embeddingClient, store, -1);   // -1 = 相似度阈值关闭，保持本测试锁定的原有 RRF 行为
+        service = new SearchServiceImpl(embeddingClient, store, -1);   // -1 = 相似度阈值关闭，保持本测试锁定的原有 RRF 行为
     }
 
     private DocumentStore.VectorHit vec(long id, String content, double dist) {

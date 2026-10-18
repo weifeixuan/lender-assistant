@@ -2,7 +2,7 @@ package com.lender.assistant.rag.eval;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.lender.assistant.rag.SearchService;
+import com.lender.assistant.rag.service.SearchService;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.stereotype.Service;
 
