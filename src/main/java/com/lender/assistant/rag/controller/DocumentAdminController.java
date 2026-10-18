@@ -1,4 +1,4 @@
-package com.lender.assistant.controller;
+package com.lender.assistant.rag.controller;
 
 import com.lender.assistant.rag.embedder.EmbeddingClient;
 import com.lender.assistant.rag.parser.DocumentParser;

@@ -1,4 +1,4 @@
-package com.lender.assistant.controller;
+package com.lender.assistant.extract.controller;
 
 import com.lender.assistant.extract.FieldMappingStore;
 import com.lender.assistant.extract.service.ExtractService;

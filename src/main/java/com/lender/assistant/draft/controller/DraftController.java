@@ -1,4 +1,4 @@
-package com.lender.assistant.controller;
+package com.lender.assistant.draft.controller;
 
 import com.lender.assistant.draft.service.DraftService;
 import org.springframework.http.ResponseEntity;

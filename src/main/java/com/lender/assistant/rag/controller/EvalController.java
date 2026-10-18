@@ -1,4 +1,4 @@
-package com.lender.assistant.controller;
+package com.lender.assistant.rag.controller;
 
 import com.lender.assistant.rag.service.EvalService;
 import org.springframework.web.bind.annotation.PostMapping;

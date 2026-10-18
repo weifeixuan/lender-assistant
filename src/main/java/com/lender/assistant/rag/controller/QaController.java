@@ -1,4 +1,4 @@
-package com.lender.assistant.controller;
+package com.lender.assistant.rag.controller;
 
 import com.lender.assistant.rag.service.QaService;
 import org.springframework.http.MediaType;
