@@ -51,7 +51,7 @@ com.lender.assistant
 
 ### 0.3 结构规则
 
-- **按领域分包**（`rag` / `extract` / `draft`），领域内按 **`controller` / `service` / `mapper` / `model`** 分层；**顶层禁止出现 `controller/` `service/` `mapper/` 技术包**（存量迁移见 §11，迁移完成后删除顶层空包且禁止重建）。
+- **按领域分包**（`rag` / `extract` / `draft` / `ops`），领域内按 **`controller` / `service` / `mapper` / `model`** 分层；**顶层禁止出现 `controller/` `service/` `mapper/` 技术包**（存量迁移见 §11；顶层 `controller/`、`service/` 空包已删除，此后禁止重建）。
 - **无 HTTP 入口的横向包（`tools` / `resilience` / `common`）不建 `controller/`**；需要访问 DB 时才建 `mapper/`。
 - 新类先定位「哪个领域 → 哪一层」；两级都定不了再考虑 `common/`，并在 commit message 说明理由。
 - **禁止**为一次性需求创建只放一个类的平行包；**禁止**包名近义重复（`extract` vs `extraction` 已出过事故）；**禁止**空包与死代码。
@@ -179,7 +179,7 @@ com.lender.assistant
 | 现位置 | 目标位置 |
 |---|---|
 | `controller/QaController` | `rag/controller` |
-| `controller/EvalController` | `rag/controller`（评估逻辑并入 `rag`；`rag/eval/` 保留评估服务与资源） |
+| `controller/EvalController` | `rag/controller`（评估逻辑并入 `rag/service`；评估集资源在 `resources/eval/`） |
 | `controller/DocumentAdminController` | `rag/controller` |
 | `controller/ExtractController` | `extract/controller` |
 | `controller/DraftController` | `draft/controller` |
