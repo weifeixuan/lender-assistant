@@ -198,6 +198,7 @@ com.lender.assistant
 - [ ] `common/constant/`、`common/util/` 首次需要时按 §0.2 创建
 - [ ] controller 返回 Map 手拼键名 → 收敛为 `record`
 - [ ] `QaService` 的 `Executors.newFixedThreadPool` → 改 `ThreadPoolExecutor` 显式参数（§8.1）
+- [ ] 补 Mapper 层真实库冒烟测试（`@SpringBootTest`，本轮暂缓）：全 Mock 单测测不到 Mapper XML↔接口绑定 / `<resultMap>` 列序 / starter 启动兼容性——`2026-10-18` 真实库冒烟才暴露 `Record` 构造映射的 `NoSuchMethodException`（§10.2「单测不连真库」的固有盲区）
 
 ## 12. 提交纪律
 
