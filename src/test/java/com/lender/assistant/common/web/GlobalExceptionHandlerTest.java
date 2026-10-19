@@ -5,7 +5,10 @@ import com.lender.assistant.common.exception.BizException;
 import com.lender.assistant.common.exception.ErrorCode;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.springframework.http.HttpMethod;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.MissingServletRequestParameterException;
+import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -65,6 +68,30 @@ class GlobalExceptionHandlerTest {
         assertEquals(500, resp.getBody().code(), "code 取 INTERNAL_ERROR");
         assertEquals("系统错误", resp.getBody().msg(), "对外只给通用文案");
         assertFalse(resp.getBody().msg().contains("bank_card"), "不得把异常 message/SQL 泄漏给调用方");
+        assertNull(resp.getBody().data());
+    }
+
+    @Test
+    @DisplayName("未匹配路由（NoResourceFoundException）：映射为 404 + 资源不存在，而非 500")
+    void handlesMissingRouteAsNotFound() {
+        ResponseEntity<ApiResponse<Void>> resp =
+                handler.handleNotFound(new NoResourceFoundException(HttpMethod.GET, "api/nope"));
+
+        assertEquals(404, resp.getStatusCode().value(), "路由不存在是客户端错误，落 404 而非 500");
+        assertEquals(404, resp.getBody().code(), "code 取 NOT_FOUND");
+        assertEquals("资源不存在", resp.getBody().msg(), "对外只给通用文案");
+        assertNull(resp.getBody().data(), "失败响应不带 data");
+    }
+
+    @Test
+    @DisplayName("必填参数缺失（MissingServletRequestParameterException）：映射为 400 + 参数校验失败")
+    void handlesMissingRequiredParamAsBadRequest() {
+        ResponseEntity<ApiResponse<Void>> resp = handler.handleClientRequestError(
+                new MissingServletRequestParameterException("docId", "String"));
+
+        assertEquals(400, resp.getStatusCode().value(), "报文/参数不合法是客户端错误，落 400 而非 500");
+        assertEquals(400, resp.getBody().code(), "code 取 PARAM_INVALID");
+        assertEquals("参数校验失败", resp.getBody().msg(), "不回显框架技术性异常信息");
         assertNull(resp.getBody().data());
     }
 }

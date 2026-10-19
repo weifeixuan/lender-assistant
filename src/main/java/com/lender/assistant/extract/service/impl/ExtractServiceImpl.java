@@ -1,5 +1,7 @@
 package com.lender.assistant.extract.service.impl;
 
+import com.lender.assistant.common.exception.BizException;
+import com.lender.assistant.common.exception.ErrorCode;
 import com.lender.assistant.extract.mapper.FieldMappingMapper;
 import com.lender.assistant.extract.model.FieldMapping;
 import com.lender.assistant.extract.model.FieldMappingRaw;
@@ -43,8 +45,9 @@ public class ExtractServiceImpl implements ExtractService {
     @Override
     public List<FieldMapping> extractFromDoc(String docId) {
         DocContent doc = documentService.loadDocContent(docId);
+        // 业务失败抛 BizException 而非裸 IllegalArgumentException（§5.3）：带 ErrorCode 供全局处理器定 HTTP 状态与对外 code
         if (doc == null || doc.text().isBlank()) {
-            throw new IllegalArgumentException("文档不存在或未入库: " + docId);
+            throw new BizException(ErrorCode.PARAM_INVALID, "文档不存在或未入库: " + docId);
         }
         return executor.execute("extract", generator.name(),
                 () -> generator.extract(doc.docTitle(), doc.text()), true);

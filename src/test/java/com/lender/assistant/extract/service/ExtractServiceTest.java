@@ -1,5 +1,7 @@
 package com.lender.assistant.extract.service;
 
+import com.lender.assistant.common.exception.BizException;
+import com.lender.assistant.common.exception.ErrorCode;
 import com.lender.assistant.extract.mapper.FieldMappingMapper;
 import com.lender.assistant.extract.model.FieldMapping;
 import com.lender.assistant.extract.model.FieldMappingRaw;
@@ -91,9 +93,9 @@ class ExtractServiceTest {
     @DisplayName("文档不存在：给出可读异常而非 NPE")
     void missingDocGivesReadableError() {
         when(documentService.loadDocContent("nope")).thenReturn(null);
-        IllegalArgumentException e = assertThrows(IllegalArgumentException.class,
-                () -> service.extractFromDoc("nope"));
-        assertTrue(e.getMessage().contains("nope"));
+        BizException e = assertThrows(BizException.class, () -> service.extractFromDoc("nope"));
+        assertTrue(e.getMessage().contains("nope"), "可读异常要带上 docId: " + e.getMessage());
+        assertEquals(ErrorCode.PARAM_INVALID, e.errorCode(), "文档不存在是业务失败，须带业务码");
     }
 
     private FieldMapping sampleMapping() {

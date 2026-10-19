@@ -1,5 +1,7 @@
 package com.lender.assistant.draft.service;
 
+import com.lender.assistant.common.exception.BizException;
+import com.lender.assistant.common.exception.ErrorCode;
 import com.lender.assistant.draft.service.impl.DraftServiceImpl;
 import com.lender.assistant.draft.strategy.DraftGeneratorStrategy;
 import com.lender.assistant.extract.model.FieldMapping;
@@ -52,9 +54,9 @@ class DraftServiceTest {
     void noMappingsGuidesToExtractFirst() {
         when(extractService.listFieldMappings("doc_none")).thenReturn(List.of());
 
-        IllegalArgumentException e = assertThrows(IllegalArgumentException.class,
-                () -> service.generate("doc_none"));
+        BizException e = assertThrows(BizException.class, () -> service.generate("doc_none"));
         assertTrue(e.getMessage().contains("字段抽取"), "提示信息要指路: " + e.getMessage());
+        assertEquals(ErrorCode.PARAM_INVALID, e.errorCode(), "空映射是业务失败，须带业务码供前端分支");
         verify(generator, never()).generateDraft(anyString(), ArgumentMatchers.anyList());
     }
 

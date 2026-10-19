@@ -1,5 +1,7 @@
 package com.lender.assistant.draft.service.impl;
 
+import com.lender.assistant.common.exception.BizException;
+import com.lender.assistant.common.exception.ErrorCode;
 import com.lender.assistant.draft.service.DraftService;
 import com.lender.assistant.draft.strategy.DraftGeneratorStrategy;
 import com.lender.assistant.extract.model.FieldMapping;
@@ -37,8 +39,9 @@ public class DraftServiceImpl implements DraftService {
     @Override
     public DraftService.DraftResult generate(String docId) {
         List<FieldMapping> mappings = extractService.listFieldMappings(docId);
+        // 业务失败抛 BizException 而非裸 IllegalArgumentException（§5.3）：带 ErrorCode 供全局处理器定 HTTP 状态与对外 code
         if (mappings.isEmpty()) {
-            throw new IllegalArgumentException(
+            throw new BizException(ErrorCode.PARAM_INVALID,
                     "该文档暂无字段映射，请先执行字段抽取：POST /api/extract/" + docId);
         }
         String draft = executor.execute("draft", generator.name(),

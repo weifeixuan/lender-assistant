@@ -119,6 +119,7 @@ com.lender.assistant
 6. 日志级别：ERROR=需要人处理；WARN=自动恢复但有异常信号；INFO=关键流程节点；DEBUG=细节（生产不输出）。
 7. 日志**禁止打印敏感信息**（身份证 / 银行卡 / 密钥）；关键上下文带 `docId` / `chunkId` / 请求 id。
 8. 对外响应统一为 `ApiResponse{code, msg, data}`：普通 controller 返回值由 `ApiResponseBodyAdvice` 自动包装，错误响应由 `GlobalExceptionHandler` 产出（失败 `data` 为 null）；**不暴露堆栈、内部类名、SQL**——失败只给通用或可读文案。SSE（`SseEmitter` 返回类型）与探针类接口用 `@RawResponse`（方法级/类级）排除包装。
+9. Spring MVC 自身的客户端错误异常按 HTTP 语义归位，**不得被兜底成 500**：路由不存在（`NoResourceFoundException` / `NoHandlerFoundException`）→ 404；报文不可解析 / 参数类型不匹配 / 必填参数缺失 → 400。文案取 `ErrorCode` 默认值，不回显框架的技术性异常信息（2026-10-19 真实启动冒烟发现错误路径被兜底成 500 后补，单测覆盖不到 MVC 异常解析链）。
 
 ## 6. 数据访问（统一 MyBatis）
 
