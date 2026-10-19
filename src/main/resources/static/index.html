@@ -113,15 +113,16 @@
 </div>
 
 <script>
-// ===== 基础请求封装：统一错误处理，全部走原生 fetch =====
+// ===== 基础请求封装：统一错误处理 + 统一响应体解包（后端返回 {code,msg,data}）=====
+// 后端由 ApiResponseBodyAdvice 把所有普通接口包成 {code,msg,data}，
+// 故此处统一取 body.data 作为业务载荷、取 body.msg 作为错误原因
 async function api(path, opts) {
   const resp = await fetch('/api/admin/documents' + path, opts);
+  const body = await resp.json().catch(() => null);
   if (!resp.ok) {
-    let msg = resp.status + ' ' + resp.statusText;
-    try { msg = (await resp.json()).error || msg; } catch (e) { /* 非JSON错误体就用状态码 */ }
-    throw new Error(msg);
+    throw new Error((body && body.msg) || (resp.status + ' ' + resp.statusText));
   }
-  return resp.json();
+  return body ? body.data : null;
 }
 
 // ===== ① 上传：multipart/form-data，对应后端 @RequestParam MultipartFile =====
@@ -275,15 +276,14 @@ function handleSseBlock(block, answerEl, sourcesEl) {
   }
 }
 
-// ===== ⑤ 字段映射抽取（阶段4）：走 /api/extract 独立前缀，不经 api() 封装 =====
+// ===== ⑤ 字段映射抽取（阶段4）：走 /api/extract 独立前缀，同样解包 {code,msg,data} =====
 function extractApi(path, opts) {
   return fetch('/api/extract' + path, opts).then(async resp => {
+    const body = await resp.json().catch(() => null);
     if (!resp.ok) {
-      let msg = resp.status + ' ' + resp.statusText;
-      try { msg = (await resp.json()).error || msg; } catch (e) { /* 同上 */ }
-      throw new Error(msg);
+      throw new Error((body && body.msg) || (resp.status + ' ' + resp.statusText));
     }
-    return resp.json();
+    return body ? body.data : null;
   });
 }
 
@@ -363,8 +363,9 @@ async function draftRun() {
   out.innerHTML = '<span class="muted">生成中…</span>';
   try {
     const resp = await fetch('/api/draft/' + encodeURIComponent(docId), { method: 'POST' });
-    const d = await resp.json();
-    if (!resp.ok) throw new Error(d.error || resp.status);
+    const body = await resp.json().catch(() => null);
+    if (!resp.ok) throw new Error((body && body.msg) || resp.status);
+    const d = body.data;  // 统一响应体：业务载荷在 data 里
     // 人工复核声明：醒目提示条，接口契约保证永远有
     notice.style.display = 'block';
     notice.textContent = '⚠ ' + d.reviewNotice + '（生成方: ' + d.provider + '，依据映射 ' + d.mappingsUsed + ' 条）';

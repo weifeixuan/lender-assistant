@@ -1,5 +1,6 @@
 package com.lender.assistant.rag.controller;
 
+import com.lender.assistant.common.annotation.RawResponse;
 import com.lender.assistant.rag.service.QaService;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -16,8 +17,12 @@ import java.util.Map;
  * 但问题文本放 URL 不合适（长、且会进访问日志）——
  * 前端用 fetch POST + ReadableStream 手工解析 SSE 报文（见 index.html），
  * 拿回"URL 干净 + 请求体传参 + 流式渲染"三者兼得。
+ *
+ * @RawResponse：SSE 是原始流式响应，必须跳过统一响应体包装（包一层 {code,msg,data} 会破坏事件协议）。
+ * 注意 AOP 日志切面仍会记录本接口的进入/返回（切面按其自身切点匹配，不受此注解影响）。
  */
 @RestController
+@RawResponse
 public class QaController {
 
     private final QaService qaService;

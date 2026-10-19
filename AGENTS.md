@@ -13,8 +13,9 @@
 
 ### 0.1 不可违背的基本盘
 
-- **技术栈**：JDK 21 · Spring Boot 3.x · Spring AI · PostgreSQL 16 + pgvector + pg_trgm · **MyBatis（统一）** · Resilience4j 纯库 · JUnit 5 + Mockito。**版本以 `pom.xml` 为唯一事实源，本文件不复制版本号。**
+- **技术栈**：JDK 21 · Spring Boot 3.x · Spring AI · PostgreSQL 16 + pgvector + pg_trgm · **MyBatis（统一）** · Resilience4j 纯库 · **Spring AOP（仅 controller 日志切面，见 AOP 口径）** · JUnit 5 + Mockito。**版本以 `pom.xml` 为唯一事实源，本文件不复制版本号。**
 - **不引**：JPA / Hibernate / MyBatis-Plus、Lombok（用 `record` / 构造器注入）、WebFlux（Servlet 栈 + `SseEmitter`）、Tika（当前无 PDF 场景）。
+- **AOP 口径**（2026-10-19）：引入 `spring-boot-starter-aop` **仅为** `common/web/ControllerLogAspect` 打印 controller 进出参与耗时；这与「Resilience4j 纯库、不用注解 AOP」不冲突——韧性仍走编程式 `decorateSupplier`，AOP 只切 HTTP 边界。
 - **红线**：全脱敏虚构资方数据；时间取真实时间；AI 写的代码必须人类可读懂——**注释讲「为什么」，不抄「是什么」**。
 - **验证闭环**：任何改动完成前 `mvn test` 必须全绿；改了行为必须同步改测试；新增功能必须自带测试。
 
@@ -44,11 +45,13 @@ com.lender.assistant
 ├── ops/                       # 运维领域（无业务语义）
 │   └── controller/            #   HealthController（GET /health）
 ├── common/                    # 跨领域内容（领域包装不下时才进这里）
+│   ├── annotation/            #   横切注解（@RawResponse：跳过统一响应包装）
 │   ├── constant/              #   *Constants（禁实例化）
+│   ├── dto/                   #   跨模块 DTO（ApiResponse：统一响应体 code/msg/data）
+│   ├── exception/             #   业务异常：BizException + ErrorCode（全局异常处理的类型契约）
 │   ├── util/                  #   *Utils（静态方法 + private 构造器，如 PgVectorUtils）
-│   └── dto/                   #   跨模块 DTO
+│   └── web/                   #   Web 横切：GlobalExceptionHandler / ApiResponseBodyAdvice / ControllerLogAspect
 ├── config/                    #   @Configuration / @Bean 装配，集中于此
-├── exception/                 #   全局异常处理 + 业务异常
 └── LenderAssistantApplication.java
 ```
 
@@ -115,7 +118,7 @@ com.lender.assistant
 5. 日志用 SLF4J 占位符 `log.info("xx {}", val)`，禁止字符串拼接；异常必须 `log.error("上下文", e)` 带堆栈。**禁止** `e.printStackTrace()` 与 `System.out`。
 6. 日志级别：ERROR=需要人处理；WARN=自动恢复但有异常信号；INFO=关键流程节点；DEBUG=细节（生产不输出）。
 7. 日志**禁止打印敏感信息**（身份证 / 银行卡 / 密钥）；关键上下文带 `docId` / `chunkId` / 请求 id。
-8. 对外错误响应统一 `code` / `message`，**不暴露堆栈、内部类名、SQL**。
+8. 对外响应统一为 `ApiResponse{code, msg, data}`：普通 controller 返回值由 `ApiResponseBodyAdvice` 自动包装，错误响应由 `GlobalExceptionHandler` 产出（失败 `data` 为 null）；**不暴露堆栈、内部类名、SQL**——失败只给通用或可读文案。SSE（`SseEmitter` 返回类型）与探针类接口用 `@RawResponse`（方法级/类级）排除包装。
 
 ## 6. 数据访问（统一 MyBatis）
 
@@ -198,6 +201,8 @@ com.lender.assistant
 
 **代码治理**
 
+- [x] 统一响应体系（阶段6，2026-10-19）：`common/dto/ApiResponse`（code/msg/data）+ `common/exception/{BizException,ErrorCode}` + `common/web/{GlobalExceptionHandler,ApiResponseBodyAdvice,ControllerLogAspect}` + `common/annotation/@RawResponse`；controller 不再就地 catch 手拼错误体（SSE / `/health` 经 `@RawResponse` 排除包装）
+- [x] 吞异常点补日志（阶段6 part1）：`DocxDocumentParserStrategy` / `QaServiceImpl`（熔断 WARN、链路故障 ERROR 带堆栈、客户端断开 DEBUG）/ `MockAnswerGeneratorStrategy` / `LlmCallLogger`
 - [ ] 魔法值散落：场景名 `"qa"` / `"extract"` / `"draft"`、超时秒数、置信度 `0.9` / `0.7` → 归 `common/constant/`
 - [ ] `common/constant/`、`common/util/` 首次需要时按 §0.2 创建
 - [ ] controller 返回 Map 手拼键名 → 收敛为 `record`
@@ -232,3 +237,17 @@ com.lender.assistant
 - [ ] schema 变更已回写 `docs/` schema SQL
 - [ ] 改签名已同步全部调用方与测试
 - [ ] `mvn test` 全绿
+
+## Agent skills
+
+### Issue tracker
+
+issue 以本地 markdown 文件形式存放在 `.scratch/<feature>/` 下。见 `docs/agents/issue-tracker.md`。
+
+### Triage labels
+
+五个规范角色，标签字符串与角色同名（`needs-triage`、`needs-info`、`ready-for-agent`、`ready-for-human`、`wontfix`）。见 `docs/agents/triage-labels.md`。
+
+### Domain docs
+
+single-context：仓库根目录一个 `GLOSSARY.md` + `docs/adr/`。见 `docs/agents/domain.md`。

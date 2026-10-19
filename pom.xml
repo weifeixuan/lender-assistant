@@ -40,6 +40,16 @@
             <artifactId>spring-boot-starter-web</artifactId>
         </dependency>
 
+        <!-- AOP：仅用于 ControllerLogAspect 打印控制器进出参/耗时（阶段6）。
+             它自带 aspectjweaver 并触发 Spring Boot AopAutoConfiguration 开启 @AspectJ 代理，
+             因此只加这一个 starter 即可，不需要额外的 @EnableAspectJAutoProxy。
+             注意：这不改变"Resilience4j 用纯库、不用注解 AOP"的口径（§0.1）——
+             AOP 只管 controller 的日志切面，韧性仍走编程式 decorateSupplier -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-aop</artifactId>
+        </dependency>
+
         <!-- DeepSeek 对话模型：启动不依赖 key，调用时才需要 -->
         <dependency>
             <groupId>org.springframework.ai</groupId>

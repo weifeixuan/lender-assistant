@@ -1,7 +1,6 @@
 package com.lender.assistant.draft.controller;
 
 import com.lender.assistant.draft.service.DraftService;
-import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -15,6 +14,9 @@ import java.util.Map;
  *
  * 响应固定携带 reviewNotice（人工复核声明）——前端据此渲染醒目提示条，
  * 这是"AI 代码必须人工复核"红线在 API 契约层的固化。
+ *
+ * 错误处理：不再就地 catch 手拼错误体——异常交给全局处理器统一转 code/msg，
+ * 成功返回体由 ApiResponseBodyAdvice 包成 code/msg/data（§5.3）。
  */
 @RestController
 @RequestMapping("/api/draft")
@@ -27,21 +29,14 @@ public class DraftController {
     }
 
     @PostMapping("/{docId}")
-    public ResponseEntity<Map<String, Object>> generate(@PathVariable String docId) {
-        try {
-            DraftService.DraftResult r = draftService.generate(docId);
-            Map<String, Object> body = new LinkedHashMap<>();
-            body.put("docId", r.docId());
-            body.put("provider", r.provider());
-            body.put("reviewNotice", r.reviewNotice());
-            body.put("mappingsUsed", r.mappingsUsed());
-            body.put("draft", r.draft());
-            return ResponseEntity.ok(body);
-        } catch (IllegalArgumentException e) {
-            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
-        } catch (Exception e) {
-            return ResponseEntity.internalServerError().body(Map.of(
-                    "error", "草稿生成链路故障（已留痕），可稍后重试或转人工实现: " + e.getMessage()));
-        }
+    public Map<String, Object> generate(@PathVariable String docId) {
+        DraftService.DraftResult r = draftService.generate(docId);
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("docId", r.docId());
+        body.put("provider", r.provider());
+        body.put("reviewNotice", r.reviewNotice());
+        body.put("mappingsUsed", r.mappingsUsed());
+        body.put("draft", r.draft());
+        return body;
     }
 }
