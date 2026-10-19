@@ -6,6 +6,8 @@ import org.apache.poi.xwpf.usermodel.XWPFDocument;
 import org.apache.poi.xwpf.usermodel.XWPFParagraph;
 import org.apache.poi.xwpf.usermodel.XWPFTable;
 import org.apache.poi.xwpf.usermodel.XWPFTableRow;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 import java.io.ByteArrayInputStream;
@@ -24,6 +26,8 @@ import java.util.List;
  */
 @Component
 public class DocxDocumentParserStrategy implements DocumentParserStrategy {
+
+    private static final Logger log = LoggerFactory.getLogger(DocxDocumentParserStrategy.class);
 
     @Override
     public boolean supports(String fileName) {
@@ -103,6 +107,9 @@ public class DocxDocumentParserStrategy implements DocumentParserStrategy {
             int level = Integer.parseInt(s.trim());
             return level >= 1 && level <= 6 ? level : 0;
         } catch (NumberFormatException e) {
+            // 非标题样式（如 "Normal"）走不到数字解析，属预期路径而非错误，故用 DEBUG 避免每段刷屏；
+            // 不带堆栈——NumberFormatException 的栈无信息量，样式值才是排查"标题为何没被识别"的线索
+            log.debug("段落样式无法映射为标题层级，按正文处理: style=[{}]", style);
             return 0;
         }
     }

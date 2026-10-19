@@ -1,6 +1,8 @@
 package com.lender.assistant.rag.strategy.impl;
 
 import com.lender.assistant.rag.strategy.AnswerGeneratorStrategy;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
@@ -25,6 +27,8 @@ import java.util.function.Consumer;
 @Component
 @ConditionalOnProperty(name = "rag.chat.provider", havingValue = "mock", matchIfMissing = true)
 public class MockAnswerGeneratorStrategy implements AnswerGeneratorStrategy {
+
+    private static final Logger log = LoggerFactory.getLogger(MockAnswerGeneratorStrategy.class);
 
     private final com.lender.assistant.tools.LenderQueryTools lenderTools;
     private final com.lender.assistant.tools.ToolIntentRouter toolRouter;
@@ -95,6 +99,9 @@ public class MockAnswerGeneratorStrategy implements AnswerGeneratorStrategy {
             try {
                 Thread.sleep(30);
             } catch (InterruptedException e) {
+                // 中断（应用关停 / SSE 客户端取消）：恢复中断标志让上层感知，随即停止推送。
+                // 属预期终止路径，记 DEBUG 即可
+                log.debug("流式推送被中断，提前结束（客户端可能已取消）");
                 Thread.currentThread().interrupt();
                 return;
             }

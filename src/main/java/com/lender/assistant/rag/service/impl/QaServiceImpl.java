@@ -4,6 +4,8 @@ import com.lender.assistant.rag.service.QaService;
 import com.lender.assistant.rag.service.SearchService;
 import com.lender.assistant.rag.strategy.AnswerGeneratorStrategy;
 import jakarta.annotation.PreDestroy;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
@@ -30,6 +32,8 @@ import java.util.concurrent.Executors;
  */
 @Service
 public class QaServiceImpl implements QaService {
+
+    private static final Logger log = LoggerFactory.getLogger(QaServiceImpl.class);
 
     private final SearchService searchService;
     private final AnswerGeneratorStrategy generator;
@@ -107,12 +111,16 @@ public class QaServiceImpl implements QaService {
             emitter.complete();
         } catch (io.github.resilience4j.circuitbreaker.CallNotPermittedException e) {
             // 熔断打开：连续失败触发保护，快速失败。降级而非崩溃（手册验收线）——
-            // sources 已经推给前端，检索能力不受模型故障影响
+            // sources 已经推给前端，检索能力不受模型故障影响。
+            // 记 WARN 不记 ERROR：这是熔断器的正常降级动作，但需有人从日志看到"模型在连续失败"
+            log.warn("问答链路熔断打开，已降级为可读提示: {}", e.getMessage());
             send(emitter, "error", "模型服务熔断中（连续失败已触发保护），已转人工流程兜底；"
                     + "上方召回来源仍可查看。模型恢复前请使用检索测试区块。");
             emitter.completeWithError(e);
         } catch (Exception e) {
-            // 模型超时/网络异常/DB 异常统一走 error 事件——前端能拿到可读信息而非静默断流
+            // 模型超时/网络异常/DB 异常统一走 error 事件——前端能拿到可读信息而非静默断流。
+            // 必须带堆栈落 ERROR：SSE 已断流，这是排查链路上唯一的完整证据
+            log.error("问答链路故障，已推送 error 事件并断流: question={}", question, e);
             send(emitter, "error", "问答失败：" + e.getMessage());
             emitter.completeWithError(e);
         }
@@ -143,8 +151,10 @@ public class QaServiceImpl implements QaService {
     private void send(SseEmitter emitter, String event, Object data) {
         try {
             emitter.send(SseEmitter.event().name(event).data(data));
-        } catch (Exception ignored) {
-            // 客户端断开（用户关页面/取消）时 send 抛异常，静默结束即可
+        } catch (Exception e) {
+            // 客户端断开（用户关页面/取消）时 send 抛异常，静默结束即可；
+            // 记 DEBUG 留痕但不打扰——正常取消不该刷 ERROR 日志
+            log.debug("SSE 事件发送失败，客户端可能已断开: event={}", event);
         }
     }
 

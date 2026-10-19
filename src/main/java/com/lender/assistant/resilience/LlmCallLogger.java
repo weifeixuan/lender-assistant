@@ -2,6 +2,8 @@ package com.lender.assistant.resilience;
 
 import com.lender.assistant.resilience.mapper.LlmCallLogMapper;
 import com.lender.assistant.resilience.model.LlmCallLogRecord;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Repository;
 
 import java.util.function.Supplier;
@@ -21,6 +23,8 @@ import java.util.function.Supplier;
  */
 @Repository
 public class LlmCallLogger {
+
+    private static final Logger log = LoggerFactory.getLogger(LlmCallLogger.class);
 
     private final LlmCallLogMapper mapper;
 
@@ -55,8 +59,10 @@ public class LlmCallLogger {
         try {
             mapper.insert(new LlmCallLogRecord(scene, provider, durationMs,
                     promptTokens, completionTokens, status, errorMsg));
-        } catch (RuntimeException ignored) {
-            // 留痕是旁路：log 表写不进去（没跑 docs/schema.sql 等）不允许拖垮问答/抽取主链路
+        } catch (RuntimeException e) {
+            // 留痕是旁路：log 表写不进去（没跑 docs/schema.sql 等）不允许拖垮问答/抽取主链路。
+            // 记 DEBUG：留痕失败不阻断业务，但留一条线索，便于排查"为什么没有调用记录"
+            log.debug("LLM 调用留痕写入失败（旁路，忽略）: scene={}, reason={}", scene, e.getMessage());
         }
     }
 }
