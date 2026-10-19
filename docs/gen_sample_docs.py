@@ -8,7 +8,7 @@
 3. 瑞金租赁_资金对接接口文档     —— 另一家资方，字段命名习惯不同（阶段4映射抽取的素材）
 
 注意：文档标题一律用 Word 内置 Heading 1/2/3 样式——
-后端 DocxParser 依赖标题样式做"按标题段落"切分。
+后端 DocxDocumentParserStrategy 依赖标题样式做"按标题段落"切分。
 
 用法: E:/install/py-env/Scripts/python.exe gen_sample_docs.py
 """
