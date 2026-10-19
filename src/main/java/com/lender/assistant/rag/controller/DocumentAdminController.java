@@ -1,14 +1,15 @@
 package com.lender.assistant.rag.controller;
 
 import com.lender.assistant.common.util.PgVectorUtils;
-import com.lender.assistant.rag.embedder.EmbeddingClient;
+import com.lender.assistant.rag.model.Chunk;
 import com.lender.assistant.rag.model.ChunkRow;
 import com.lender.assistant.rag.model.DocSummary;
-import com.lender.assistant.rag.service.DocumentParserService;
 import com.lender.assistant.rag.service.DocumentService;
 import com.lender.assistant.rag.service.SearchService;
-import com.lender.assistant.rag.splitter.Chunk;
-import com.lender.assistant.rag.splitter.ChunkSplitter;
+import com.lender.assistant.rag.strategy.ChunkSplitterStrategy;
+import com.lender.assistant.rag.strategy.DocumentParserStrategy;
+import com.lender.assistant.rag.strategy.EmbeddingStrategy;
+import com.lender.assistant.rag.strategy.factory.DocumentParserStrategyFactory;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -35,18 +36,18 @@ import java.util.Map;
 @RequestMapping("/api/admin/documents")
 public class DocumentAdminController {
 
-    private final List<DocumentParserService> parsers;
-    private final ChunkSplitter splitter;
-    private final EmbeddingClient embeddingClient;
+    private final DocumentParserStrategyFactory parserFactory;
+    private final ChunkSplitterStrategy splitter;
+    private final EmbeddingStrategy embeddingStrategy;
     private final DocumentService documentService;
     private final SearchService searchService;
 
-    public DocumentAdminController(List<DocumentParserService> parsers, ChunkSplitter splitter,
-                                   EmbeddingClient embeddingClient, DocumentService documentService,
+    public DocumentAdminController(DocumentParserStrategyFactory parserFactory, ChunkSplitterStrategy splitter,
+                                   EmbeddingStrategy embeddingStrategy, DocumentService documentService,
                                    SearchService searchService) {
-        this.parsers = parsers;
+        this.parserFactory = parserFactory;
         this.splitter = splitter;
-        this.embeddingClient = embeddingClient;
+        this.embeddingStrategy = embeddingStrategy;
         this.documentService = documentService;
         this.searchService = searchService;
     }
@@ -59,11 +60,8 @@ public class DocumentAdminController {
     public Map<String, Object> upload(@RequestParam("file") MultipartFile file,
                                       @RequestParam("docId") String docId) throws Exception {
         String fileName = file.getOriginalFilename() == null ? "unknown" : file.getOriginalFilename();
-        DocumentParserService parser = parsers.stream()
-                .filter(p -> p.supports(fileName))
-                .findFirst()
-                .orElseThrow(() -> new IllegalArgumentException("不支持的文件类型: " + fileName
-                        + "（当前支持 .docx/.txt/.md）"));
+        // 解析器按扩展名运行时分发，交给工厂选择（不支持的类型抛可读异常）
+        DocumentParserStrategy parser = parserFactory.resolve(fileName);
 
         long t0 = System.currentTimeMillis();
         var parsed = parser.parse(fileName, file.getBytes());
@@ -78,7 +76,7 @@ public class DocumentAdminController {
                     ? c.content()
                     : c.sectionPath() + "\n" + c.content();
             rows.add(new ChunkRow(c.sectionPath(), c.index(), c.content(),
-                    c.charCount(), PgVectorUtils.toLiteral(embeddingClient.embed(embedInput))));
+                    c.charCount(), PgVectorUtils.toLiteral(embeddingStrategy.embed(embedInput))));
         }
         long t3 = System.currentTimeMillis();
 
@@ -91,7 +89,7 @@ public class DocumentAdminController {
         result.put("chunkCount", rows.size());
         result.put("avgChunkChars", rows.stream().mapToInt(ChunkRow::charCount).average().orElse(0));
         result.put("millis", Map.of("parse", t1 - t0, "split", t2 - t1, "embed", t3 - t2, "store", t4 - t3));
-        result.put("embeddingProvider", embeddingClient.getClass().getSimpleName());
+        result.put("embeddingProvider", embeddingStrategy.getClass().getSimpleName());
         return result;
     }
 

@@ -1,16 +1,17 @@
-package com.lender.assistant.draft.service;
+package com.lender.assistant.draft.strategy;
 
 import com.lender.assistant.extract.model.FieldMapping;
 
 import java.util.List;
 
 /**
- * 代码草稿生成端口（阶段5）：映射表 + Handler 骨架 → Java 适配层草稿文本。
+ * 代码草稿生成策略（阶段5）：映射表 + Handler 骨架 → Java 适配层草稿文本。
  *
- * 与 EmbeddingClient/AnswerGeneratorService/ExtractGeneratorService 同构的端口-适配器：
+ * 与 EmbeddingStrategy/AnswerGeneratorStrategy/ExtractGeneratorStrategy 同构的端口-适配器：
  * Mock 实现做确定性模板渲染（可单测、无 key 可跑），DeepSeek 实现做语义生成。
+ * provider 二选一（mock / deepseek）由 @ConditionalOnProperty 在构建期决定，不需要工厂。
  */
-public interface DraftGeneratorService {
+public interface DraftGeneratorStrategy {
 
     /**
      * @param docId    文档标识（渲染进 lenderCode）

@@ -2,7 +2,7 @@ package com.lender.assistant.rag.service;
 
 import com.lender.assistant.rag.model.DocSummary;
 import com.lender.assistant.rag.service.DocumentService;
-import com.lender.assistant.rag.service.impl.MockAnswerGeneratorImpl;
+import com.lender.assistant.rag.strategy.impl.MockAnswerGeneratorStrategy;
 import com.lender.assistant.tools.LenderQueryTools;
 import com.lender.assistant.tools.ToolIntentRouter;
 import org.junit.jupiter.api.BeforeEach;
@@ -22,7 +22,7 @@ import static org.mockito.Mockito.*;
 class MockToolAnswerTest {
 
     private DocumentService documentService;
-    private MockAnswerGeneratorImpl generator;
+    private MockAnswerGeneratorStrategy generator;
 
     @BeforeEach
     void setUp() {
@@ -30,7 +30,7 @@ class MockToolAnswerTest {
         when(documentService.listDocuments()).thenReturn(List.of(
                 new DocSummary("ruijin_api_v1", "瑞金租赁_资金对接接口文档_v1.0", 5)));
         when(documentService.countByDoc("ruijin_api_v1")).thenReturn(5);
-        generator = new MockAnswerGeneratorImpl(new LenderQueryTools(documentService), new ToolIntentRouter());
+        generator = new MockAnswerGeneratorStrategy(new LenderQueryTools(documentService), new ToolIntentRouter());
     }
 
     private String userPromptWith(String question) {

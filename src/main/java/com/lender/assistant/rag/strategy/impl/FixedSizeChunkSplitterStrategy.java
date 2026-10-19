@@ -1,6 +1,8 @@
-package com.lender.assistant.rag.splitter;
+package com.lender.assistant.rag.strategy.impl;
 
+import com.lender.assistant.rag.model.Chunk;
 import com.lender.assistant.rag.model.ParsedDocument;
+import com.lender.assistant.rag.strategy.ChunkSplitterStrategy;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
@@ -21,13 +23,13 @@ import java.util.List;
  */
 @Component
 @ConditionalOnProperty(name = "rag.split.strategy", havingValue = "fixed")
-public class FixedSizeSplitter implements ChunkSplitter {
+public class FixedSizeChunkSplitterStrategy implements ChunkSplitterStrategy {
 
     private final int chunkSize;
     private final int overlap;
 
-    public FixedSizeSplitter(@Value("${rag.split.chunk-size}") int chunkSize,
-                             @Value("${rag.split.overlap}") int overlap) {
+    public FixedSizeChunkSplitterStrategy(@Value("${rag.split.chunk-size}") int chunkSize,
+                                          @Value("${rag.split.overlap}") int overlap) {
         if (overlap >= chunkSize) {
             throw new IllegalArgumentException("overlap 必须小于 chunk-size，否则永远无法前进");
         }

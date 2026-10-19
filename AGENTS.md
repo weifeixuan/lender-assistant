@@ -3,7 +3,7 @@
 > **给所有 AI Agent 的指令**：在本仓库写任何代码之前必须完整读完本文，并逐条遵守。
 > **适用范围**：约束**新增与改动**的代码；存量问题不强制改造，唯一例外是数据访问层（见 §11）。
 > **冲突优先级**：本文件 > 个人习惯 > 通用规范。**无法确定时，先看同包内已有代码的写法并保持一致。**
-> **依据**：阿里巴巴《Java 开发手册》（嵩山版）+ 腾讯 / 字节后端工程规范，按本仓库实际技术栈裁剪。
+> **依据**：阿里巴巴《Java 开发手册》（嵩山版）后端工程规范，按本仓库实际技术栈裁剪。
 > **口径说明**：数据访问为**统一 MyBatis**（2026-10-17 决定，取代早期 JdbcTemplate 直写方案）。
 > **定稿**：2026-10-18。
 
@@ -25,15 +25,18 @@ com.lender.assistant
 ├── rag/                       # RAG 领域
 │   ├── controller/            #   QaController EvalController DocumentAdminController
 │   ├── service/               #   QaService(+impl/) EvalService(+impl/) SearchService(+impl/) DocumentService(+impl/)
-│   │                          #   ；策略接口：AnswerGeneratorService / DocumentParserService；实现（Mock·DeepSeek·Docx·Text）在 impl/
+│   ├── strategy/              #   可替换策略：AnswerGeneratorStrategy / DocumentParserStrategy / EmbeddingStrategy / ChunkSplitterStrategy
+│   │   ├── impl/              #     各策略实现（Mock·DeepSeek·Docx·Text·Hash·智谱·按章节·固定），实现类同以 Strategy 结尾
+│   │   └── factory/           #   DocumentParserStrategyFactory（运行期按文件格式选解析策略；provider 型策略不建工厂）
 │   ├── mapper/                #   DocChunkMapper（+ resources/mapper/DocChunkMapper.xml）
-│   ├── model/                 #   跨层 record：ChunkRow / DocChunkLine / DocContent / DocSummary / VectorHit / KeywordHit / ParsedDocument
-│   ├── splitter/ embedder/    # 领域内组件保留自有子包（不硬塞进三层）；解析器已并入 service/
+│   ├── model/                 #   跨层 record：Chunk / ChunkRow / DocChunkLine / DocContent / DocSummary / VectorHit / KeywordHit / ParsedDocument
 │   └── （评估逻辑在 service/；评估集资源固定在 resources/eval/evalset.json）
 ├── extract/                   # 结构化抽取领域
 │   ├── controller/ service/ service/impl/ mapper/ model/
+│   └── strategy/              #   ExtractGeneratorStrategy（+ impl/：Mock·DeepSeek）
 ├── draft/                     # 代码草稿生成领域
 │   ├── controller/ service/ service/impl/
+│   └── strategy/              #   DraftGeneratorStrategy（+ impl/：Mock·DeepSeek）
 ├── tools/                     # Function Calling 工具（LenderQueryTools 等）——无 HTTP 入口，不建 controller/
 ├── resilience/                # 韧性（ResilientLlmExecutor / LlmCallLogger）——无 HTTP 入口
 │   ├── mapper/                #   LlmCallLogMapper（+ resources/mapper/LlmCallLogMapper.xml）
@@ -51,11 +54,11 @@ com.lender.assistant
 
 ### 0.3 结构规则
 
-- **按领域分包**（`rag` / `extract` / `draft` / `ops`），领域内按 **`controller` / `service` / `mapper` / `model`** 分层；**顶层禁止出现 `controller/` `service/` `mapper/` 技术包**（存量迁移见 §11；顶层 `controller/`、`service/` 空包已删除，此后禁止重建）。
+- **按领域分包**（`rag` / `extract` / `draft` / `ops`），领域内按 **`controller` / `service` / `strategy` / `mapper` / `model`** 分层；**顶层禁止出现 `controller/` `service/` `mapper/` 技术包**（存量迁移见 §11；顶层 `controller/`、`service/` 空包已删除，此后禁止重建）。
 - **无 HTTP 入口的横向包（`tools` / `resilience` / `common`）不建 `controller/`**；需要访问 DB 时才建 `mapper/`。
 - 新类先定位「哪个领域 → 哪一层」；两级都定不了再考虑 `common/`，并在 commit message 说明理由。
 - **禁止**为一次性需求创建只放一个类的平行包；**禁止**包名近义重复（`extract` vs `extraction` 已出过事故）；**禁止**空包与死代码。
-- 领域内组件（`parser` / `splitter` / `embedder`）保持自有子包，不硬塞进三层。
+- 领域内可替换策略（「Mock / 真实」或「多实现按条件/格式分发」的组件）统一进 `strategy/`：**接口 + `strategy/impl/` 实现**；仅当需要运行期按参数选实现时才加 `strategy/factory/`（如解析器按文件格式分发）。策略不散落进三层。
 
 ## 1. 分层职责与依赖方向
 
@@ -68,8 +71,8 @@ com.lender.assistant
 | `common/util/` | 无状态静态方法 | 持有 Spring Bean、实例状态 |
 
 - **依赖方向**：`controller → service → mapper`；**禁止反向依赖与跨层**。跨领域只允许 service → 另一个领域的 service。
-- **可替换实现必须有接口**：凡存在「Mock / 真实」或「多策略」可能的组件，一律**接口 + `@ConditionalOnProperty` 切换**（项目既有惯例：`EmbeddingClient`、`AnswerGeneratorService`、`ExtractGeneratorService`、`DraftGeneratorService`）。新增同类组件照此办理，**不允许写死单一实现**。
-- **编排型 Service 统一接口 + Impl**：`XxxService`（接口）+ `service/impl/XxxServiceImpl`；策略实现类命名「策略名 + 接口名 + Impl」（如 `MockExtractGeneratorImpl` / `DeepSeekExtractGeneratorImpl`）。
+- **可替换实现必须有接口**：凡存在「Mock / 真实」或「多策略」可能的组件，一律**接口 + `@ConditionalOnProperty` 切换**（项目既有惯例：`EmbeddingStrategy`、`AnswerGeneratorStrategy`、`ExtractGeneratorStrategy`、`DraftGeneratorStrategy`、`DocumentParserStrategy`、`ChunkSplitterStrategy`）。新增同类组件照此办理，**不允许写死单一实现**。
+- **编排型 Service 统一接口 + Impl**：`XxxService`（接口）+ `service/impl/XxxServiceImpl`；策略统一放 `strategy/`：接口以 `Strategy` 结尾，实现类命名「策略名 + 接口名」（如 `MockExtractGeneratorStrategy` / `DeepSeekExtractGeneratorStrategy`）放 `strategy/impl/`。
 - **多实现的选择逻辑禁止散落**：provider 切换靠 Spring 装配，**禁止在业务代码里 `if-else` 判断「当前是 mock 还是 deepseek」**。
 - **跨层传值一律 `record`**（项目惯例：`FieldMapping`、`DocContent`、`KeywordHit`），禁止可变 DTO + setter 满天飞。
 
@@ -77,10 +80,10 @@ com.lender.assistant
 
 1. 类名 `UpperCamelCase`；方法名、变量名 `lowerCamelCase`；常量全大写下划线分隔。
 2. 抽象类 `Abstract` / `Base` 开头；异常类 `Exception` 结尾；枚举成员全大写。
-3. **Service 接口不写 `I` 前缀**；实现类以「接口名 + Impl」结尾（策略实现为「策略名 + 接口名 + Impl」，见 §1）。
+3. **Service 接口不写 `I` 前缀**；实现类以「接口名 + Impl」结尾（策略接口以 `Strategy` 结尾，实现类「策略名 + 接口名」亦以 `Strategy` 结尾，见 §1）。
 4. boolean 变量不加 `is` 前缀（避免序列化丢前缀）。
 5. **杜绝不表意的命名**：`data`、`result2`、`temp`、`flag`、单字母（循环变量 `i/j/k` 除外）。
-6. 包名全小写单词、**不用复数**（`rag.splitter`，不是 `rag.splitters`）。
+6. 包名全小写单词、**不用复数**（`rag.strategy`，不是 `rag.strategies`）。
 7. 测试类 = 被测类名 + `Test`；测试方法名表达行为 + `@DisplayName` 中文场景句。
 8. **格式**：4 空格缩进；单行 ≤ 120 字符；**单方法 ≤ 40 行**；单类 ≤ 500 行；**方法参数 ≤ 4 个**（超出收敛为 `record`）。
 
@@ -189,6 +192,7 @@ com.lender.assistant
 | `rag/eval/EvalService` | `rag/service`（`evalset.json` 资源位置不变） | ✅ |
 | `extract` 下 `*Service` / `*Generator` / `InternalFieldCatalog` | `extract/service` | ✅ |
 | `FieldMapping` / `InternalField` | `extract/model` | ✅ |
+| 各领域可替换策略（原 `*Generator` / `*Client` / `*Parser` / `*Splitter`） | 领域内 `strategy/`：接口与实现均以 `Strategy` 结尾（`AnswerGeneratorStrategy` / `EmbeddingStrategy` / `DocumentParserStrategy` / `ChunkSplitterStrategy` / `ExtractGeneratorStrategy` / `DraftGeneratorStrategy`）；解析器因运行期按格式分发另加 `strategy/factory/`（`DocumentParserStrategyFactory`） | ✅ |
 
 - [x] 迁移已完成：顶层 `controller/`、`service/` 空包已删除（A5/A6），此后**禁止再创建**。
 

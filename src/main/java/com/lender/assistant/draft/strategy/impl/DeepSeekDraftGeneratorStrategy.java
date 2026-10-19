@@ -1,6 +1,6 @@
-package com.lender.assistant.draft.service.impl;
+package com.lender.assistant.draft.strategy.impl;
 
-import com.lender.assistant.draft.service.DraftGeneratorService;
+import com.lender.assistant.draft.strategy.DraftGeneratorStrategy;
 import com.lender.assistant.extract.model.FieldMapping;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -20,7 +20,7 @@ import java.util.List;
  */
 @Component
 @ConditionalOnProperty(name = "rag.draft.provider", havingValue = "deepseek")
-public class DeepSeekDraftGeneratorImpl implements DraftGeneratorService {
+public class DeepSeekDraftGeneratorStrategy implements DraftGeneratorStrategy {
 
     private static final String SYSTEM_PROMPT = """
             你是融资租赁资方接入适配层的代码生成助手。规则：
@@ -31,17 +31,17 @@ public class DeepSeekDraftGeneratorImpl implements DraftGeneratorService {
 
     private final ChatClient chatClient;
 
-    public DeepSeekDraftGeneratorImpl(ChatClient.Builder builder) {
+    public DeepSeekDraftGeneratorStrategy(ChatClient.Builder builder) {
         this.chatClient = builder.build();
     }
 
     /**
      * 骨架单一来源：classpath 下的 draft/ExampleLenderHandler.java（与 Mock 版读同一份文件）。
-     * 注意：这里不能依赖 MockDraftGeneratorImpl Bean——它只在 rag.draft.provider=mock 时装配，
+     * 注意：这里不能依赖 MockDraftGeneratorStrategy Bean——它只在 rag.draft.provider=mock 时装配，
      * 本类装配时（provider=deepseek）该 Bean 不存在，构造函数注入会导致启动失败。
      */
     static String loadSkeleton() {
-        try (var in = DeepSeekDraftGeneratorImpl.class.getResourceAsStream("/draft/ExampleLenderHandler.java")) {
+        try (var in = DeepSeekDraftGeneratorStrategy.class.getResourceAsStream("/draft/ExampleLenderHandler.java")) {
             if (in == null) {
                 throw new IllegalStateException("classpath 缺少 draft/ExampleLenderHandler.java 骨架");
             }

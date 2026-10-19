@@ -1,4 +1,4 @@
-package com.lender.assistant.rag.splitter;
+package com.lender.assistant.rag.model;
 
 import java.util.List;
 

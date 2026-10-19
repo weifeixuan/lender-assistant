@@ -1,8 +1,8 @@
-package com.lender.assistant.extract.service.impl;
+package com.lender.assistant.extract.strategy.impl;
 
 import com.lender.assistant.extract.model.FieldMapping;
-import com.lender.assistant.extract.service.ExtractGeneratorService;
 import com.lender.assistant.extract.service.InternalFieldCatalog;
+import com.lender.assistant.extract.strategy.ExtractGeneratorStrategy;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
@@ -12,7 +12,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * Mock 结构化抽取：规则 + 正则，零模型依赖（与 HashEmbeddingClient 同一策略）。
+ * Mock 结构化抽取：规则 + 正则，零模型依赖（与 HashEmbeddingStrategy 同一策略）。
  *
  * 定位：它只证明"抽取链路与输出结构是对的"，不证明"抽取效果好"——
  * 规则只能覆盖文档的标准表述形态，真实效果等 DeepSeek 版（JSON Schema 抽取）。
@@ -28,7 +28,7 @@ import java.util.regex.Pattern;
  */
 @Component
 @ConditionalOnProperty(name = "rag.extract.provider", havingValue = "mock", matchIfMissing = true)
-public class MockExtractGeneratorImpl implements ExtractGeneratorService {
+public class MockExtractGeneratorStrategy implements ExtractGeneratorStrategy {
 
     private static final double CONF_EXACT = 0.9;
     private static final double CONF_SENTENCE = 0.7;

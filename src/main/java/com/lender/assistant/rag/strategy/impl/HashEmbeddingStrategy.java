@@ -1,5 +1,6 @@
-package com.lender.assistant.rag.embedder;
+package com.lender.assistant.rag.strategy.impl;
 
+import com.lender.assistant.rag.strategy.EmbeddingStrategy;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
@@ -24,11 +25,11 @@ import java.util.List;
  */
 @Component
 @ConditionalOnProperty(name = "rag.embedding.provider", havingValue = "hash")
-public class HashEmbeddingClient implements EmbeddingClient {
+public class HashEmbeddingStrategy implements EmbeddingStrategy {
 
     private final int dimension;
 
-    public HashEmbeddingClient(@org.springframework.beans.factory.annotation.Value("${rag.embedding.dimension}") int dimension) {
+    public HashEmbeddingStrategy(@org.springframework.beans.factory.annotation.Value("${rag.embedding.dimension}") int dimension) {
         this.dimension = dimension;
     }
 

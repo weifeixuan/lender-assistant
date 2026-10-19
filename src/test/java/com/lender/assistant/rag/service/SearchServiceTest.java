@@ -1,6 +1,6 @@
 package com.lender.assistant.rag.service;
 
-import com.lender.assistant.rag.embedder.EmbeddingClient;
+import com.lender.assistant.rag.strategy.EmbeddingStrategy;
 import com.lender.assistant.rag.mapper.DocChunkMapper;
 import com.lender.assistant.rag.model.KeywordHit;
 import com.lender.assistant.rag.model.VectorHit;
@@ -32,15 +32,15 @@ import static org.mockito.Mockito.when;
  */
 class SearchServiceTest {
 
-    private EmbeddingClient embeddingClient;
+    private EmbeddingStrategy embeddingStrategy;
     private DocChunkMapper mapper;
     private SearchService service;
 
     @BeforeEach
     void setUp() {
-        embeddingClient = mock(EmbeddingClient.class);
+        embeddingStrategy = mock(EmbeddingStrategy.class);
         mapper = mock(DocChunkMapper.class);
-        service = new SearchServiceImpl(embeddingClient, mapper, -1);   // -1 = 相似度阈值关闭，保持本测试锁定的原有 RRF 行为
+        service = new SearchServiceImpl(embeddingStrategy, mapper, -1);   // -1 = 相似度阈值关闭，保持本测试锁定的原有 RRF 行为
     }
 
     private VectorHit vec(long id, String content, double dist) {
@@ -55,7 +55,7 @@ class SearchServiceTest {
     @DisplayName("hybrid：RRF 融合排序——双通道都命中的 chunk 排最前")
     void hybridRrfFusion() {
         // 向量通道：A 第1名、B 第2名；关键词通道：B 第1名、C 第2名
-        when(embeddingClient.embed(any())).thenReturn(new float[4]);
+        when(embeddingStrategy.embed(any())).thenReturn(new float[4]);
         when(mapper.searchByVector(eq("[0.0,0.0,0.0,0.0]"), anyInt())).thenReturn(List.of(
                 vec(1, "甲内容", 0.10), vec(2, "乙内容", 0.20)));
         when(mapper.searchByKeyword(anyList(), anyInt())).thenReturn(List.of(
@@ -79,7 +79,7 @@ class SearchServiceTest {
     @Test
     @DisplayName("vector 模式：不调用关键词通道，按距离升序")
     void vectorModeSkipsKeywordChannel() {
-        when(embeddingClient.embed(any())).thenReturn(new float[4]);
+        when(embeddingStrategy.embed(any())).thenReturn(new float[4]);
         when(mapper.searchByVector(eq("[0.0,0.0,0.0,0.0]"), anyInt())).thenReturn(List.of(
                 vec(1, "甲", 0.30), vec(2, "乙", 0.10)));
 
@@ -120,7 +120,7 @@ class SearchServiceTest {
     @Test
     @DisplayName("空 token 查询：关键词通道不做查询（MyBatis <foreach> 空集合守卫），结果仍来自向量通道")
     void emptyTokensSkipKeywordChannel() {
-        when(embeddingClient.embed(any())).thenReturn(new float[4]);
+        when(embeddingStrategy.embed(any())).thenReturn(new float[4]);
         when(mapper.searchByVector(eq("[0.0,0.0,0.0,0.0]"), anyInt())).thenReturn(List.of(vec(1, "甲内容", 0.10)));
 
         // "3" 分词只剩单字符 token（长度 < 2 被过滤）→ tokens 为空，命中空 token 守卫分支

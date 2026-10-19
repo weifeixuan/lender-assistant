@@ -1,6 +1,8 @@
-package com.lender.assistant.rag.splitter;
+package com.lender.assistant.rag.strategy.impl;
 
+import com.lender.assistant.rag.model.Chunk;
 import com.lender.assistant.rag.model.ParsedDocument;
+import com.lender.assistant.rag.strategy.ChunkSplitterStrategy;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
@@ -26,14 +28,14 @@ import java.util.List;
  */
 @Component
 @ConditionalOnProperty(name = "rag.split.strategy", havingValue = "section")
-public class SectionSplitter implements ChunkSplitter {
+public class SectionChunkSplitterStrategy implements ChunkSplitterStrategy {
 
     private final int chunkSize;
     private final int overlap;
 
-    public SectionSplitter(@Value("${rag.split.chunk-size}") int chunkSize,
-                           @Value("${rag.split.overlap}") int overlap) {
-        // 与 FixedSizeSplitter 同一条约束：二次切分步长 = chunkSize - overlap，
+    public SectionChunkSplitterStrategy(@Value("${rag.split.chunk-size}") int chunkSize,
+                                        @Value("${rag.split.overlap}") int overlap) {
+        // 与 FixedSizeChunkSplitterStrategy 同一条约束：二次切分步长 = chunkSize - overlap，
         // overlap >= chunkSize 时步长 <= 0，flush() 的循环将无法前进（死循环/OOM）。
         if (overlap >= chunkSize) {
             throw new IllegalArgumentException("overlap 必须小于 chunk-size，否则二次切分永远无法前进");

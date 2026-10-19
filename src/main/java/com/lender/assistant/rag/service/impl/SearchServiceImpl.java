@@ -1,12 +1,12 @@
 package com.lender.assistant.rag.service.impl;
 
 import com.lender.assistant.common.util.PgVectorUtils;
-import com.lender.assistant.rag.embedder.EmbeddingClient;
-import com.lender.assistant.rag.embedder.HashEmbeddingClient;
 import com.lender.assistant.rag.mapper.DocChunkMapper;
 import com.lender.assistant.rag.model.KeywordHit;
 import com.lender.assistant.rag.model.VectorHit;
 import com.lender.assistant.rag.service.SearchService;
+import com.lender.assistant.rag.strategy.EmbeddingStrategy;
+import com.lender.assistant.rag.strategy.impl.HashEmbeddingStrategy;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
@@ -29,7 +29,7 @@ import java.util.Map;
 @Service
 public class SearchServiceImpl implements SearchService {
 
-    private final EmbeddingClient embeddingClient;
+    private final EmbeddingStrategy embeddingStrategy;
     private final DocChunkMapper docChunkMapper;
 
     /**
@@ -39,9 +39,9 @@ public class SearchServiceImpl implements SearchService {
      */
     private final double maxDistance;
 
-    public SearchServiceImpl(EmbeddingClient embeddingClient, DocChunkMapper docChunkMapper,
+    public SearchServiceImpl(EmbeddingStrategy embeddingStrategy, DocChunkMapper docChunkMapper,
                              @Value("${rag.search.max-distance:-1}") double maxDistance) {
-        this.embeddingClient = embeddingClient;
+        this.embeddingStrategy = embeddingStrategy;
         this.docChunkMapper = docChunkMapper;
         this.maxDistance = maxDistance;
     }
@@ -67,7 +67,7 @@ public class SearchServiceImpl implements SearchService {
 
         // 通道 1：向量召回
         if (!"keyword".equals(mode)) {
-            float[] queryVec = embeddingClient.embed(query);
+            float[] queryVec = embeddingStrategy.embed(query);
             List<VectorHit> hits = docChunkMapper.searchByVector(PgVectorUtils.toLiteral(queryVec), topK);
             int rank = 0;
             for (VectorHit hit : hits) {
@@ -86,7 +86,7 @@ public class SearchServiceImpl implements SearchService {
         // 通道 2：关键词召回——分词后多词 OR 匹配（整句算相似度会被长句稀释基本不命中，拆词才有效）
         // 过滤：单字 token LIKE 命中面太宽（"的""是"满库都是），只留 2 字以上；去重后限 8 个防 SQL 过长
         if (!"vector".equals(mode)) {
-            List<String> tokens = HashEmbeddingClient.tokenize(query).stream()
+            List<String> tokens = HashEmbeddingStrategy.tokenize(query).stream()
                     .filter(t -> t.length() >= 2)
                     .distinct()
                     .limit(8)

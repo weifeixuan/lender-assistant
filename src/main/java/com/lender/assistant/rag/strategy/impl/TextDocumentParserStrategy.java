@@ -1,7 +1,7 @@
-package com.lender.assistant.rag.service.impl;
+package com.lender.assistant.rag.strategy.impl;
 
 import com.lender.assistant.rag.model.ParsedDocument;
-import com.lender.assistant.rag.service.DocumentParserService;
+import com.lender.assistant.rag.strategy.DocumentParserStrategy;
 import org.springframework.stereotype.Component;
 
 import java.nio.charset.StandardCharsets;
@@ -13,7 +13,7 @@ import java.util.List;
  * 用于 .txt / .md。规则简单到一眼能看懂，资方自制样例文档用它就能跑通全链路。
  */
 @Component
-public class TextParserImpl implements DocumentParserService {
+public class TextDocumentParserStrategy implements DocumentParserStrategy {
 
     @Override
     public boolean supports(String fileName) {

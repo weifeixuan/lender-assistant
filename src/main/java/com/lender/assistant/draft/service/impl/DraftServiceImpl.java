@@ -1,7 +1,7 @@
 package com.lender.assistant.draft.service.impl;
 
-import com.lender.assistant.draft.service.DraftGeneratorService;
 import com.lender.assistant.draft.service.DraftService;
+import com.lender.assistant.draft.strategy.DraftGeneratorStrategy;
 import com.lender.assistant.extract.model.FieldMapping;
 import com.lender.assistant.extract.service.ExtractService;
 import com.lender.assistant.resilience.ResilientLlmExecutor;
@@ -24,11 +24,11 @@ public class DraftServiceImpl implements DraftService {
     static final String REVIEW_NOTICE =
             "代码草稿由 AI 依据字段映射表生成，必须逐行人工复核、补全报文组装与签名逻辑后方可使用，严禁直接上生产。";
 
-    private final DraftGeneratorService generator;
+    private final DraftGeneratorStrategy generator;
     private final ExtractService extractService;
     private final ResilientLlmExecutor executor;
 
-    public DraftServiceImpl(DraftGeneratorService generator, ExtractService extractService, ResilientLlmExecutor executor) {
+    public DraftServiceImpl(DraftGeneratorStrategy generator, ExtractService extractService, ResilientLlmExecutor executor) {
         this.generator = generator;
         this.extractService = extractService;
         this.executor = executor;

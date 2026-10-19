@@ -1,5 +1,6 @@
-package com.lender.assistant.rag.embedder;
+package com.lender.assistant.rag.strategy.impl;
 
+import com.lender.assistant.rag.strategy.EmbeddingStrategy;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
@@ -21,7 +22,7 @@ import java.util.Map;
  */
 @Component
 @ConditionalOnProperty(name = "rag.embedding.provider", havingValue = "zhipu")
-public class ZhipuEmbeddingClient implements EmbeddingClient {
+public class ZhipuEmbeddingStrategy implements EmbeddingStrategy {
 
     private static final String API_URL = "https://open.bigmodel.cn/api/paas/v4/embeddings";
 
@@ -31,8 +32,8 @@ public class ZhipuEmbeddingClient implements EmbeddingClient {
     private final RestClient restClient;
     private final int dimension;
 
-    public ZhipuEmbeddingClient(@Value("${rag.embedding.api-key:}") String apiKey,
-                                @Value("${rag.embedding.dimension}") int dimension) {
+    public ZhipuEmbeddingStrategy(@Value("${rag.embedding.api-key:}") String apiKey,
+                                  @Value("${rag.embedding.dimension}") int dimension) {
         if (apiKey == null || apiKey.isBlank() || PLACEHOLDER_KEY.equals(apiKey)) {
             throw new IllegalStateException(
                     "rag.embedding.provider=zhipu 但未配置真实 ZHIPU_API_KEY（当前为假值占位）。"

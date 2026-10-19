@@ -1,6 +1,6 @@
-package com.lender.assistant.rag.service.impl;
+package com.lender.assistant.rag.strategy.impl;
 
-import com.lender.assistant.rag.service.AnswerGeneratorService;
+import com.lender.assistant.rag.strategy.AnswerGeneratorStrategy;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
@@ -9,7 +9,7 @@ import java.util.function.Consumer;
 /**
  * Mock 对话模型：不调用任何大模型 API，把召回上下文"复述"成回答。
  *
- * 用途与 HashEmbeddingClient 完全同构——key 没到位时让
+ * 用途与 HashEmbeddingStrategy 完全同构——key 没到位时让
  * "检索 → 拼 Prompt → 生成 → SSE 流式"整条管道可开发、可调试、可验收管道本身。
  *
  * 工具路径（阶段4）：问题命中工具意图时，真实调用 LenderQueryTools 并把
@@ -24,13 +24,13 @@ import java.util.function.Consumer;
  */
 @Component
 @ConditionalOnProperty(name = "rag.chat.provider", havingValue = "mock", matchIfMissing = true)
-public class MockAnswerGeneratorImpl implements AnswerGeneratorService {
+public class MockAnswerGeneratorStrategy implements AnswerGeneratorStrategy {
 
     private final com.lender.assistant.tools.LenderQueryTools lenderTools;
     private final com.lender.assistant.tools.ToolIntentRouter toolRouter;
 
-    public MockAnswerGeneratorImpl(com.lender.assistant.tools.LenderQueryTools lenderTools,
-                                   com.lender.assistant.tools.ToolIntentRouter toolRouter) {
+    public MockAnswerGeneratorStrategy(com.lender.assistant.tools.LenderQueryTools lenderTools,
+                                       com.lender.assistant.tools.ToolIntentRouter toolRouter) {
         this.lenderTools = lenderTools;
         this.toolRouter = toolRouter;
     }

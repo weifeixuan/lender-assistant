@@ -1,6 +1,7 @@
 package com.lender.assistant.draft.service;
 
 import com.lender.assistant.draft.service.impl.DraftServiceImpl;
+import com.lender.assistant.draft.strategy.DraftGeneratorStrategy;
 import com.lender.assistant.extract.model.FieldMapping;
 import com.lender.assistant.extract.service.ExtractService;
 import com.lender.assistant.resilience.LlmCallLogger;
@@ -23,14 +24,14 @@ import static org.mockito.Mockito.*;
  */
 class DraftServiceTest {
 
-    private DraftGeneratorService generator;
+    private DraftGeneratorStrategy generator;
     private ExtractService extractService;
     private LlmCallLogger logger;
     private DraftService service;
 
     @BeforeEach
     void setUp() {
-        generator = mock(DraftGeneratorService.class);
+        generator = mock(DraftGeneratorStrategy.class);
         extractService = mock(ExtractService.class);
         // 真实留痕器（supplier 真执行、异常真上抛）+ mock 掉 JDBC；
         // 韧性执行器也用真实实例（chaos=false），验证 scene=draft 确实经过它

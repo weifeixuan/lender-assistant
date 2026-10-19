@@ -1,7 +1,8 @@
-package com.lender.assistant.extract.service;
+package com.lender.assistant.extract.strategy;
 
 import com.lender.assistant.extract.model.FieldMapping;
-import com.lender.assistant.extract.service.impl.MockExtractGeneratorImpl;
+import com.lender.assistant.extract.service.InternalFieldCatalog;
+import com.lender.assistant.extract.strategy.impl.MockExtractGeneratorStrategy;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -15,13 +16,13 @@ import static org.junit.jupiter.api.Assertions.*;
  * Mock 抽取器的特征测试：fixture 是瑞金租赁文档风格的脱敏文本，
  * 期望值来自 docs/plan_phase4.md 第二节"文档中的出处"表。
  *
- * Mock 抽取的意义（和 HashEmbeddingClient 同一个道理）：
+ * Mock 抽取的意义（和 HashEmbeddingStrategy 同一个道理）：
  * 不验证"抽取效果好不好"（那是 DeepSeek 版的事），
  * 验证"抽取链路和输出结构对不对"——字段落位、置信度、缺失字段的处理。
  */
-class MockExtractGeneratorImplTest {
+class MockExtractGeneratorStrategyTest {
 
-    private final MockExtractGeneratorImpl generator = new MockExtractGeneratorImpl();
+    private final MockExtractGeneratorStrategy generator = new MockExtractGeneratorStrategy();
 
     /** 瑞金租赁（虚构）文档的正文片段 + 标题，字段拼写与 gen_sample_docs.py 保持一致 */
     private static final String RUIJIN_TEXT = """
@@ -109,7 +110,7 @@ class MockExtractGeneratorImplTest {
     @Test
     @DisplayName("回归：章节标题在 section_path 前缀行（content 里没有标题），路径仍能按章节分类")
     void apiPathClassifiedWhenHeadingNotAtLineStart() {
-        // 真实数据形态：SectionSplitter 把标题存进 section_path 而非 content，
+        // 真实数据形态：SectionChunkSplitterStrategy 把标题存进 section_path 而非 content，
         // loadDocContent 拼接后每个 chunk 以【章节】行开头
         String crossChunk = """
                 【章节】瑞金租赁 资金对接接口文档 > 一、接口总则

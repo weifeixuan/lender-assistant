@@ -6,7 +6,7 @@ import java.util.List;
  * 解析结果：带结构信息的全文。
  *
  * blocks 保留"块类型 + 文本"，是切分策略的输入：
- * - heading 块携带层级，SectionSplitter 靠它按章节切分；
+ * - heading 块携带层级，SectionChunkSplitterStrategy 靠它按章节切分；
  * - paragraph 块是普通正文；
  * - tableText 是表格的行文本（POI 把 docx 表格逐行转成"列1: xx | 列2: yy"格式，
  *   保留列名到值的映射信息——资方文档里的字段表是 RAG 问答的核心内容）。

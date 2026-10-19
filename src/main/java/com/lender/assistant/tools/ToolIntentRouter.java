@@ -11,7 +11,7 @@ import java.util.Optional;
  * 诚实声明：真实 Function Calling 的决策由模型做（DeepSeek 版走 Spring AI .tools()，
  * 模型看工具 description 自己决定调不调）；这里用关键词规则模拟这个决策，
  * 让"问题 → 决策 → 调工具 → 结果进回答"的链路在无 key 时可开发可测试。
- * 与 HashEmbeddingClient 同一定位：验证链路对不对，不评估决策效果好不好。
+ * 与 HashEmbeddingStrategy 同一定位：验证链路对不对，不评估决策效果好不好。
  *
  * 规则设计原则：参数拼不出来就宁可不调（如问 chunk 数但认不出 docId），
  * 错误参数的调用比不调用更糟——这也是给真实模型定 prompt 的原则。

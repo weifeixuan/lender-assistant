@@ -23,11 +23,11 @@
                 │                                                                      │
 docx/txt 上传 ─▶ 解析(POI) ─▶ 切分(按章节/固定) ─▶ 向量化(Hash/智谱) ─▶ doc_chunk (pgvector, HNSW+trigram)
                                                                       │
-提问 ─▶ SearchService（向量⇄关键词 双通道）─▶ RRF 融合排序 ─▶ QaService 拼 Prompt ─▶ AnswerGeneratorService(Mock/DeepSeek) ─▶ SSE
+提问 ─▶ SearchService（向量⇄关键词 双通道）─▶ RRF 融合排序 ─▶ QaService 拼 Prompt ─▶ AnswerGeneratorStrategy(Mock/DeepSeek) ─▶ SSE
                                             │
-新资方文档 ─▶ ExtractService ─▶ ExtractGeneratorService(Mock规则/DeepSeek) ─▶ field_mapping（人工确认状态机）
+新资方文档 ─▶ ExtractService ─▶ ExtractGeneratorStrategy(Mock规则/DeepSeek) ─▶ field_mapping（人工确认状态机）
                                             │
-映射表 ─▶ DraftService ─▶ DraftGeneratorService(模板渲染/DeepSeek) ─▶ Java 适配层草稿 + 人工复核声明
+映射表 ─▶ DraftService ─▶ DraftGeneratorStrategy(模板渲染/DeepSeek) ─▶ Java 适配层草稿 + 人工复核声明
                                             │
                             LenderQueryTools（@Tool：查入库文件/chunk数，Function Calling）
 ```

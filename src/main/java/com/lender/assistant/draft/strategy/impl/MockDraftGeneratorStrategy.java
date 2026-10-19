@@ -1,6 +1,6 @@
-package com.lender.assistant.draft.service.impl;
+package com.lender.assistant.draft.strategy.impl;
 
-import com.lender.assistant.draft.service.DraftGeneratorService;
+import com.lender.assistant.draft.strategy.DraftGeneratorStrategy;
 import com.lender.assistant.extract.model.FieldMapping;
 import com.lender.assistant.extract.service.InternalFieldCatalog;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -13,7 +13,7 @@ import java.util.stream.Collectors;
 /**
  * Mock 草稿生成器：读 classpath 骨架模板，把映射表值逐占位符替换成草稿。
  *
- * 定位与 MockExtractGeneratorImpl 相同——key 没到位时验证
+ * 定位与 MockExtractGeneratorStrategy 相同——key 没到位时验证
  * "映射表 → 代码草稿 → 人工复核提示"链路本身，不评估生成质量。
  *
  * 渲染规则（测试锁定）：
@@ -24,7 +24,7 @@ import java.util.stream.Collectors;
  */
 @Component
 @ConditionalOnProperty(name = "rag.draft.provider", havingValue = "mock", matchIfMissing = true)
-public class MockDraftGeneratorImpl implements DraftGeneratorService {
+public class MockDraftGeneratorStrategy implements DraftGeneratorStrategy {
 
     /**
      * 骨架单一来源：classpath 下的 draft/ExampleLenderHandler.java
@@ -32,7 +32,7 @@ public class MockDraftGeneratorImpl implements DraftGeneratorService {
      * 加载失败属于部署错误，直接抛出去——渲染没有可降级的正确形态。
      */
     private static String loadSkeleton() {
-        try (var in = MockDraftGeneratorImpl.class.getResourceAsStream("/draft/ExampleLenderHandler.java")) {
+        try (var in = MockDraftGeneratorStrategy.class.getResourceAsStream("/draft/ExampleLenderHandler.java")) {
             if (in == null) {
                 throw new IllegalStateException("classpath 缺少 draft/ExampleLenderHandler.java 骨架");
             }
