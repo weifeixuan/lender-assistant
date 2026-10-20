@@ -49,3 +49,6 @@
 若你的输出与既有 ADR 相抵触，要显式提出来，而不是悄悄覆盖：
 
 > _与 ADR-0007（event-sourced orders）冲突，但值得重开，因为……_
+
+## 代码规范
+- `docs/agents/coding-standards.md`: Java项目编码、DDD包、设计模式实现规范
