@@ -1,9 +1,11 @@
 package com.lender.assistant.draft.service;
 
+import com.lender.assistant.common.constant.LlmScene;
 import com.lender.assistant.common.exception.BizException;
 import com.lender.assistant.common.exception.ErrorCode;
 import com.lender.assistant.draft.service.impl.DraftServiceImpl;
 import com.lender.assistant.draft.strategy.DraftGeneratorStrategy;
+import com.lender.assistant.draft.vo.response.DraftResponse;
 import com.lender.assistant.extract.model.FieldMapping;
 import com.lender.assistant.extract.service.ExtractService;
 import com.lender.assistant.resilience.LlmCallLogger;
@@ -65,14 +67,14 @@ class DraftServiceTest {
     void draftGoesThroughLogger() {
         service.generate("doc1");
 
-        verify(logger).record(eq("draft"), eq("Mock"), any(Supplier.class));
+        verify(logger).record(eq(LlmScene.DRAFT), eq("Mock"), any(Supplier.class));
         verify(generator).generateDraft(eq("doc1"), anyList());
     }
 
     @Test
     @DisplayName("返回体必须带人工复核声明——草稿严禁直接上生产")
     void resultCarriesReviewNotice() {
-        DraftService.DraftResult result = service.generate("doc1");
+        DraftResponse result = service.generate("doc1");
 
         assertTrue(result.reviewNotice().contains("人工复核"));
         assertEquals("doc1", result.docId());

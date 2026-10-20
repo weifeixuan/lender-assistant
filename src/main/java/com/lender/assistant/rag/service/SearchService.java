@@ -1,7 +1,8 @@
 package com.lender.assistant.rag.service;
 
+import com.lender.assistant.common.constant.SearchMode;
+import com.lender.assistant.rag.vo.response.SearchItemResponse;
 import java.util.List;
-import java.util.Map;
 
 /**
  * 混合检索（向量通道 + 关键词通道）。抽接口的理由：这是 rag 领域对外唯一的检索契约，
@@ -9,8 +10,8 @@ import java.util.Map;
  */
 public interface SearchService {
 
-    List<Map<String, Object>> hybridSearch(String query, int topK);
+    List<SearchItemResponse> hybridSearch(String query, int topK);
 
-    /** mode 取值 vector / keyword / hybrid，阶段 3 评估的实验开关 */
-    List<Map<String, Object>> search(String query, int topK, String mode);
+    /** 检索模式见 {@link SearchMode}，阶段 3 评估的实验开关 */
+    List<SearchItemResponse> search(String query, int topK, SearchMode mode);
 }

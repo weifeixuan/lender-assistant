@@ -1,5 +1,6 @@
 package com.lender.assistant.extract.service.impl;
 
+import com.lender.assistant.common.constant.LlmScene;
 import com.lender.assistant.common.exception.BizException;
 import com.lender.assistant.common.exception.ErrorCode;
 import com.lender.assistant.extract.mapper.FieldMappingMapper;
@@ -49,7 +50,7 @@ public class ExtractServiceImpl implements ExtractService {
         if (doc == null || doc.text().isBlank()) {
             throw new BizException(ErrorCode.PARAM_INVALID, "文档不存在或未入库: " + docId);
         }
-        return executor.execute("extract", generator.name(),
+        return executor.execute(LlmScene.EXTRACT, generator.name(),
                 () -> generator.extract(doc.docTitle(), doc.text()), true);
     }
 

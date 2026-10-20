@@ -1,5 +1,6 @@
 package com.lender.assistant.rag.service.impl;
 
+import com.lender.assistant.common.constant.SearchMode;
 import com.lender.assistant.common.util.PgVectorUtils;
 import com.lender.assistant.rag.mapper.DocChunkMapper;
 import com.lender.assistant.rag.model.KeywordHit;
@@ -7,6 +8,7 @@ import com.lender.assistant.rag.model.VectorHit;
 import com.lender.assistant.rag.service.SearchService;
 import com.lender.assistant.rag.strategy.EmbeddingStrategy;
 import com.lender.assistant.rag.strategy.impl.HashEmbeddingStrategy;
+import com.lender.assistant.rag.vo.response.SearchItemResponse;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
@@ -14,6 +16,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 /**
  * 混合检索：向量通道 + 关键词通道，结果合并去重。
@@ -28,6 +31,17 @@ import java.util.Map;
  */
 @Service
 public class SearchServiceImpl implements SearchService {
+
+    /** RRF 融合平滑常数：score = Σ 1/(K + rank)，60 为论文常用值（越大越不偏袒单通道的头部排名） */
+    private static final int RRF_SMOOTHING_K = 60;
+    /** 关键词 token 最短长度：单字 LIKE 命中面太宽（"的""是"满库都是），只留 2 字以上 */
+    private static final int KEYWORD_TOKEN_MIN_CHARS = 2;
+    /** 关键词 token 去重后上限：防止 <foreach> 拼出的 SQL 过长 */
+    private static final int KEYWORD_TOKEN_MAX_COUNT = 8;
+    /** 关键词通道排序的缺省排名：未命中关键词通道的 chunk 排到末尾 */
+    private static final int RANK_FALLBACK = 99;
+    /** 向量通道排序的缺省距离：仅关键词命中（无 vectorDistance）时排到末尾 */
+    private static final double DISTANCE_FALLBACK = 2;
 
     private final EmbeddingStrategy embeddingStrategy;
     private final DocChunkMapper docChunkMapper;
@@ -47,8 +61,8 @@ public class SearchServiceImpl implements SearchService {
     }
 
     @Override
-    public List<Map<String, Object>> hybridSearch(String query, int topK) {
-        return search(query, topK, "hybrid");
+    public List<SearchItemResponse> hybridSearch(String query, int topK) {
+        return search(query, topK, SearchMode.HYBRID);
     }
 
     /**
@@ -59,14 +73,14 @@ public class SearchServiceImpl implements SearchService {
      * 三模式跑同一评估集的对比，就是简历上"混合检索比单通道召回率提升 XX%"数据的来源。
      */
     @Override
-    public List<Map<String, Object>> search(String query, int topK, String mode) {
+    public List<SearchItemResponse> search(String query, int topK, SearchMode mode) {
         // 每条 chunk 记录它在各通道内的排名（1-based），hybrid 模式用 RRF 融合
-        Map<Long, Map<String, Object>> merged = new LinkedHashMap<>();
+        Map<Long, SearchItemResponse> merged = new LinkedHashMap<>();
         Map<Long, Integer> vectorRank = new LinkedHashMap<>();
         Map<Long, Integer> keywordRank = new LinkedHashMap<>();
 
         // 通道 1：向量召回
-        if (!"keyword".equals(mode)) {
+        if (mode != SearchMode.KEYWORD) {
             float[] queryVec = embeddingStrategy.embed(query);
             List<VectorHit> hits = docChunkMapper.searchByVector(PgVectorUtils.toLiteral(queryVec), topK);
             int rank = 0;
@@ -75,21 +89,19 @@ public class SearchServiceImpl implements SearchService {
                     continue;   // 超出阈值的召回丢弃（maxDistance<0 时该开关关闭）
                 }
                 rank++;
-                Map<String, Object> m = base(hit.id(), hit.docId(), hit.docTitle(), hit.sectionPath(), hit.content());
-                m.put("vectorDistance", hit.distance());
-                m.put("bothChannels", false);
-                merged.put(hit.id(), m);
+                merged.put(hit.id(), new SearchItemResponse(hit.id(), hit.docId(), hit.docTitle(),
+                        hit.sectionPath(), hit.content(), hit.distance(), null, false, null));
                 vectorRank.put(hit.id(), rank);
             }
         }
 
         // 通道 2：关键词召回——分词后多词 OR 匹配（整句算相似度会被长句稀释基本不命中，拆词才有效）
-        // 过滤：单字 token LIKE 命中面太宽（"的""是"满库都是），只留 2 字以上；去重后限 8 个防 SQL 过长
-        if (!"vector".equals(mode)) {
+        // 过滤：单字 token 命中面太宽，只留 2 字以上；去重后限量防 SQL 过长
+        if (mode != SearchMode.VECTOR) {
             List<String> tokens = HashEmbeddingStrategy.tokenize(query).stream()
-                    .filter(t -> t.length() >= 2)
+                    .filter(t -> t.length() >= KEYWORD_TOKEN_MIN_CHARS)
                     .distinct()
-                    .limit(8)
+                    .limit(KEYWORD_TOKEN_MAX_COUNT)
                     .toList();
             // 空 token 守卫下沉到 Service：MyBatis <foreach> 空集合会生成非法 SQL
             //（旧 DocumentStore 在方法内部处理 tokens.isEmpty()）
@@ -97,55 +109,53 @@ public class SearchServiceImpl implements SearchService {
             for (int i = 0; i < hits.size(); i++) {
                 KeywordHit hit = hits.get(i);
                 keywordRank.put(hit.id(), i + 1);
-                Map<String, Object> m = merged.get(hit.id());
-                if (m != null) {
-                    m.put("bothChannels", true);
-                    m.put("keywordHits", hit.hits());
+                SearchItemResponse existing = merged.get(hit.id());
+                if (existing != null) {
+                    // 双通道都命中：保留向量侧信息，补齐关键词命中数并置 bothChannels=true
+                    merged.put(hit.id(), new SearchItemResponse(existing.chunkId(), existing.docId(),
+                            existing.docTitle(), existing.sectionPath(), existing.content(),
+                            existing.vectorDistance(), hit.hits(), true, existing.rrfScore()));
                 } else {
-                    m = base(hit.id(), hit.docId(), hit.docTitle(), hit.sectionPath(), hit.content());
-                    m.put("keywordHits", hit.hits());
-                    m.put("bothChannels", false);
-                    merged.put(hit.id(), m);
+                    merged.put(hit.id(), new SearchItemResponse(hit.id(), hit.docId(), hit.docTitle(),
+                            hit.sectionPath(), hit.content(), null, hit.hits(), false, null));
                 }
             }
         }
 
-        List<Map<String, Object>> result = new ArrayList<>(merged.values());
-
-        if ("hybrid".equals(mode)) {
-            // RRF 融合排序：score = Σ 1/(K + rank)，K=60 为论文常用平滑常数。
-            // v1 硬排序（双通道优先）是评估用例 8 暴露的缺陷——关键词通道的宽泛命中
-            // 会把向量通道第 1 名挤出 top4；RRF 按排名融合，不偏袒任何通道。
-            final int K = 60;
-            Map<Long, Double> rrf = new LinkedHashMap<>();
-            vectorRank.forEach((id, rank) -> rrf.merge(id, 1.0 / (K + rank), Double::sum));
-            keywordRank.forEach((id, rank) -> rrf.merge(id, 1.0 / (K + rank), Double::sum));
-            result.sort((a, b) -> Double.compare(
-                    rrf.getOrDefault(chunkId(b), 0.0), rrf.getOrDefault(chunkId(a), 0.0)));
-            result.forEach(m -> m.put("rrfScore",
-                    String.format("%.5f", rrf.getOrDefault(chunkId(m), 0.0))));
-        } else if ("keyword".equals(mode)) {
-            result.sort((a, b) -> Integer.compare(
-                    keywordRank.getOrDefault(chunkId(a), 99), keywordRank.getOrDefault(chunkId(b), 99)));
-        } else {
-            result.sort((a, b) -> Double.compare(
-                    a.get("vectorDistance") == null ? 2 : (double) a.get("vectorDistance"),
-                    b.get("vectorDistance") == null ? 2 : (double) b.get("vectorDistance")));
-        }
+        List<SearchItemResponse> result = fuse(mode, new ArrayList<>(merged.values()), vectorRank, keywordRank);
         return result.subList(0, Math.min(topK, result.size()));
     }
 
-    private long chunkId(Map<String, Object> m) {
-        return ((Number) m.get("chunkId")).longValue();
-    }
-
-    private Map<String, Object> base(long id, String docId, String docTitle, String sectionPath, String content) {
-        Map<String, Object> m = new LinkedHashMap<>();
-        m.put("chunkId", id);
-        m.put("docId", docId);
-        m.put("docTitle", docTitle);
-        m.put("sectionPath", sectionPath);
-        m.put("content", content);
-        return m;
+    /**
+     * 融合排序：hybrid 用 RRF 按两路排名融合（并写回 rrfScore 字符串）；
+     * keyword 按关键词命中排名、vector 按向量距离排序。
+     */
+    private List<SearchItemResponse> fuse(SearchMode mode, List<SearchItemResponse> result,
+                                        Map<Long, Integer> vectorRank, Map<Long, Integer> keywordRank) {
+        if (mode == SearchMode.HYBRID) {
+            // RRF 融合排序：score = Σ 1/(K + rank)。v1 硬排序（双通道优先）是评估用例 8 暴露的缺陷——
+            // 关键词通道的宽泛命中会把向量通道第 1 名挤出 top4；RRF 按排名融合，不偏袒任何通道。
+            Map<Long, Double> rrf = new LinkedHashMap<>();
+            vectorRank.forEach((id, rank) -> rrf.merge(id, 1.0 / (RRF_SMOOTHING_K + rank), Double::sum));
+            keywordRank.forEach((id, rank) -> rrf.merge(id, 1.0 / (RRF_SMOOTHING_K + rank), Double::sum));
+            result.sort((a, b) -> Double.compare(
+                    rrf.getOrDefault(b.chunkId(), 0.0), rrf.getOrDefault(a.chunkId(), 0.0)));
+            // record 不可变：排序后重建一份带 rrfScore 的结果
+            return result.stream()
+                    .map(it -> new SearchItemResponse(it.chunkId(), it.docId(), it.docTitle(), it.sectionPath(),
+                            it.content(), it.vectorDistance(), it.keywordHits(), it.bothChannels(),
+                            String.format("%.5f", rrf.getOrDefault(it.chunkId(), 0.0))))
+                    .collect(Collectors.toList());
+        }
+        if (mode == SearchMode.KEYWORD) {
+            result.sort((a, b) -> Integer.compare(
+                    keywordRank.getOrDefault(a.chunkId(), RANK_FALLBACK),
+                    keywordRank.getOrDefault(b.chunkId(), RANK_FALLBACK)));
+        } else {
+            result.sort((a, b) -> Double.compare(
+                    a.vectorDistance() == null ? DISTANCE_FALLBACK : a.vectorDistance(),
+                    b.vectorDistance() == null ? DISTANCE_FALLBACK : b.vectorDistance()));
+        }
+        return result;
     }
 }

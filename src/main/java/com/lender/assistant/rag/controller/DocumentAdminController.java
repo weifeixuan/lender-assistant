@@ -1,6 +1,8 @@
 package com.lender.assistant.rag.controller;
 
+import com.lender.assistant.common.constant.SearchConstants;
 import com.lender.assistant.common.util.PgVectorUtils;
+import com.lender.assistant.common.util.TopKUtils;
 import com.lender.assistant.rag.model.Chunk;
 import com.lender.assistant.rag.model.ChunkRow;
 import com.lender.assistant.rag.model.DocSummary;
@@ -10,6 +12,11 @@ import com.lender.assistant.rag.strategy.ChunkSplitterStrategy;
 import com.lender.assistant.rag.strategy.DocumentParserStrategy;
 import com.lender.assistant.rag.strategy.EmbeddingStrategy;
 import com.lender.assistant.rag.strategy.factory.DocumentParserStrategyFactory;
+import com.lender.assistant.rag.vo.request.SearchRequest;
+import com.lender.assistant.rag.vo.response.DeleteResponse;
+import com.lender.assistant.rag.vo.response.IngestMillisResponse;
+import com.lender.assistant.rag.vo.response.SearchItemResponse;
+import com.lender.assistant.rag.vo.response.UploadResponse;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -22,9 +29,7 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 
 /**
  * 文档入库与检索的管理接口（阶段 1 的操作台）。
@@ -57,8 +62,8 @@ public class DocumentAdminController {
      * 重复上传同一 docId = 覆盖重建，方便反复实验。
      */
     @PostMapping
-    public Map<String, Object> upload(@RequestParam("file") MultipartFile file,
-                                      @RequestParam("docId") String docId) throws Exception {
+    public UploadResponse upload(@RequestParam("file") MultipartFile file,
+                               @RequestParam("docId") String docId) throws Exception {
         String fileName = file.getOriginalFilename() == null ? "unknown" : file.getOriginalFilename();
         // 解析器按扩展名运行时分发，交给工厂选择（不支持的类型抛可读异常）
         DocumentParserStrategy parser = parserFactory.resolve(fileName);
@@ -83,14 +88,10 @@ public class DocumentAdminController {
         documentService.replaceDocument(docId, stripExtension(fileName), fileName, rows);
         long t4 = System.currentTimeMillis();
 
-        Map<String, Object> result = new HashMap<>();
-        result.put("docId", docId);
-        result.put("blocks", parsed.blocks().size());
-        result.put("chunkCount", rows.size());
-        result.put("avgChunkChars", rows.stream().mapToInt(ChunkRow::charCount).average().orElse(0));
-        result.put("millis", Map.of("parse", t1 - t0, "split", t2 - t1, "embed", t3 - t2, "store", t4 - t3));
-        result.put("embeddingProvider", embeddingStrategy.getClass().getSimpleName());
-        return result;
+        return new UploadResponse(docId, parsed.blocks().size(), rows.size(),
+                rows.stream().mapToInt(ChunkRow::charCount).average().orElse(0),
+                new IngestMillisResponse(t1 - t0, t2 - t1, t3 - t2, t4 - t3),
+                embeddingStrategy.getClass().getSimpleName());
     }
 
     @GetMapping
@@ -99,32 +100,17 @@ public class DocumentAdminController {
     }
 
     @DeleteMapping("/{docId}")
-    public Map<String, Object> delete(@PathVariable String docId) {
+    public DeleteResponse delete(@PathVariable String docId) {
         int before = documentService.countByDoc(docId);
         documentService.deleteByDoc(docId);
-        return Map.of("docId", docId, "deletedChunks", before);
+        return new DeleteResponse(docId, before);
     }
 
     /** 检索测试入口（阶段 2 会挪到面向问答的接口上） */
     @PostMapping("/search")
-    public List<Map<String, Object>> search(@RequestBody Map<String, Object> body) {
-        String query = (String) body.get("query");
-        return searchService.hybridSearch(query, topK(body.get("topK"), 5));
-    }
-
-    /** topK 统一校验：非整数或非正数直接拒绝，避免 ClassCastException / subList 越界 */
-    private static int topK(Object raw, int fallback) {
-        if (raw == null) {
-            return fallback;
-        }
-        if (!(raw instanceof Number n)) {
-            throw new IllegalArgumentException("topK 必须是整数");
-        }
-        int v = n.intValue();
-        if (v <= 0) {
-            throw new IllegalArgumentException("topK 必须为正整数");
-        }
-        return v;
+    public List<SearchItemResponse> search(@RequestBody SearchRequest request) {
+        return searchService.hybridSearch(request.query(),
+                TopKUtils.resolve(request.topK(), SearchConstants.ADMIN_SEARCH_DEFAULT_TOP_K));
     }
 
     private String stripExtension(String fileName) {

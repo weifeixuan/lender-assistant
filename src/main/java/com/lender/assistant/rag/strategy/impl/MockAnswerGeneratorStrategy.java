@@ -30,6 +30,13 @@ public class MockAnswerGeneratorStrategy implements AnswerGeneratorStrategy {
 
     private static final Logger log = LoggerFactory.getLogger(MockAnswerGeneratorStrategy.class);
 
+    /** 流式模拟：每片 delta 的字符数 */
+    private static final int STREAM_DELTA_CHARS = 12;
+    /** 流式模拟：片间间隔（ms），让前端真的走增量渲染路径而非"一次性大块" */
+    private static final long STREAM_DELTA_INTERVAL_MILLIS = 30;
+    /** Mock 摘要每条来源截取的前缀字符数——长段落只留开头，避免回答臃肿 */
+    private static final int SUMMARY_PREVIEW_CHARS = 60;
+
     private final com.lender.assistant.tools.LenderQueryTools lenderTools;
     private final com.lender.assistant.tools.ToolIntentRouter toolRouter;
 
@@ -79,8 +86,8 @@ public class MockAnswerGeneratorStrategy implements AnswerGeneratorStrategy {
                 }
                 if (!line.isBlank()) {
                     String text = line.trim();
-                    answer.append(text, 0, Math.min(60, text.length()))
-                          .append(text.length() > 60 ? "……\n" : "\n");
+                    answer.append(text, 0, Math.min(SUMMARY_PREVIEW_CHARS, text.length()))
+                          .append(text.length() > SUMMARY_PREVIEW_CHARS ? "……\n" : "\n");
                 }
             }
         }
@@ -94,10 +101,10 @@ public class MockAnswerGeneratorStrategy implements AnswerGeneratorStrategy {
     }
 
     private void streamAnswer(String full, Consumer<String> onDelta) {
-        for (int i = 0; i < full.length(); i += 12) {
-            onDelta.accept(full.substring(i, Math.min(i + 12, full.length())));
+        for (int i = 0; i < full.length(); i += STREAM_DELTA_CHARS) {
+            onDelta.accept(full.substring(i, Math.min(i + STREAM_DELTA_CHARS, full.length())));
             try {
-                Thread.sleep(30);
+                Thread.sleep(STREAM_DELTA_INTERVAL_MILLIS);
             } catch (InterruptedException e) {
                 // 中断（应用关停 / SSE 客户端取消）：恢复中断标志让上层感知，随即停止推送。
                 // 属预期终止路径，记 DEBUG 即可

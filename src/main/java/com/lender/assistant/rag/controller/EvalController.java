@@ -1,12 +1,15 @@
 package com.lender.assistant.rag.controller;
 
+import com.lender.assistant.common.constant.SearchConstants;
+import com.lender.assistant.common.constant.SearchMode;
+import com.lender.assistant.common.util.TopKUtils;
 import com.lender.assistant.rag.service.EvalService;
+import com.lender.assistant.rag.vo.request.EvalRequest;
+import com.lender.assistant.rag.vo.response.EvalRunResponse;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
-
-import java.util.Map;
 
 /**
  * 评估接口：POST /api/admin/eval/run {topK, mode}
@@ -26,23 +29,8 @@ public class EvalController {
     }
 
     @PostMapping("/run")
-    public Map<String, Object> run(@RequestBody Map<String, Object> body) throws Exception {
-        String mode = body.get("mode") == null ? "hybrid" : (String) body.get("mode");
-        return evalService.run(topK(body.get("topK"), 4), mode);
-    }
-
-    /** topK 统一校验：非整数或非正数直接拒绝，避免 ClassCastException / subList 越界 */
-    private static int topK(Object raw, int fallback) {
-        if (raw == null) {
-            return fallback;
-        }
-        if (!(raw instanceof Number n)) {
-            throw new IllegalArgumentException("topK 必须是整数");
-        }
-        int v = n.intValue();
-        if (v <= 0) {
-            throw new IllegalArgumentException("topK 必须为正整数");
-        }
-        return v;
+    public EvalRunResponse run(@RequestBody EvalRequest request) throws Exception {
+        SearchMode mode = SearchMode.fromCode(request.mode());
+        return evalService.run(TopKUtils.resolve(request.topK(), SearchConstants.DEFAULT_TOP_K), mode);
     }
 }

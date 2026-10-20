@@ -2,14 +2,17 @@ package com.lender.assistant.rag.service.impl;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.lender.assistant.common.constant.SearchMode;
 import com.lender.assistant.rag.service.EvalService;
 import com.lender.assistant.rag.service.SearchService;
+import com.lender.assistant.rag.vo.response.EvalItemResponse;
+import com.lender.assistant.rag.vo.response.EvalRunResponse;
+import com.lender.assistant.rag.vo.response.SearchItemResponse;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 
 /**
  * 检索质量评估（阶段 3 核心）：跑评估集 → 算指标 → 出报告。
@@ -40,62 +43,51 @@ public class EvalServiceImpl implements EvalService {
         this.objectMapper = objectMapper;
     }
 
+    /** 评估集条目（仅本类内部使用：从 evalset.json 载入，不对外暴露，故不进 model/） */
     public record EvalItem(int id, String type, String question, String docId,
                            List<String> mustContain, String note) {}
 
-    public record ItemResult(int id, String type, String question, boolean hit, int firstHitRank,
-                             int recallTopK, long millis, String note) {}
-
     @Override
-    public Map<String, Object> run(int topK, String mode) throws Exception {
+    public EvalRunResponse run(int topK, SearchMode mode) throws Exception {
         List<EvalItem> items = loadEvalSet();
 
-        List<ItemResult> results = new ArrayList<>();
+        List<EvalItemResponse> results = new ArrayList<>();
         long totalMillis = 0;
         for (EvalItem item : items) {
             if ("NEGATIVE".equals(item.type())) {
                 // 否定条目不参与 recall/MRR（没有"正确召回"可言），语义验收时单独看
-                results.add(new ItemResult(item.id(), item.type(), item.question(), false, 0, topK, 0, item.note()));
+                results.add(new EvalItemResponse(item.id(), item.type(), item.question(), false, 0, topK, 0, item.note()));
                 continue;
             }
             long t0 = System.currentTimeMillis();
-            List<Map<String, Object>> hits = searchService.search(item.question(), topK, mode);
+            List<SearchItemResponse> hits = searchService.search(item.question(), topK, mode);
             long millis = System.currentTimeMillis() - t0;
             totalMillis += millis;
 
             int firstHitRank = 0;
             for (int i = 0; i < hits.size(); i++) {
-                String content = String.valueOf(hits.get(i).get("content"));
+                String content = String.valueOf(hits.get(i).content());
                 if (item.mustContain().stream().anyMatch(content::contains)) {
                     firstHitRank = i + 1;
                     break;
                 }
             }
-            results.add(new ItemResult(item.id(), item.type(), item.question(), firstHitRank > 0,
+            results.add(new EvalItemResponse(item.id(), item.type(), item.question(), firstHitRank > 0,
                     firstHitRank, topK, millis, item.note()));
         }
 
         // 正/负样本按 type 判别（NEGATIVE 不参与 recall/MRR）；不可用耗时判别——真实正样本可能恰好耗时 0ms 而被误剔
-        List<ItemResult> positive = results.stream().filter(r -> !"NEGATIVE".equals(r.type())).toList();
-        long recall = positive.stream().filter(ItemResult::hit).count();
+        List<EvalItemResponse> positive = results.stream().filter(r -> !"NEGATIVE".equals(r.type())).toList();
+        long recall = positive.stream().filter(EvalItemResponse::hit).count();
         double recallAtK = positive.isEmpty() ? 0 : (double) recall / positive.size();
         double mrr = positive.isEmpty() ? 0
                 : positive.stream().mapToDouble(r -> r.hit() ? 1.0 / r.firstHitRank() : 0).average().orElse(0);
         long avgMillis = positive.isEmpty() ? 0 : totalMillis / positive.size();
 
-        String markdown = buildMarkdown(mode, topK, results, positive.size(), recall, recallAtK, mrr, avgMillis);
+        String markdown = buildMarkdown(mode.code(), topK, results, positive.size(), recall, recallAtK, mrr, avgMillis);
 
-        return Map.of(
-                "mode", mode,
-                "topK", topK,
-                "totalItems", items.size(),
-                "evaluatedItems", positive.size(),
-                "hits", recall,
-                "recallAtK", recallAtK,
-                "mrr", mrr,
-                "avgMillis", avgMillis,
-                "results", results,
-                "markdown", markdown);
+        return new EvalRunResponse(mode.code(), topK, items.size(), positive.size(), recall, recallAtK, mrr,
+                avgMillis, results, markdown);
     }
 
     private List<EvalItem> loadEvalSet() throws Exception {
@@ -113,7 +105,7 @@ public class EvalServiceImpl implements EvalService {
         return items;
     }
 
-    private String buildMarkdown(String mode, int topK, List<ItemResult> results,
+    private String buildMarkdown(String mode, int topK, List<EvalItemResponse> results,
                                  int evaluated, long hits, double recallAtK, double mrr, long avgMillis) {
         StringBuilder sb = new StringBuilder();
         sb.append("# 检索评估报告\n\n")
@@ -124,7 +116,7 @@ public class EvalServiceImpl implements EvalService {
           .append("- **MRR: ").append(String.format("%.3f", mrr)).append("**\n")
           .append("- 平均检索耗时: ").append(avgMillis).append("ms\n\n")
           .append("| id | 问题 | 命中 | 首条命中排名 | 耗时ms | 说明 |\n|---|---|---|---|---|---|\n");
-        for (ItemResult r : results) {
+        for (EvalItemResponse r : results) {
             sb.append("| ").append(r.id())
               .append(" | ").append(r.question())
               .append(" | ").append("NEGATIVE".equals(r.type()) ? "-" : (r.hit() ? "✅" : "❌"))

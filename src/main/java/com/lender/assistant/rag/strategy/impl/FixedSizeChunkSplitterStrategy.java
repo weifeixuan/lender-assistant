@@ -25,6 +25,9 @@ import java.util.List;
 @ConditionalOnProperty(name = "rag.split.strategy", havingValue = "fixed")
 public class FixedSizeChunkSplitterStrategy implements ChunkSplitterStrategy {
 
+    /** 标题行前缀标记：拼入全文后仍能识别"这是标题"，也是章节路径回查的判断依据 */
+    private static final String HEADING_PREFIX = "## ";
+
     private final int chunkSize;
     private final int overlap;
 
@@ -50,7 +53,7 @@ public class FixedSizeChunkSplitterStrategy implements ChunkSplitterStrategy {
             }
             int start = full.length();
             String text = block.type() == ParsedDocument.BlockType.HEADING
-                    ? "## " + block.text()   // 标题加标记，切分后仍有"这是标题"的信息
+                    ? HEADING_PREFIX + block.text()   // 标题加标记，切分后仍有"这是标题"的信息
                     : block.text();
             full.append(text);
             blockSpans.add(new int[]{start, full.length()});
@@ -84,11 +87,11 @@ public class FixedSizeChunkSplitterStrategy implements ChunkSplitterStrategy {
                 break;
             }
             // 只要把标题 block（含 pos 所在 block 之前的）串起来
-            if (texts.get(i).startsWith("## ")) {
+            if (texts.get(i).startsWith(HEADING_PREFIX)) {
                 if (!path.isEmpty()) {
                     path.append(" > ");
                 }
-                path.append(texts.get(i).substring(3));
+                path.append(texts.get(i).substring(HEADING_PREFIX.length()));
             }
         }
         return path.toString();

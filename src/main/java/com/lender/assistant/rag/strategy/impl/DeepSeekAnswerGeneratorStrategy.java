@@ -22,6 +22,9 @@ import java.util.function.Consumer;
 @ConditionalOnProperty(name = "rag.chat.provider", havingValue = "deepseek")
 public class DeepSeekAnswerGeneratorStrategy implements AnswerGeneratorStrategy {
 
+    /** 流式兜底超时：模型偶发长时间不吐 token 时防 SSE 连接被无限挂着 */
+    private static final Duration STREAM_TIMEOUT = Duration.ofSeconds(60);
+
     private final org.springframework.ai.chat.client.ChatClient chatClient;
 
     public DeepSeekAnswerGeneratorStrategy(org.springframework.ai.chat.client.ChatClient.Builder builder,
@@ -42,7 +45,7 @@ public class DeepSeekAnswerGeneratorStrategy implements AnswerGeneratorStrategy 
                 .tools(lenderTools)
                 .stream()
                 .content()
-                .timeout(Duration.ofSeconds(60));
+                .timeout(STREAM_TIMEOUT);
         // 同步流式：token 依次回调，流结束才返回（QaService 依赖这个契约收尾 SSE）
         flux.doOnNext(onDelta::accept).blockLast();
     }

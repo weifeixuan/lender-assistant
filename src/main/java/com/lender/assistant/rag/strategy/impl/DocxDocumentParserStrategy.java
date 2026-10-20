@@ -29,6 +29,14 @@ public class DocxDocumentParserStrategy implements DocumentParserStrategy {
 
     private static final Logger log = LoggerFactory.getLogger(DocxDocumentParserStrategy.class);
 
+    /** Word 标题样式 ID 的英文标记（英文版形如 "Heading1"）；中文版样式 ID 直接是层级数字，故剥掉它再解析 */
+    private static final String HEADING_STYLE_TOKEN = "heading";
+    /** Word 内置标题层级范围 1..6（Heading 1 ~ Heading 6），超出者按正文处理 */
+    private static final int MIN_HEADING_LEVEL = 1;
+    private static final int MAX_HEADING_LEVEL = 6;
+    /** "非标题"的层级别名：样式为空或不表意时统一返回它 */
+    private static final int NON_HEADING_LEVEL = 0;
+
     @Override
     public boolean supports(String fileName) {
         return fileName.toLowerCase().endsWith(".docx");
@@ -49,7 +57,7 @@ public class DocxDocumentParserStrategy implements DocumentParserStrategy {
                             continue;
                         }
                         int level = headingLevelOf(p);
-                        if (level > 0) {
+                        if (level > NON_HEADING_LEVEL) {
                             blocks.add(ParsedDocument.Block.heading(level, text));
                         } else {
                             blocks.add(ParsedDocument.Block.paragraph(text));
@@ -99,18 +107,18 @@ public class DocxDocumentParserStrategy implements DocumentParserStrategy {
     private int headingLevelOf(XWPFParagraph p) {
         String style = p.getStyleID();
         if (style == null) {
-            return 0;
+            return NON_HEADING_LEVEL;
         }
         // Word 中文版样式 ID 常见为 "1"/"2"/"3"，英文版为 "Heading1"...，都兼容
-        String s = style.toLowerCase().replace("heading", "");
+        String s = style.toLowerCase().replace(HEADING_STYLE_TOKEN, "");
         try {
             int level = Integer.parseInt(s.trim());
-            return level >= 1 && level <= 6 ? level : 0;
+            return level >= MIN_HEADING_LEVEL && level <= MAX_HEADING_LEVEL ? level : NON_HEADING_LEVEL;
         } catch (NumberFormatException e) {
             // 非标题样式（如 "Normal"）走不到数字解析，属预期路径而非错误，故用 DEBUG 避免每段刷屏；
             // 不带堆栈——NumberFormatException 的栈无信息量，样式值才是排查"标题为何没被识别"的线索
             log.debug("段落样式无法映射为标题层级，按正文处理: style=[{}]", style);
-            return 0;
+            return NON_HEADING_LEVEL;
         }
     }
 }

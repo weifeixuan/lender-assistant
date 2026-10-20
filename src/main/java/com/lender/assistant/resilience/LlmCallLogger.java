@@ -1,5 +1,6 @@
 package com.lender.assistant.resilience;
 
+import com.lender.assistant.common.constant.LlmScene;
 import com.lender.assistant.resilience.mapper.LlmCallLogMapper;
 import com.lender.assistant.resilience.model.LlmCallLogRecord;
 import org.slf4j.Logger;
@@ -33,7 +34,7 @@ public class LlmCallLogger {
     }
 
     /** 包住一次模型调用：成功记 OK，失败记 FAIL 并原样上抛异常（不吞不换壳） */
-    public <T> T record(String scene, String provider, Supplier<T> call) {
+    public <T> T record(LlmScene scene, String provider, Supplier<T> call) {
         long t0 = System.currentTimeMillis();
         try {
             T result = call.get();
@@ -49,20 +50,20 @@ public class LlmCallLogger {
      * 手动打点：真实模型实现自己拿到 token 计量时调用
      * （Spring AI 的 Usage 在响应里，流式场景由实现方汇总后打点）。
      */
-    public void recordUsage(String scene, String provider, Integer promptTokens,
+    public void recordUsage(LlmScene scene, String provider, Integer promptTokens,
                             Integer completionTokens, int durationMs, String status, String errorMsg) {
         write(scene, provider, durationMs, promptTokens, completionTokens, status, errorMsg);
     }
 
-    private void write(String scene, String provider, int durationMs, Integer promptTokens,
+    private void write(LlmScene scene, String provider, int durationMs, Integer promptTokens,
                        Integer completionTokens, String status, String errorMsg) {
         try {
-            mapper.insert(new LlmCallLogRecord(scene, provider, durationMs,
+            mapper.insert(new LlmCallLogRecord(scene.code(), provider, durationMs,
                     promptTokens, completionTokens, status, errorMsg));
         } catch (RuntimeException e) {
             // 留痕是旁路：log 表写不进去（没跑 docs/schema.sql 等）不允许拖垮问答/抽取主链路。
             // 记 DEBUG：留痕失败不阻断业务，但留一条线索，便于排查"为什么没有调用记录"
-            log.debug("LLM 调用留痕写入失败（旁路，忽略）: scene={}, reason={}", scene, e.getMessage());
+            log.debug("LLM 调用留痕写入失败（旁路，忽略）: scene={}, reason={}", scene.code(), e.getMessage());
         }
     }
 }

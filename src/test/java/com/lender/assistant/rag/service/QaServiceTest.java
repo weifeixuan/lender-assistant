@@ -1,5 +1,6 @@
 package com.lender.assistant.rag.service;
 
+import com.lender.assistant.rag.vo.response.SearchItemResponse;
 import com.lender.assistant.rag.service.SearchService;
 import com.lender.assistant.rag.service.impl.QaServiceImpl;
 import com.lender.assistant.rag.strategy.AnswerGeneratorStrategy;
@@ -7,9 +8,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
 
@@ -70,14 +69,8 @@ class QaServiceTest {
         qaService = new QaServiceImpl(searchService, generator, executor);
     }
 
-    private Map<String, Object> hit(long chunkId, String title, String section, String content) {
-        Map<String, Object> m = new LinkedHashMap<>();
-        m.put("chunkId", chunkId);
-        m.put("docId", "doc1");
-        m.put("docTitle", title);
-        m.put("sectionPath", section);
-        m.put("content", content);
-        return m;
+    private SearchItemResponse hit(long chunkId, String title, String section, String content) {
+        return new SearchItemResponse(chunkId, "doc1", title, section, content, null, null, false, null);
     }
 
     /** 阻塞等待异步 SSE 流程达成条件（answer() 已在独立线程执行），超时即判失败。 */

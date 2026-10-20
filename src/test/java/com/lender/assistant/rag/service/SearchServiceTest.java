@@ -1,5 +1,7 @@
 package com.lender.assistant.rag.service;
 
+import com.lender.assistant.common.constant.SearchMode;
+import com.lender.assistant.rag.vo.response.SearchItemResponse;
 import com.lender.assistant.rag.strategy.EmbeddingStrategy;
 import com.lender.assistant.rag.mapper.DocChunkMapper;
 import com.lender.assistant.rag.model.KeywordHit;
@@ -11,7 +13,6 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
 import java.util.List;
-import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
@@ -61,19 +62,19 @@ class SearchServiceTest {
         when(mapper.searchByKeyword(anyList(), anyInt())).thenReturn(List.of(
                 kw(2, "乙内容", 3), kw(3, "丙内容", 1)));
 
-        List<Map<String, Object>> result = service.search("测试查询", 4, "hybrid");
+        List<SearchItemResponse> result = service.search("测试查询", 4, SearchMode.HYBRID);
 
         // RRF：B = 1/(60+2) + 1/(60+1) = 0.03252 > A = 1/61 = 0.01639 > C = 1/62 = 0.01613
         // （B 在向量通道第2名、关键词通道第1名；A 只有向量第1名；C 只有关键词第2名）
-        List<Long> idOrder = result.stream().map(m -> ((Number) m.get("chunkId")).longValue()).toList();
+        List<Long> idOrder = result.stream().map(SearchItemResponse::chunkId).toList();
         assertEquals(List.of(2L, 1L, 3L), idOrder, "双通道命中的 B 必须排第一，RRF 分数严格降序");
 
-        assertEquals("0.03252", result.get(0).get("rrfScore"));
-        assertEquals("0.01639", result.get(1).get("rrfScore"));
-        assertEquals("0.01613", result.get(2).get("rrfScore"));
+        assertEquals("0.03252", result.get(0).rrfScore());
+        assertEquals("0.01639", result.get(1).rrfScore());
+        assertEquals("0.01613", result.get(2).rrfScore());
         // B 双通道命中标记
-        assertEquals(true, result.get(0).get("bothChannels"));
-        assertEquals(false, result.get(1).get("bothChannels"));
+        assertTrue(result.get(0).bothChannels());
+        assertFalse(result.get(1).bothChannels());
     }
 
     @Test
@@ -83,11 +84,11 @@ class SearchServiceTest {
         when(mapper.searchByVector(eq("[0.0,0.0,0.0,0.0]"), anyInt())).thenReturn(List.of(
                 vec(1, "甲", 0.30), vec(2, "乙", 0.10)));
 
-        List<Map<String, Object>> result = service.search("测试查询", 4, "vector");
+        List<SearchItemResponse> result = service.search("测试查询", 4, SearchMode.VECTOR);
 
         verify(mapper, never()).searchByKeyword(any(), anyInt());
         assertEquals(List.of(2L, 1L),
-                result.stream().map(m -> ((Number) m.get("chunkId")).longValue()).toList(),
+                result.stream().map(SearchItemResponse::chunkId).toList(),
                 "距离小的排前面");
     }
 
@@ -97,7 +98,7 @@ class SearchServiceTest {
         when(mapper.searchByKeyword(anyList(), anyInt())).thenReturn(List.of(kw(9, "逾期内容", 2)));
 
         // "逾期第3列" 分词：逾/逾期/期/期第/第/3/列 —— 过滤后只剩 [逾期, 期第]
-        service.search("逾期第3列", 4, "keyword");
+        service.search("逾期第3列", 4, SearchMode.KEYWORD);
 
         @SuppressWarnings("unchecked")
         ArgumentCaptor<List<String>> captor = ArgumentCaptor.forClass((Class) List.class);
@@ -111,10 +112,10 @@ class SearchServiceTest {
         when(mapper.searchByKeyword(anyList(), anyInt())).thenReturn(List.of(
                 kw(5, "命中第一", 5), kw(6, "命中第二", 1)));
 
-        List<Map<String, Object>> result = service.search("逾期文件", 4, "keyword");
+        List<SearchItemResponse> result = service.search("逾期文件", 4, SearchMode.KEYWORD);
 
         assertEquals(List.of(5L, 6L),
-                result.stream().map(m -> ((Number) m.get("chunkId")).longValue()).toList());
+                result.stream().map(SearchItemResponse::chunkId).toList());
     }
 
     @Test
@@ -124,11 +125,11 @@ class SearchServiceTest {
         when(mapper.searchByVector(eq("[0.0,0.0,0.0,0.0]"), anyInt())).thenReturn(List.of(vec(1, "甲内容", 0.10)));
 
         // "3" 分词只剩单字符 token（长度 < 2 被过滤）→ tokens 为空，命中空 token 守卫分支
-        List<Map<String, Object>> result = service.search("3", 4, "hybrid");
+        List<SearchItemResponse> result = service.search("3", 4, SearchMode.HYBRID);
 
         verify(mapper, never()).searchByKeyword(any(), anyInt());
         assertEquals(List.of(1L),
-                result.stream().map(m -> ((Number) m.get("chunkId")).longValue()).toList(),
+                result.stream().map(SearchItemResponse::chunkId).toList(),
                 "关键词通道为空不影响向量通道召回");
     }
 }

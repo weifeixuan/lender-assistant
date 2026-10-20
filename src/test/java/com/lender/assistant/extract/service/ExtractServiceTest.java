@@ -1,5 +1,6 @@
 package com.lender.assistant.extract.service;
 
+import com.lender.assistant.common.constant.LlmScene;
 import com.lender.assistant.common.exception.BizException;
 import com.lender.assistant.common.exception.ErrorCode;
 import com.lender.assistant.extract.mapper.FieldMappingMapper;
@@ -76,7 +77,7 @@ class ExtractServiceTest {
         assertTrue(text.getValue().contains("网关地址 https://fake-ruijin.example.com/openapi"));
         assertTrue(text.getValue().contains("接口路径 /openapi/loan/order/create"));
         // 生成器调用必须经韧性执行器包装，scene=extract
-        verify(executor).execute(eq("extract"), eq("Mock"), any(Supplier.class), eq(true));
+        verify(executor).execute(eq(LlmScene.EXTRACT), eq("Mock"), any(Supplier.class), eq(true));
     }
 
     @Test
@@ -86,7 +87,7 @@ class ExtractServiceTest {
                 .thenThrow(new RuntimeException("模拟抽取超时"));
 
         assertThrows(RuntimeException.class, () -> service.extractFromDoc("doc1"));
-        verify(executor).execute(eq("extract"), eq("Mock"), any(Supplier.class), eq(true));
+        verify(executor).execute(eq(LlmScene.EXTRACT), eq("Mock"), any(Supplier.class), eq(true));
     }
 
     @Test

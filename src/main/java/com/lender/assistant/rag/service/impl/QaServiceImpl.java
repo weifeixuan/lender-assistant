@@ -1,8 +1,13 @@
 package com.lender.assistant.rag.service.impl;
 
+import com.lender.assistant.common.constant.LlmScene;
+import com.lender.assistant.common.util.ThreadPoolFactory;
 import com.lender.assistant.rag.service.QaService;
 import com.lender.assistant.rag.service.SearchService;
 import com.lender.assistant.rag.strategy.AnswerGeneratorStrategy;
+import com.lender.assistant.rag.vo.response.QaDoneResponse;
+import com.lender.assistant.rag.vo.response.QaSourceResponse;
+import com.lender.assistant.rag.vo.response.SearchItemResponse;
 import jakarta.annotation.PreDestroy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -10,11 +15,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
+import java.util.concurrent.ThreadPoolExecutor;
 
 /**
  * 问答编排（阶段 2 核心）：检索 → 拼 Prompt → 模型生成 → SSE 流式推给前端。
@@ -27,13 +29,22 @@ import java.util.concurrent.Executors;
  * SSE 事件协议（前端按 event 名分发）：
  * - sources: JSON 数组，本次召回的来源列表（先发，前端可先渲染"正在引用 N 份资料"）
  * - delta:   纯文本，模型 token 增量，前端增量拼接渲染
- * - done:    JSON，{provider, elapsedMillis}，收尾信号
+ * - done:    JSON，{provider, elapsedMillis, sourceCount}，收尾信号
  * - error:   纯文本，服务端异常信息（之后 completeWithError 断流）
  */
 @Service
 public class QaServiceImpl implements QaService {
 
     private static final Logger log = LoggerFactory.getLogger(QaServiceImpl.class);
+
+    /** SSE 超时：覆盖"检索 + 模型生成全流程"，DeepSeek 正常问答远快于这个值 */
+    private static final long SSE_TIMEOUT_MILLIS = 120_000L;
+    /** 流式工作线程数：SSE 是长连接，固定小池避免无界膨胀 */
+    private static final int STREAM_POOL_SIZE = 8;
+    /** 有界等待队列容量：占满即快速失败，防止任务无界堆积 OOM（§8.1） */
+    private static final int STREAM_QUEUE_CAPACITY = 100;
+    private static final long STREAM_THREAD_KEEP_ALIVE_SECONDS = 60L;
+    private static final String STREAM_THREAD_NAME_PREFIX = "qa-sse-worker";
 
     private final SearchService searchService;
     private final AnswerGeneratorStrategy generator;
@@ -42,13 +53,12 @@ public class QaServiceImpl implements QaService {
     /**
      * SSE 工作线程池：检索+生成+send 必须脱离请求线程执行，否则 Spring 会把事件缓冲到
      * 控制器返回时才一次性 flush（假流式 + Chrome net::ERR_ABORTED），详见 answer()。
-     * daemon 线程不阻塞 JVM 退出；固定 8 线程——SSE 是长连接，避免无界膨胀。
+     * 经 ThreadPoolFactory 装配：命名 daemon 线程 + 有界队列 + 明确拒绝策略（§8.1）；
+     * 生命周期（应用关停时关闭）不交给工厂，留在本类 @PreDestroy。
      */
-    private final ExecutorService streamExecutor = Executors.newFixedThreadPool(8, r -> {
-        Thread t = new Thread(r, "qa-sse-worker");
-        t.setDaemon(true);
-        return t;
-    });
+    private final ThreadPoolExecutor streamExecutor = ThreadPoolFactory.create(
+            STREAM_POOL_SIZE, STREAM_POOL_SIZE, STREAM_QUEUE_CAPACITY,
+            STREAM_THREAD_KEEP_ALIVE_SECONDS, STREAM_THREAD_NAME_PREFIX);
 
     public QaServiceImpl(SearchService searchService, AnswerGeneratorStrategy generator,
                      com.lender.assistant.resilience.ResilientLlmExecutor executor) {
@@ -59,8 +69,7 @@ public class QaServiceImpl implements QaService {
 
     @Override
     public SseEmitter answer(String question, int topK) {
-        // 120s 超时：覆盖"检索 + 模型生成全流程"，DeepSeek 正常问答远快于这个值
-        SseEmitter emitter = new SseEmitter(120_000L);
+        SseEmitter emitter = new SseEmitter(SSE_TIMEOUT_MILLIS);
         long t0 = System.currentTimeMillis();
 
         // 关键：立即返回 emitter，把检索+生成+send 放到独立线程。
@@ -74,7 +83,7 @@ public class QaServiceImpl implements QaService {
     /** SSE 推送主流程，运行在 streamExecutor 工作线程上；每个 send 都是即时 flush 的真流式。 */
     private void streamAnswer(SseEmitter emitter, String question, int topK, long t0) {
         try {
-            List<Map<String, Object>> hits = searchService.hybridSearch(question, topK);
+            List<SearchItemResponse> hits = searchService.hybridSearch(question, topK);
             if (hits.isEmpty()) {
                 send(emitter, "delta", "资料库中没有检索到相关内容，请先在上方上传并入库文档。");
                 emitter.complete();
@@ -82,31 +91,24 @@ public class QaServiceImpl implements QaService {
             }
 
             // 先推来源列表，前端立刻能展示"引用了哪些资料"
-            List<Map<String, Object>> sources = new ArrayList<>();
+            List<QaSourceResponse> sources = new ArrayList<>();
             for (int i = 0; i < hits.size(); i++) {
-                Map<String, Object> h = hits.get(i);
-                Map<String, Object> s = new LinkedHashMap<>();
-                s.put("idx", i + 1);
-                s.put("docTitle", h.get("docTitle"));
-                s.put("sectionPath", h.get("sectionPath"));
-                sources.add(s);
+                SearchItemResponse h = hits.get(i);
+                sources.add(new QaSourceResponse(i + 1, h.docTitle(), h.sectionPath()));
             }
             send(emitter, "sources", sources);
 
             // AnswerGeneratorStrategy 契约：generate 返回时生成已结束，token 在调用线程上依次回调。
             // 韧性（阶段4）：经 ResilientLlmExecutor 走 qa 链路——留痕 + 熔断；
             // allowRetry=false：SSE token 已推给用户，重试会导致内容重放
-            executor.execute("qa", generator.name(),
+            executor.execute(LlmScene.QA, generator.name(),
                     () -> {
                         generator.generate(systemPrompt(), userPrompt(question, hits),
                                 token -> send(emitter, "delta", token));
                         return true;
                     }, false);
 
-            Map<String, Object> done = Map.of(
-                    "provider", generator.name(),
-                    "elapsedMillis", System.currentTimeMillis() - t0,
-                    "sourceCount", sources.size());
+            QaDoneResponse done = new QaDoneResponse(generator.name(), System.currentTimeMillis() - t0, sources.size());
             send(emitter, "done", done);
             emitter.complete();
         } catch (io.github.resilience4j.circuitbreaker.CallNotPermittedException e) {
@@ -136,13 +138,13 @@ public class QaServiceImpl implements QaService {
                 """;
     }
 
-    private String userPrompt(String question, List<Map<String, Object>> hits) {
+    private String userPrompt(String question, List<SearchItemResponse> hits) {
         StringBuilder sb = new StringBuilder("【召回资料】\n");
         for (int i = 0; i < hits.size(); i++) {
-            Map<String, Object> h = hits.get(i);
+            SearchItemResponse h = hits.get(i);
             sb.append("【来源").append(i + 1).append("】")
-              .append(h.get("docTitle")).append(" / ").append(h.get("sectionPath") == null ? "（无小节）" : h.get("sectionPath"))
-              .append("\n").append(h.get("content")).append("\n\n");
+              .append(h.docTitle()).append(" / ").append(h.sectionPath() == null ? "（无小节）" : h.sectionPath())
+              .append("\n").append(h.content()).append("\n\n");
         }
         sb.append("【问题】").append(question);
         return sb.toString();

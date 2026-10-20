@@ -3,6 +3,7 @@ package com.lender.assistant.resilience;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import com.lender.assistant.common.constant.LlmScene;
 import com.lender.assistant.resilience.mapper.LlmCallLogMapper;
 
 import java.util.concurrent.atomic.AtomicInteger;
@@ -34,7 +35,7 @@ class ResilientLlmExecutorTest {
     @Test
     @DisplayName("正常路径：透传返回值，无故障注入")
     void successPassthrough() {
-        assertEquals("ok", newExecutor(false).execute("qa", "Mock", () -> "ok", false));
+        assertEquals("ok", newExecutor(false).execute(LlmScene.QA, "Mock", () -> "ok", false));
     }
 
     /** chaos 包在 call 内层（模拟"调用已发出但失败"），所以被测 supplier 正常返回+计数 */
@@ -50,7 +51,7 @@ class ResilientLlmExecutorTest {
     @DisplayName("chaos=true 且允许重试：异常重试后仍上抛，supplier 被调用 maxAttempts 次")
     void chaosRetriesThenThrows() {
         assertThrows(IllegalStateException.class,
-                () -> newExecutor(true).execute("extract", "Mock", countedCall(), true));
+                () -> newExecutor(true).execute(LlmScene.EXTRACT, "Mock", countedCall(), true));
         assertEquals(2, calls.get(), "重试语义：一次执行最多 maxAttempts 次尝试");
     }
 
@@ -58,7 +59,7 @@ class ResilientLlmExecutorTest {
     @DisplayName("chaos=true 且禁用重试（SSE 场景）：只调用一次，不重放已推给用户的 token")
     void noRetryModeInvokesOnce() {
         assertThrows(IllegalStateException.class,
-                () -> newExecutor(true).execute("qa", "Mock", countedCall(), false));
+                () -> newExecutor(true).execute(LlmScene.QA, "Mock", countedCall(), false));
         assertEquals(1, calls.get());
     }
 
@@ -69,13 +70,13 @@ class ResilientLlmExecutorTest {
 
         for (int i = 0; i < 3; i++) {
             assertThrows(IllegalStateException.class,
-                    () -> executor.execute("qa", "Mock", countedCall(), false));
+                    () -> executor.execute(LlmScene.QA, "Mock", countedCall(), false));
         }
         assertEquals(3, calls.get());
 
         // 第 4 次：熔断器已 OPEN，快速失败，supplier 完全不被触达
         assertThrows(RuntimeException.class,
-                () -> executor.execute("qa", "Mock", countedCall(), false));
+                () -> executor.execute(LlmScene.QA, "Mock", countedCall(), false));
         assertEquals(3, calls.get(), "熔断打开后业务代码必须零调用（快速失败）");
     }
 
@@ -84,7 +85,7 @@ class ResilientLlmExecutorTest {
     void noChaosNeverOpens() {
         ResilientLlmExecutor executor = newExecutor(false);
         for (int i = 0; i < 10; i++) {
-            assertEquals("ok", executor.execute("qa", "Mock", () -> "ok", false));
+            assertEquals("ok", executor.execute(LlmScene.QA, "Mock", () -> "ok", false));
         }
     }
 }

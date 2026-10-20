@@ -1,5 +1,6 @@
 package com.lender.assistant.resilience;
 
+import com.lender.assistant.common.constant.LlmScene;
 import com.lender.assistant.resilience.mapper.LlmCallLogMapper;
 import com.lender.assistant.resilience.model.LlmCallLogRecord;
 import org.junit.jupiter.api.BeforeEach;
@@ -32,7 +33,7 @@ class LlmCallLoggerTest {
     @Test
     @DisplayName("调用成功：写一行 status=OK，耗时非负，返回值透传")
     void recordsSuccess() {
-        String result = logger.record("extract", "Mock", () -> "抽取结果");
+        String result = logger.record(LlmScene.EXTRACT, "Mock", () -> "抽取结果");
 
         assertEquals("抽取结果", result);
         ArgumentCaptor<LlmCallLogRecord> args = ArgumentCaptor.forClass(LlmCallLogRecord.class);
@@ -51,7 +52,7 @@ class LlmCallLoggerTest {
         RuntimeException boom = new RuntimeException("模拟模型 502");
 
         RuntimeException thrown = assertThrows(RuntimeException.class,
-                () -> logger.record("qa", "DeepSeek", () -> { throw boom; }));
+                () -> logger.record(LlmScene.QA, "DeepSeek", () -> { throw boom; }));
 
         assertSame(boom, thrown, "必须透传原始异常，不能吞掉换壳");
         ArgumentCaptor<LlmCallLogRecord> args = ArgumentCaptor.forClass(LlmCallLogRecord.class);
@@ -68,14 +69,14 @@ class LlmCallLoggerTest {
         doThrow(new RuntimeException("log 表写不进去"))
                 .when(mapper).insert(any(LlmCallLogRecord.class));
 
-        String result = assertDoesNotThrow(() -> logger.record("qa", "Mock", () -> "业务结果"));
+        String result = assertDoesNotThrow(() -> logger.record(LlmScene.QA, "Mock", () -> "业务结果"));
         assertEquals("业务结果", result, "留痕是旁路，不能挡住主链路");
     }
 
     @Test
     @DisplayName("手动打点：DeepSeek 版拿得到 token 数时走带 token 的重载")
     void manualRecordWithTokens() {
-        logger.recordUsage("qa", "DeepSeek", 1200, 350, 156, "OK", null);
+        logger.recordUsage(LlmScene.QA, "DeepSeek", 1200, 350, 156, "OK", null);
 
         verify(mapper).insert(any(LlmCallLogRecord.class));
     }

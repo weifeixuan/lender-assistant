@@ -9,12 +9,15 @@ package com.lender.assistant.common.util;
  */
 public final class PgVectorUtils {
 
+    /** StringBuilder 初始容量估算：每个 float 文本约 10 字符（含逗号、负号），只为减少扩容次数 */
+    private static final int CHARS_PER_ELEMENT_ESTIMATE = 10;
+
     private PgVectorUtils() {
     }
 
     /** float[] → pgvector 文本字面量 "[0.1,0.2,...]" */
     public static String toLiteral(float[] vector) {
-        StringBuilder sb = new StringBuilder(vector.length * 10);
+        StringBuilder sb = new StringBuilder(vector.length * CHARS_PER_ELEMENT_ESTIMATE);
         sb.append('[');
         for (int i = 0; i < vector.length; i++) {
             if (i > 0) {

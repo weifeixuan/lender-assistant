@@ -1,6 +1,7 @@
 package com.lender.assistant.rag.service;
 
-import java.util.Map;
+import com.lender.assistant.common.constant.SearchMode;
+import com.lender.assistant.rag.vo.response.EvalRunResponse;
 
 /**
  * 检索质量评估（跑评估集 → 算 recall@K / MRR → 出 markdown 报告）。
@@ -8,5 +9,5 @@ import java.util.Map;
  */
 public interface EvalService {
 
-    Map<String, Object> run(int topK, String mode) throws Exception;
+    EvalRunResponse run(int topK, SearchMode mode) throws Exception;
 }

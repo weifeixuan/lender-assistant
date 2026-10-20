@@ -1,5 +1,6 @@
 package com.lender.assistant.resilience;
 
+import com.lender.assistant.common.constant.LlmScene;
 import io.github.resilience4j.circuitbreaker.CircuitBreaker;
 import io.github.resilience4j.circuitbreaker.CircuitBreakerConfig;
 import io.github.resilience4j.retry.Retry;
@@ -32,6 +33,11 @@ import java.util.function.Supplier;
 @Component
 public class ResilientLlmExecutor {
 
+    /** 重试间隔：瞬时抖动（网络抖动/限流）给一秒内的短退避即可，过长会拖垮用户等待 */
+    private static final long RETRY_WAIT_MILLIS = 50;
+    /** 失败率阈值（%）：窗口内失败占比超过它就熔断 */
+    private static final int FAILURE_RATE_THRESHOLD_PERCENT = 50;
+
     private final CircuitBreaker circuitBreaker;
     private final Retry retry;
     private final LlmCallLogger logger;
@@ -48,12 +54,12 @@ public class ResilientLlmExecutor {
         this.circuitBreaker = CircuitBreaker.of("llm", CircuitBreakerConfig.custom()
                 .slidingWindowSize(failureThreshold)
                 .minimumNumberOfCalls(failureThreshold)
-                .failureRateThreshold(50)
+                .failureRateThreshold(FAILURE_RATE_THRESHOLD_PERCENT)
                 .waitDurationInOpenState(Duration.ofSeconds(waitDurationSec))
                 .build());
         this.retry = Retry.of("llm", RetryConfig.custom()
                 .maxAttempts(maxAttempts)
-                .waitDuration(Duration.ofMillis(50))
+                .waitDuration(Duration.ofMillis(RETRY_WAIT_MILLIS))
                 .build());
     }
 
@@ -61,7 +67,7 @@ public class ResilientLlmExecutor {
      * 包住一次模型调用。
      * @param allowRetry 非流式（如抽取）true；SSE 流式（问答）必须 false
      */
-    public <T> T execute(String scene, String provider, Supplier<T> call, boolean allowRetry) {
+    public <T> T execute(LlmScene scene, String provider, Supplier<T> call, boolean allowRetry) {
         // chaos 包在 call 内层：语义是"调用已发出但失败"（重试会再次发出调用），
         // 而不是"调用根本没发出去"——后者连重试/熔断的观察面都没有
         Supplier<T> chain = () -> {
