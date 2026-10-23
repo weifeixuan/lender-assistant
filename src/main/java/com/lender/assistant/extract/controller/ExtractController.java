@@ -21,7 +21,7 @@ import java.util.List;
  * - GET  /api/extract/fields          内部标准字段目录（前端渲染映射表表头用）
  *
  * 错误处理：不再就地 catch 手拼错误体——业务失败抛 {@link BizException}，其余异常交给全局异常处理器，
- * 统一转成 code/msg（§5.3）；成功返回体由 ApiResponseBodyAdvice 统一包成 code/msg/data。
+ * 统一转成 code/msg（§5.3）；成功返回体由 ResponseWrapAspect 统一包成 code/msg/data。
  */
 @RestController
 @RequestMapping("/api/extract")

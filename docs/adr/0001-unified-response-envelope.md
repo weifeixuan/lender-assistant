@@ -1,6 +1,6 @@
 # ADR-0001：统一响应包装用 ResponseBodyAdvice，不用 AOP 切面返回值
 
-- 状态：已采纳（2026-10-19）
+- 状态：包装机制部分已被 [ADR-0007](0007-wrap-aspect-and-json-logging.md) 修订（ResponseBodyAdvice → 切面包装）；响应形状 `{code,msg,data}` 与异常走 `@ExceptionHandler` 的决策仍然有效（2026-10-23）
 - 相关：`common/web/ApiResponseBodyAdvice`、`common/web/ControllerLogAspect`、`common/dto/ApiResponse`、`common/annotation/RawResponse`、`src/main/resources/static/index.html`
 
 ## 背景

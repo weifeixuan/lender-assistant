@@ -7,7 +7,7 @@ import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 
 /**
- * 标记"原始响应"：跳过统一响应体包装（{@code ApiResponseBodyAdvice}）。
+ * 标记"原始响应"：跳过统一响应体包装（{@code ResponseWrapAspect}）。
  *
  * 为什么需要它：统一包装只对"业务 JSON"成立；SSE 流、健康探针这类协议/探针响应必须保持原样——
  * 包一层 {code,msg,data} 会破坏 SSE 事件格式，也会让运维/验收脚本解析 /health 失败。

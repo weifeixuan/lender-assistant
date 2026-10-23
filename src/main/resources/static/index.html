@@ -114,7 +114,7 @@
 
 <script>
 // ===== 基础请求封装：统一错误处理 + 统一响应体解包（后端返回 {code,msg,data}）=====
-// 后端由 ApiResponseBodyAdvice 把所有普通接口包成 {code,msg,data}，
+// 后端由 ResponseWrapAspect 把所有普通接口包成 {code,msg,data}，
 // 故此处统一取 body.data 作为业务载荷、取 body.msg 作为错误原因
 async function api(path, opts) {
   const resp = await fetch('/api/admin/documents' + path, opts);

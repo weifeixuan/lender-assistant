@@ -23,7 +23,7 @@
 | 词 | 含义 | 代码锚点 |
 |---|---|---|
 | 统一响应体（ApiResponse） | 所有普通接口的对外响应形状：`{code, msg, data}`。成功 `code=200`、`msg="ok"`；失败 `data` 为 null | `common/dto/ApiResponse` |
-| 响应包装（ApiResponseBodyAdvice） | 在响应体出站时把 controller 普通返回值包成统一响应体的机制 | `common/web/ApiResponseBodyAdvice` |
+| 响应包装（ResponseWrapAspect） | 在 controller 返回后把普通返回值包成统一响应体的切面（@Order(2) 内层，日志切面 @Order(1) 外层） | `common/web/ResponseWrapAspect` |
 | 原始响应（@RawResponse） | 显式声明**跳过**统一包装的接口（SSE、`/health` 探针）。可标方法或类 | `common/annotation/RawResponse` |
 | 全局异常处理器（GlobalExceptionHandler） | 把异常统一转成 `ApiResponse` 的 `@RestControllerAdvice`；对外不暴露堆栈 / 内部类名 / SQL | `common/web/GlobalExceptionHandler` |
 | 业务异常（BizException） | 业务失败的统一异常类型，携带 ErrorCode；禁止再用裸 RuntimeException 做流程控制 | `common/exception/BizException` |

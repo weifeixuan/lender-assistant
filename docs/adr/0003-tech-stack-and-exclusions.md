@@ -26,4 +26,4 @@ JVM 生态里 JPA / Lombok / MyBatis-Plus / WebFlux 常被当作默认选型。�
 ## 后果
 
 - 新增任何第三方依赖都必须先评估「能不加就不加」，并在本 ADR 或 `coding-standards.md §0.1` 登记「选它 / 不选它」的理由。
-- AOP **不得**用于响应体改写或异常处理，这两件事分别是 `ApiResponseBodyAdvice` 与 `GlobalExceptionHandler` 的职责。
+- AOP **不得**用于响应体改写或异常处理，这两件事分别是 `ApiResponseBodyAdvice` 与 `GlobalExceptionHandler` 的职责。（2026-10-23 修订：响应体改写已被 [ADR-0007](0007-wrap-aspect-and-json-logging.md) 改为切面实现，本条对"改写"的禁令作废；**异常处理仍必须走 `@ExceptionHandler`，禁止切面 catch**——404 与参数绑定异常发生在切面视野之外，切面 catch 会漏。）
