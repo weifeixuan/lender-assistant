@@ -50,10 +50,12 @@
             <artifactId>spring-boot-starter-aop</artifactId>
         </dependency>
 
-        <!-- DeepSeek 对话模型：启动不依赖 key，调用时才需要 -->
+        <!-- 对话模型：走 OpenAI 兼容协议（DeepSeek/Kimi/通义/GLM 等均支持）。
+             选它而非厂商专属 starter，是为了"只改 base-url + model + key 就能切换模型"，
+             业务代码与策略实现无需改动。启动不依赖 key，调用时才需要 -->
         <dependency>
             <groupId>org.springframework.ai</groupId>
-            <artifactId>spring-ai-starter-model-deepseek</artifactId>
+            <artifactId>spring-ai-starter-model-openai</artifactId>
         </dependency>
 
         <!-- JDBC + PostgreSQL：doc_chunk 入库与混合检索（阶段1）。
@@ -87,7 +89,7 @@
 
         <!-- Resilience4j 纯库（阶段4韧性）：不用 spring-boot3 starter 的注解 AOP——
              编程式 decorateSupplier 一个纯 JUnit 测试就能驱动熔断状态机，
-             也符合"AI 代码必须看得懂"的红线。超时不在它管：DeepSeek 流自身
+             也符合"AI 代码必须看得懂"的红线。超时不在它管：对话模型流自身
              .timeout(60s) + SseEmitter 120s 已兜底 -->
         <dependency>
             <groupId>io.github.resilience4j</groupId>

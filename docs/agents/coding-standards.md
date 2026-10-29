@@ -89,7 +89,7 @@ com.lender.assistant
 2. 对外接口入参必须校验：非法值拒绝并给默认兜底，禁止直接 500。
 3. 降级必须留痕：模型调用失败经 `LlmCallLogger` 记 `FAIL` + `error_msg`（旁路，留痕失败不挡主链路）。
 4. 日志用 SLF4J 占位符，异常 `log.error("上下文", e)` 带堆栈；禁止 `e.printStackTrace()` / `System.out`；级别 ERROR=需人处理 / WARN=自动恢复但有异常 / INFO=关键节点 / DEBUG=细节；禁止打印身份证 / 卡号 / 密钥，关键上下文带 `docId` / `chunkId`。
-5. 对外响应统一 `ApiResponse{code, msg, data}`（`ResponseWrapAspect` 切面包装，失败 `data` 为 null），不暴露堆栈 / 内部类名 / SQL；SSE 与探针接口用 `@RawResponse` 排除包装（见 [ADR-0001](../adr/0001-unified-response-envelope.md)、[ADR-0007](../adr/0007-wrap-aspect-and-json-logging.md)）。
+5. 对外响应统一 `ApiResponse{code, msg, data}`（`ApiResponseBodyAdvice` 包装，失败 `data` 为 null），不暴露堆栈 / 内部类名 / SQL；SSE 与探针接口用 `@RawResponse` 排除包装（见 [ADR-0001](../adr/0001-unified-response-envelope.md)、[ADR-0007](../adr/0007-wrap-aspect-and-json-logging.md)）。
 6. MVC 客户端错误按 HTTP 语义归位，不得兜成 500：路由不存在 → 404；报文不可解析 / 参数类型不匹配 / 必填缺失 → 400，且不回声框架技术信息（见 [ADR-0005](../adr/0005-streaming-and-error-semantics.md)）。
 
 ## 6. 数据访问与事务（MyBatis）

@@ -13,6 +13,7 @@ import com.lender.assistant.rag.strategy.DocumentParserStrategy;
 import com.lender.assistant.rag.strategy.EmbeddingStrategy;
 import com.lender.assistant.rag.strategy.factory.DocumentParserStrategyFactory;
 import com.lender.assistant.rag.vo.request.SearchRequest;
+import com.lender.assistant.rag.vo.response.ChunkPageResponse;
 import com.lender.assistant.rag.vo.response.DeleteResponse;
 import com.lender.assistant.rag.vo.response.IngestMillisResponse;
 import com.lender.assistant.rag.vo.response.SearchItemResponse;
@@ -64,6 +65,8 @@ public class DocumentAdminController {
     @PostMapping
     public UploadResponse upload(@RequestParam("file") MultipartFile file,
                                @RequestParam("docId") String docId) throws Exception {
+        // 先校验再解析：非法 docId 不该白跑一次文件解析与一批外部向量化调用
+        documentService.validateDocId(docId);
         String fileName = file.getOriginalFilename() == null ? "unknown" : file.getOriginalFilename();
         // 解析器按扩展名运行时分发，交给工厂选择（不支持的类型抛可读异常）
         DocumentParserStrategy parser = parserFactory.resolve(fileName);
@@ -97,6 +100,17 @@ public class DocumentAdminController {
     @GetMapping
     public List<DocSummary> list() {
         return documentService.listDocuments();
+    }
+
+    /**
+     * 切片分页（前端"查看切分信息"抽屉的数据源）。
+     * page 从 1 开始、size 1-100，未传/越界由 Service 归一；走全局 ApiResponse 包装。
+     */
+    @GetMapping("/{docId}/chunks")
+    public ChunkPageResponse chunks(@PathVariable String docId,
+                                    @RequestParam(name = "page", required = false) Integer page,
+                                    @RequestParam(name = "size", required = false) Integer size) {
+        return documentService.listChunkPage(docId, page, size);
     }
 
     @DeleteMapping("/{docId}")

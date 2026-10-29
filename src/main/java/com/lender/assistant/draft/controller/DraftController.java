@@ -14,7 +14,7 @@ import org.springframework.web.bind.annotation.RestController;
  * 这是"AI 代码必须人工复核"红线在 API 契约层的固化。
  *
  * 错误处理：不再就地 catch 手拼错误体——异常交给全局处理器统一转 code/msg，
- * 成功返回体由 ResponseWrapAspect 包成 code/msg/data（§5.3）。
+ * 成功返回体由 ApiResponseBodyAdvice 包成 code/msg/data（§5.3）。
  *
  * 响应直接用 {@link DraftResponse}：其组件名与旧手拼 Map 的键名逐字一致，
  * 无需再包一层——契约仍由接口类型固定。

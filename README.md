@@ -14,7 +14,7 @@
 | 韧性与留痕            | 熔断 + 重试（编程式 Resilience4j）+ 每次模型调用留痕；熔断走人工降级 | chaos 演练：3次失败→OPEN→快速失败，系统不崩     |
 | 代码草稿生成           | 字段映射表 + 策略模式骨架 → Java 适配层草稿 + 人工复核声明        | 映射9条→草稿零占位残留                     |
 
-**诚实声明**：Mock 实现产生的是构造性结果，只证明链路正确；真实模型效果待接入 DeepSeek/智谱 key 后复测（provider 开关一键切换）。
+**诚实声明**：Mock 实现产生的是构造性结果，只证明链路正确；真实模型效果待接入 key 后复测（provider 开关一键切换）。
 
 ## 架构
 
@@ -23,11 +23,11 @@
                 │                                                                      │
 docx/txt 上传 ─▶ 解析(POI) ─▶ 切分(按章节/固定) ─▶ 向量化(Hash/智谱) ─▶ doc_chunk (pgvector, HNSW+trigram)
                                                                       │
-提问 ─▶ SearchService（向量⇄关键词 双通道）─▶ RRF 融合排序 ─▶ QaService 拼 Prompt ─▶ AnswerGeneratorStrategy(Mock/DeepSeek) ─▶ SSE
+提问 ─▶ SearchService（向量⇄关键词 双通道）─▶ RRF 融合排序 ─▶ QaService 拼 Prompt ─▶ AnswerGeneratorStrategy(Mock/OpenAI兼容) ─▶ SSE
                                             │
-新资方文档 ─▶ ExtractService ─▶ ExtractGeneratorStrategy(Mock规则/DeepSeek) ─▶ field_mapping（人工确认状态机）
+新资方文档 ─▶ ExtractService ─▶ ExtractGeneratorStrategy(Mock规则/OpenAI兼容) ─▶ field_mapping（人工确认状态机）
                                             │
-映射表 ─▶ DraftService ─▶ DraftGeneratorStrategy(模板渲染/DeepSeek) ─▶ Java 适配层草稿 + 人工复核声明
+映射表 ─▶ DraftService ─▶ DraftGeneratorStrategy(模板渲染/OpenAI兼容) ─▶ Java 适配层草稿 + 人工复核声明
                                             │
                             LenderQueryTools（@Tool：查入库文件/chunk数，Function Calling）
 ```
@@ -72,14 +72,23 @@ java -jar target/lender-assistant-0.1.0-SNAPSHOT.jar --server.port=8080
 
 ### 接入真实模型（可选）
 
-| 开关                       | 值                   | 说明   |
-| ------------------------ | ------------------- | ---- |
-| `RAG_CHAT_PROVIDER`      | `mock` / `deepseek` | 对话模型 |
-| `RAG_EMBEDDING_PROVIDER` | `hash` / `zhipu`    | 向量化  |
-| `RAG_EXTRACT_PROVIDER`   | `mock` / `deepseek` | 字段抽取 |
-| `RAG_DRAFT_PROVIDER`     | `mock` / `deepseek` | 代码草稿 |
+| 开关                       | 值                | 说明   |
+| ------------------------ | ---------------- | ---- |
+| `RAG_CHAT_PROVIDER`      | `mock` / `openai` | 对话模型 |
+| `RAG_EMBEDDING_PROVIDER` | `hash` / `zhipu`  | 向量化  |
+| `RAG_EXTRACT_PROVIDER`   | `mock` / `openai` | 字段抽取 |
+| `RAG_DRAFT_PROVIDER`     | `mock` / `openai` | 代码草稿 |
 
-配 `DEEPSEEK_API_KEY` / `ZHIPU_API_KEY` 环境变量即可，key 不进代码库（compose 里走环境变量透传）。
+配 `LLM_API_KEY` / `LLM_BASE_URL` / `LLM_MODEL` 三个环境变量即可接入真实模型，key 不进代码库（compose 里走环境变量透传）。
+真实模型走 OpenAI 兼容协议，切换 DeepSeek / Kimi / 通义 / GLM 等只改这三个变量，代码不动：
+
+```bash
+# DeepSeek 官方
+LLM_BASE_URL=https://api.deepseek.com  LLM_MODEL=deepseek-chat
+# 其他兼容厂商：base-url 填到 /v1 这一级，模型名按厂商文档
+```
+
+向量化仍单独用 `ZHIPU_API_KEY`（智谱 embedding-3）。
 
 ## 设计决策（为什么）
 

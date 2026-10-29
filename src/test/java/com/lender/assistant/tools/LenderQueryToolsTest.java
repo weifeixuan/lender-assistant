@@ -30,8 +30,10 @@ class LenderQueryToolsTest {
     @DisplayName("查已入库文件列表：返回 docId/标题/chunk 数的格式化清单")
     void listIngestedDocsFormatsSummary() {
         when(documentService.listDocuments()).thenReturn(List.of(
-                new DocSummary("ruijin_api_v1", "瑞金租赁_资金对接接口文档_v1.0", 5),
-                new DocSummary("huaxin_corp_api_v1", "华信银行_对公收付接口文档_v1.0", 8)));
+                new DocSummary("ruijin_api_v1", "瑞金租赁_资金对接接口文档_v1.0",
+                        "docs/瑞金租赁_资金对接接口文档_v1.0.docx", 5, 1200L, "2026-10-29 10:00:00"),
+                new DocSummary("huaxin_corp_api_v1", "华信银行_对公收付接口文档_v1.0",
+                        "docs/华信银行_对公收付接口文档_v1.0.docx", 8, 2400L, "2026-10-29 10:05:00")));
 
         String result = tools.listIngestedDocs();
 
@@ -68,7 +70,7 @@ class LenderQueryToolsTest {
     @DisplayName("knownDocIds 供意图路由做 docId 匹配")
     void knownDocIdsExposed() {
         when(documentService.listDocuments()).thenReturn(List.of(
-                new DocSummary("ruijin_api_v1", "瑞金", 5)));
+                new DocSummary("ruijin_api_v1", "瑞金", "docs/瑞金.docx", 5, 1200L, "2026-10-29 10:00:00")));
         assertEquals(List.of("ruijin_api_v1"), tools.knownDocIds());
     }
 }

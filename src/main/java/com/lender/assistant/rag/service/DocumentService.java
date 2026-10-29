@@ -3,6 +3,7 @@ package com.lender.assistant.rag.service;
 import com.lender.assistant.rag.model.ChunkRow;
 import com.lender.assistant.rag.model.DocContent;
 import com.lender.assistant.rag.model.DocSummary;
+import com.lender.assistant.rag.vo.response.ChunkPageResponse;
 
 import java.util.List;
 
@@ -26,4 +27,16 @@ public interface DocumentService {
 
     /** 按 chunk 序拼全文（每块前置一行【章节】section_path）；文档不存在返回 null */
     DocContent loadDocContent(String docId);
+
+    /**
+     * 切片分页查询：page 从 1 开始、size 1-100，未传与越界都在本方法归一；
+     * docId 不存在抛 BizException(DOC_NOT_FOUND)，不返回空页装作成功。
+     */
+    ChunkPageResponse listChunkPage(String docId, Integer page, Integer size);
+
+    /**
+     * docId 合法性校验（非空、≤64 字符、仅 [A-Za-z0-9_-]），非法抛 BizException(PARAM_INVALID)。
+     * 入库等耗时操作前先调本方法，避免白跑解析/向量化；{@link #replaceDocument} 内部也会兜底校验。
+     */
+    void validateDocId(String docId);
 }

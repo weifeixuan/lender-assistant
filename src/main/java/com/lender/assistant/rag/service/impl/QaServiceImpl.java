@@ -37,7 +37,7 @@ public class QaServiceImpl implements QaService {
 
     private static final Logger log = LoggerFactory.getLogger(QaServiceImpl.class);
 
-    /** SSE 超时：覆盖"检索 + 模型生成全流程"，DeepSeek 正常问答远快于这个值 */
+    /** SSE 超时：覆盖"检索 + 模型生成全流程"，真实模型正常问答远快于这个值 */
     private static final long SSE_TIMEOUT_MILLIS = 120_000L;
     /** 流式工作线程数：SSE 是长连接，固定小池避免无界膨胀 */
     private static final int STREAM_POOL_SIZE = 8;
@@ -94,7 +94,8 @@ public class QaServiceImpl implements QaService {
             List<QaSourceResponse> sources = new ArrayList<>();
             for (int i = 0; i < hits.size(); i++) {
                 SearchItemResponse h = hits.get(i);
-                sources.add(new QaSourceResponse(i + 1, h.docTitle(), h.sectionPath()));
+                sources.add(new QaSourceResponse(i + 1, h.docTitle(), h.sectionPath(), h.chunkId(),
+                        h.content(), h.vectorDistance(), h.keywordHits(), h.bothChannels(), h.rrfScore()));
             }
             send(emitter, "sources", sources);
 

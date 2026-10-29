@@ -17,7 +17,7 @@ import java.util.function.Supplier;
  * 手册要求"超时/重试/熔断 + 留痕；熔断时走人工流程"，各机制归属：
  * - 熔断（本类）：连续 failureThreshold 次执行失败 → OPEN，快速失败不再触达模型；
  * - 重试（本类，仅非流式）：SSE 场景 token 已推给用户、不可重放，qa 传 allowRetry=false；
- * - 超时（不在此类）：DeepSeek 流自身 .timeout(60s)、SseEmitter 120s 兜底——
+ * - 超时（不在此类）：问答模型流自身 .timeout(60s)、SseEmitter 120s 兜底——
  *   TimeLimiter 需要额外线程池，对当前规模是过度设计，等真有多模型并发再说；
  * - 留痕（本类委托 LlmCallLogger）：整次执行（含重试）记一行，失败带原因；
  * - chaos（本类）：rag.resilience.chaos=true 时调用前直接抛故障，

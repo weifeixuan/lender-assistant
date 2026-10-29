@@ -8,7 +8,7 @@ import java.util.Optional;
 /**
  * 工具意图路由（Mock 模式的"模型决策"）。
  *
- * 诚实声明：真实 Function Calling 的决策由模型做（DeepSeek 版走 Spring AI .tools()，
+ * 诚实声明：真实 Function Calling 的决策由模型做（真实模型版走 Spring AI .tools()，
  * 模型看工具 description 自己决定调不调）；这里用关键词规则模拟这个决策，
  * 让"问题 → 决策 → 调工具 → 结果进回答"的链路在无 key 时可开发可测试。
  * 与 HashEmbeddingStrategy 同一定位：验证链路对不对，不评估决策效果好不好。

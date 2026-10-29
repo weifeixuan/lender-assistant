@@ -11,7 +11,7 @@ import static org.junit.jupiter.api.Assertions.*;
 /**
  * ToolIntentRouter 测试：Mock 模式下"模型自主决定调用工具"的规则模拟。
  *
- * 诚实定位：真实模型的 function calling 决策在 DeepSeek 版（Spring AI .tools()），
+ * 诚实定位：真实模型的 function calling 决策在真实模型版（Spring AI .tools()），
  * 这里是它的 Mock 形态——和 HashEmbeddingStrategy 一样，验证链路而非评估效果。
  */
 class ToolIntentRouterTest {

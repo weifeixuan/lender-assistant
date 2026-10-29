@@ -25,10 +25,9 @@ import java.util.Set;
  * 入参/出参统一 JSON 打印（容器 ObjectMapper，与响应序列化同一份配置——日志即真实响应），
  * 特殊类型例外：MultipartFile 只记元信息、SseEmitter 只记占位（流式响应无法整体打印）。
  *
- * 顺序契约：@Order(1) 在外层，ResponseWrapAspect @Order(2) 在内层。进入时先记入参；
- * proceed() 返回的已是内层包装好的 ApiResponse，出参日志天然含 code/msg/data——
- * 即"日志记录的对象就是真正写出的响应体"，本切面不参与任何包装。
- * Spring 对无 @Order 的多个切面不保证相对顺序，两个值必须显式声明（见 ResponseWrapAspect）。
+ * 出参日志记录的是 controller 的原始返回值；统一包装由 {@link ApiResponseBodyAdvice}
+ * 在消息转换器出站前完成（不改变方法返回值，因此日志与响应体在字段层面可能差一层包装）。
+ * 本切面不参与任何包装。
  *
  * 只切 @RestController（含类级注解）——切面只负责"HTTP 边界"的可观测性，不越界切业务内部；
  * service / strategy 的日志由各自代码按需打印。
@@ -80,7 +79,7 @@ public class ControllerLogAspect {
         try {
             Object result = joinPoint.proceed();
             long cost = System.currentTimeMillis() - start;
-            // 内层 ResponseWrapAspect 已包装，此处打出的就是真正写出的响应体
+            // 原始返回值（统一包装由 ApiResponseBodyAdvice 在出站阶段完成）
             log.info("接口调用返回 {} 耗时={}ms 出参={}", api, cost, describe(result));
             if (cost >= SLOW_REQUEST_MILLIS) {
                 log.warn("慢接口 {} 耗时={}ms（阈值 {}ms）", api, cost, SLOW_REQUEST_MILLIS);

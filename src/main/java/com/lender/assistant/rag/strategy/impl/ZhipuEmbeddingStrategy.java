@@ -13,7 +13,7 @@ import java.util.Map;
  * 智谱 embedding-3 真实实现。
  *
  * 设计要点：
- * 1. 不引智谱官方 starter——它启动时强校验 key（同 DeepSeek starter 的坑），
+ * 1. 不引智谱官方 starter——它启动时强校验 key（同对话模型 starter 的坑），
  *    用 RestClient 手写调用反而只有几十行，且依赖零增加；
  * 2. fail fast：provider 配成 zhipu 但 key 缺失时启动即报错并给出明确提示，
  *    避免跑到入库一半才发现；

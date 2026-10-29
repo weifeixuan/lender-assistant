@@ -9,7 +9,7 @@ import java.util.List;
  *
  * 与 AnswerGeneratorStrategy 同一套端口模式：
  * - mock    -> MockExtractGeneratorStrategy（规则+正则，无 key 开发联调用，默认）
- * - deepseek-> DeepSeekExtractGeneratorStrategy（真实模型，JSON Schema 抽取，key 到位后切换）
+ * - openai  -> OpenAiCompatibleExtractGeneratorStrategy（真实模型，OpenAI 兼容协议，JSON Schema 抽取）
  * 装配由 rag.extract.provider 配置决定（构建期二选一，不需要工厂）。
  */
 public interface ExtractGeneratorStrategy {
@@ -21,6 +21,6 @@ public interface ExtractGeneratorStrategy {
      */
     List<FieldMapping> extract(String docTitle, String docText);
 
-    /** 实现标识（"Mock" / "DeepSeek"），进留痕日志与前端展示 */
+    /** 实现标识（"Mock" / 实际模型名），进留痕日志与前端展示 */
     String name();
 }

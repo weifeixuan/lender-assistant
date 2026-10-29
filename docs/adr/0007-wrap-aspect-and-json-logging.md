@@ -1,7 +1,7 @@
 # ADR-0007：统一响应包装改为独立切面，日志切面外层定序，入参/出参 JSON 化
 
-- 状态：已采纳（2026-10-23）
-- 相关：`common/web/ResponseWrapAspect`、`common/web/ControllerLogAspect`、`docs/adr/0001-unified-response-envelope.md`、`docs/adr/0003-tech-stack-and-exclusions.md`
+- 状态：已废弃（2026-10-28，回退 ADR-0001 的 `ApiResponseBodyAdvice`）
+- 相关：`common/web/ApiResponseBodyAdvice`、`common/web/ControllerLogAspect`、`docs/adr/0001-unified-response-envelope.md`、`docs/adr/0003-tech-stack-and-exclusions.md`
 
 ## 背景
 
@@ -22,6 +22,20 @@
 2. 职责单一：包装与日志分属两个切面，日志切面除 `@Order` 外零逻辑改动。
 3. 异常处理**必须**留在 `@ExceptionHandler`：404（无 handler 可代理）与参数绑定/报文解析异常（发生在方法调用之前）都在切面视野之外，切面 catch 会漏——修订 ADR-0003 对"响应体改写"的 AOP 禁令，但**保留**对"异常处理"的禁令。
 4. JSON 用 Jackson 而非 fastjson：不新增依赖，且与响应序列化同源；日志即真实响应的前提是两处配置一致。
+
+## 废弃原因（2026-10-28 实测）
+
+`@Around` 返回 `ApiResponse` 时，controller 被 CGLIB 代理后，生成的代理方法会把返回值强制转换回声明类型。
+所有返回 `List` 的接口（`GET /api/admin/documents`、`POST /api/admin/documents/search`）运行时抛：
+
+```
+java.lang.ClassCastException: ApiResponse cannot be cast to java.util.List
+```
+
+该问题在单元测试中不可见——测试直接调用切面方法、绕过了 CGLIB 代理层；真实启动后才暴露。
+ADR 中"切面替换返回对象后序列化完全正常"的判断只对消息转换器成立，忽略了代理方法的返回值强转。
+已回退为 `ApiResponseBodyAdvice`：它在出站阶段替换 body，不改 JVM 方法返回值，机制上不可能触发该异常。
+代价是出参日志回到"原始返回值"，不再与响应体逐字同源（可接受）。
 
 ## 后果
 

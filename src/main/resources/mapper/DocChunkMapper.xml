@@ -16,7 +16,10 @@
         <constructor>
             <arg column="doc_id" javaType="java.lang.String"/>
             <arg column="doc_title" javaType="java.lang.String"/>
+            <arg column="source_path" javaType="java.lang.String"/>
             <arg column="chunk_count" javaType="java.lang.Integer"/>
+            <arg column="char_count_total" javaType="java.lang.Long"/>
+            <arg column="update_time" javaType="java.lang.String"/>
         </constructor>
     </resultMap>
 
@@ -24,6 +27,16 @@
         <constructor>
             <arg column="doc_title" javaType="java.lang.String"/>
             <arg column="section_path" javaType="java.lang.String"/>
+            <arg column="content" javaType="java.lang.String"/>
+        </constructor>
+    </resultMap>
+
+    <resultMap id="chunkItemMap" type="com.lender.assistant.rag.model.ChunkItemRow">
+        <constructor>
+            <arg column="id" javaType="java.lang.Long"/>
+            <arg column="chunk_index" javaType="java.lang.Integer"/>
+            <arg column="section_path" javaType="java.lang.String"/>
+            <arg column="char_count" javaType="java.lang.Integer"/>
             <arg column="content" javaType="java.lang.String"/>
         </constructor>
     </resultMap>
@@ -70,8 +83,12 @@
         SELECT COUNT(*) FROM doc_chunk WHERE doc_id = #{docId}
     </select>
 
+    <!-- 概览聚合：source_path 同一 doc 内取任一行（MAX 仅用于让聚合查询合法），
+         update_time 取最近一次入库时间并格式化为字符串（前端不做时区换算） -->
     <select id="listDocuments" resultMap="docSummaryMap">
-        SELECT doc_id, doc_title, COUNT(*) AS chunk_count
+        SELECT doc_id, doc_title, MAX(source_path) AS source_path,
+               COUNT(*) AS chunk_count, SUM(char_count) AS char_count_total,
+               TO_CHAR(MAX(update_time), 'YYYY-MM-DD HH24:MI:SS') AS update_time
         FROM doc_chunk
         GROUP BY doc_id, doc_title
         ORDER BY doc_id
@@ -82,6 +99,16 @@
         FROM doc_chunk
         WHERE doc_id = #{docId}
         ORDER BY chunk_index
+    </select>
+
+    <!-- 切片分页：不含 embedding（1024 维字符串会让响应从 KB 级膨胀到 MB 级）。
+         limit/offset 已由 Service 归一，这里直接拼接为参数化占位 -->
+    <select id="listChunkPage" resultMap="chunkItemMap">
+        SELECT id, chunk_index, section_path, char_count, content
+        FROM doc_chunk
+        WHERE doc_id = #{docId}
+        ORDER BY chunk_index
+        LIMIT #{limit} OFFSET #{offset}
     </select>
 
     <select id="searchByVector" resultMap="vectorHitMap">

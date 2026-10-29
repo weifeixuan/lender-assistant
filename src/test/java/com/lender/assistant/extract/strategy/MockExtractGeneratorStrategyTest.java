@@ -17,7 +17,7 @@ import static org.junit.jupiter.api.Assertions.*;
  * 期望值来自 docs/plan_phase4.md 第二节"文档中的出处"表。
  *
  * Mock 抽取的意义（和 HashEmbeddingStrategy 同一个道理）：
- * 不验证"抽取效果好不好"（那是 DeepSeek 版的事），
+ * 不验证"抽取效果好不好"（那是真实模型版的事），
  * 验证"抽取链路和输出结构对不对"——字段落位、置信度、缺失字段的处理。
  */
 class MockExtractGeneratorStrategyTest {

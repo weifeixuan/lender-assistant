@@ -8,7 +8,7 @@ import com.lender.assistant.common.exception.ErrorCode;
  * 为什么用 record 而不是 Map 手拼键名：契约必须固化在类型里——键名写错在编译期就暴露，
  * 前端也能拿到稳定的结构；Map 手拼的键名只有运行时才发现不一致（§0.3 禁止 Map 作对外契约）。
  *
- * 什么时候用：由 ResponseWrapAspect 自动包裹普通 controller 的返回值，
+ * 什么时候用：由 ApiResponseBodyAdvice 自动包裹普通 controller 的返回值，
  * 业务代码一般不需要手工构造；手工构造的场景是全局异常处理器拼失败响应。
  * SSE 等原始响应由 @RawResponse / 返回类型排除，不走这里。
  *

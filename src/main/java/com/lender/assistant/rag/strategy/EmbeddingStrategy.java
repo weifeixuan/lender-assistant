@@ -4,7 +4,7 @@ package com.lender.assistant.rag.strategy;
  * 文本向量化策略抽象。
  *
  * 为什么自己定义接口而不用 Spring AI 的 EmbeddingModel：
- * 1. 智谱的 starter 在 key 缺失时启动报错（和 DeepSeek starter 一样的强校验），
+ * 1. 智谱的 starter 在 key 缺失时启动报错（和对话模型 starter 一样的强校验），
  *    而"没有 key 也要能开发"是当前阶段硬需求；
  * 2. 换模型供应商时不希望业务代码感知——解析/切分/入库只依赖本接口。
  *

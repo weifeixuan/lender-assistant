@@ -28,7 +28,7 @@ public class MockDraftGeneratorStrategy implements DraftGeneratorStrategy {
 
     /**
      * 骨架单一来源：classpath 下的 draft/ExampleLenderHandler.java
-     * （与 resources/draft/LenderHandler.java 一起构成模板素材，DeepSeek 版共用同一份）。
+     * （与 resources/draft/LenderHandler.java 一起构成模板素材，真实模型版共用同一份）。
      * 加载失败属于部署错误，直接抛出去——渲染没有可降级的正确形态。
      */
     private static String loadSkeleton() {
@@ -42,7 +42,7 @@ public class MockDraftGeneratorStrategy implements DraftGeneratorStrategy {
         }
     }
 
-    /** 骨架原文（DeepSeek 版拼 prompt 用，保持"模板单一来源"） */
+    /** 骨架原文（真实模型版拼 prompt 用，保持"模板单一来源"） */
     public String skeletonText() {
         return loadSkeleton();
     }

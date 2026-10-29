@@ -35,9 +35,30 @@ CREATE TABLE IF NOT EXISTS doc_chunk (
     content       TEXT         NOT NULL, -- 切分后的正文
     char_count    INT          NOT NULL, -- 字符数，阶段 3 分析"切分粒度 vs 召回率"用
     embedding     VECTOR(1024) NOT NULL, -- 向量，维度见下方说明
-    created_at    TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    create_time   TIMESTAMPTZ  NOT NULL DEFAULT now(), -- 行创建时间
+    update_time   TIMESTAMPTZ  NOT NULL DEFAULT now(), -- 最近一次入库时间（replaceDocument 删后插自动取 now()）
     UNIQUE (doc_id, chunk_index)         -- 幂等保障: 同一文档重复入库前先按 doc_id 删旧
 );
+
+-- 阶段 6 迁移：审计列统一为通用命名 create_time / update_time。
+-- CREATE TABLE IF NOT EXISTS 不会给存量库改列名，故存量 created_at / ingested_at 先改名；
+-- 再兜底 ADD COLUMN IF NOT EXISTS，覆盖"只跑过阶段 1、没有 ingested_at"的库。
+-- 存量行的 update_time 会统一变成迁移时间，属已知偏差，不回填。
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM information_schema.columns
+               WHERE table_schema = current_schema() AND table_name = 'doc_chunk'
+                 AND column_name = 'created_at') THEN
+        ALTER TABLE doc_chunk RENAME COLUMN created_at TO create_time;
+    END IF;
+    IF EXISTS (SELECT 1 FROM information_schema.columns
+               WHERE table_schema = current_schema() AND table_name = 'doc_chunk'
+                 AND column_name = 'ingested_at') THEN
+        ALTER TABLE doc_chunk RENAME COLUMN ingested_at TO update_time;
+    END IF;
+END $$;
+ALTER TABLE doc_chunk ADD COLUMN IF NOT EXISTS create_time TIMESTAMPTZ NOT NULL DEFAULT now();
+ALTER TABLE doc_chunk ADD COLUMN IF NOT EXISTS update_time TIMESTAMPTZ NOT NULL DEFAULT now();
 
 -- 向量索引: HNSW（分层可导航小世界图）
 -- 为什么不用 IVFFlat: IVFFlat 建索引要求表里已有数据做聚类中心，

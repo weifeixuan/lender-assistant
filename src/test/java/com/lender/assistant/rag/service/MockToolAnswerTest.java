@@ -28,7 +28,8 @@ class MockToolAnswerTest {
     void setUp() {
         documentService = mock(DocumentService.class);
         when(documentService.listDocuments()).thenReturn(List.of(
-                new DocSummary("ruijin_api_v1", "瑞金租赁_资金对接接口文档_v1.0", 5)));
+                new DocSummary("ruijin_api_v1", "瑞金租赁_资金对接接口文档_v1.0",
+                        "docs/瑞金租赁_资金对接接口文档_v1.0.docx", 5, 1200L, "2026-10-29 10:00:00")));
         when(documentService.countByDoc("ruijin_api_v1")).thenReturn(5);
         generator = new MockAnswerGeneratorStrategy(new LenderQueryTools(documentService), new ToolIntentRouter());
     }

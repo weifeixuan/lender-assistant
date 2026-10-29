@@ -1,5 +1,6 @@
 package com.lender.assistant.rag.mapper;
 
+import com.lender.assistant.rag.model.ChunkItemRow;
 import com.lender.assistant.rag.model.ChunkRow;
 import com.lender.assistant.rag.model.DocChunkLine;
 import com.lender.assistant.rag.model.DocSummary;
@@ -33,6 +34,10 @@ public interface DocChunkMapper {
     List<DocSummary> listDocuments();
 
     List<DocChunkLine> listChunkLines(@Param("docId") String docId);
+
+    /** 按 chunk_index 分页取切片（不含 embedding）；limit/offset 由 Service 归一后传入 */
+    List<ChunkItemRow> listChunkPage(@Param("docId") String docId,
+                                     @Param("limit") int limit, @Param("offset") int offset);
 
     List<VectorHit> searchByVector(@Param("vec") String vec, @Param("topK") int topK);
 

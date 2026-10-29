@@ -10,7 +10,7 @@ import java.util.function.Consumer;
  * - Mock 实现不需要绕过 Spring AI 的抽象去伪装一个 ChatModel——
  *   实现自己这个 3 方法的接口，20 行就够，替换成本更低。
  *
- * provider 二选一（mock / deepseek）由 @ConditionalOnProperty 在构建期决定，
+ * provider 二选一（mock / openai）由 @ConditionalOnProperty 在构建期决定，
  * 容器里始终只有一个实现，直接按接口注入即可，不需要工厂。
  *
  * 实现契约：onDelta 会被多个线程/多次回调调用 token 增量，实现方保证顺序性；
@@ -25,6 +25,6 @@ public interface AnswerGeneratorStrategy {
      */
     void generate(String systemPrompt, String userPrompt, Consumer<String> onDelta);
 
-    /** 实现标识，用于前端展示与日志（如 "Mock" / "DeepSeek"） */
+    /** 实现标识，用于前端展示与日志（如 "Mock" / 实际模型名） */
     String name();
 }

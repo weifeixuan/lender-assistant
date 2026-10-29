@@ -7,6 +7,7 @@ import com.lender.assistant.extract.model.InternalField;
 import com.lender.assistant.extract.service.InternalFieldCatalog;
 import com.lender.assistant.extract.strategy.ExtractGeneratorStrategy;
 import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
@@ -14,12 +15,9 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * DeepSeek 真实抽取：JSON Schema 抽取，非流式一锤子调用。
+ * 真实模型抽取：JSON Schema 抽取，非流式一锤子调用（OpenAI 兼容协议）。
  *
- * 补上 rag.extract.provider=deepseek 分支——此前该分支无任何实现，
- * 切换开关会因容器内缺少 ExtractGeneratorStrategy Bean 而启动失败。
- *
- * 宁缺勿编的落实（与 Mock 版同一条红线）：
+ * 与 Mock 版同一条红线——宁缺勿编：
  * - Prompt 明确要求"文档没写的信息不得输出"；
  * - 解析阶段再按 InternalFieldCatalog 过滤：未知 internalFieldId 一律丢弃，
  *   模型幻觉出的字段进不了映射表；
@@ -29,17 +27,21 @@ import java.util.List;
  * 与 Mock 版共享同一编排（allowRetry=true，抽取是非流式可安全重试）。
  */
 @Component
-@ConditionalOnProperty(name = "rag.extract.provider", havingValue = "deepseek")
-public class DeepSeekExtractGeneratorStrategy implements ExtractGeneratorStrategy {
+@ConditionalOnProperty(name = "rag.extract.provider", havingValue = "openai")
+public class OpenAiCompatibleExtractGeneratorStrategy implements ExtractGeneratorStrategy {
 
     private static final double DEFAULT_CONFIDENCE = 0.8;
 
     private final ChatClient chatClient;
     private final ObjectMapper objectMapper;
+    private final String model;
 
-    public DeepSeekExtractGeneratorStrategy(ChatClient.Builder builder, ObjectMapper objectMapper) {
+    public OpenAiCompatibleExtractGeneratorStrategy(ChatClient.Builder builder,
+                                                    ObjectMapper objectMapper,
+                                                    @Value("${spring.ai.openai.chat.options.model}") String model) {
         this.chatClient = builder.build();
         this.objectMapper = objectMapper;
+        this.model = model;
     }
 
     @Override
@@ -90,12 +92,12 @@ public class DeepSeekExtractGeneratorStrategy implements ExtractGeneratorStrateg
         }
         String json = extractJsonArray(raw);
         if (json == null) {
-            throw new IllegalStateException("DeepSeek 抽取输出中未找到 JSON 数组");
+            throw new IllegalStateException("模型抽取输出中未找到 JSON 数组");
         }
         try {
             JsonNode root = objectMapper.readTree(json);
             if (!root.isArray()) {
-                throw new IllegalStateException("DeepSeek 抽取输出不是 JSON 数组");
+                throw new IllegalStateException("模型抽取输出不是 JSON 数组");
             }
             for (JsonNode n : root) {
                 String id = text(n, "internalFieldId");
@@ -118,7 +120,7 @@ public class DeepSeekExtractGeneratorStrategy implements ExtractGeneratorStrateg
             throw e;
         } catch (Exception e) {
             // 模型没按 JSON 输出：抛出去，由 ExtractService 的韧性层重试并留痕
-            throw new IllegalStateException("DeepSeek 抽取结果无法解析为 JSON: " + e.getMessage(), e);
+            throw new IllegalStateException("模型抽取结果无法解析为 JSON: " + e.getMessage(), e);
         }
         return out;
     }
@@ -137,6 +139,6 @@ public class DeepSeekExtractGeneratorStrategy implements ExtractGeneratorStrateg
 
     @Override
     public String name() {
-        return "DeepSeek";
+        return model;
     }
 }

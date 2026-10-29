@@ -14,7 +14,7 @@ import java.util.List;
  * 两个工具都直查 lender-pg 真实数据——工具返回的是真东西，
  * "模型自主决定调用"这层才值得验证。
  *
- * @Tool 注解由 Spring AI 扫描：DeepSeek 版把本类对象挂到 ChatClient.tools()，
+ * @Tool 注解由 Spring AI 扫描：真实模型版把本类对象挂到 ChatClient.tools()，
  * 模型按 description 自主决定何时调用（真 Function Calling）；
  * Mock 版由 ToolIntentRouter 规则模拟这个决策（见该类诚实声明）。
  */

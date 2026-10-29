@@ -42,7 +42,10 @@ services:
       RAG_EMBEDDING_PROVIDER: ${RAG_EMBEDDING_PROVIDER:-hash}
       RAG_EXTRACT_PROVIDER: ${RAG_EXTRACT_PROVIDER:-mock}
       RAG_DRAFT_PROVIDER: ${RAG_DRAFT_PROVIDER:-mock}
-      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-sk-fake-deepseek-api-key}
+      # OpenAI 兼容协议：换模型只改这三个变量，代码不用动
+      LLM_API_KEY: ${LLM_API_KEY:-sk-fake-openai-compatible-key}
+      LLM_BASE_URL: ${LLM_BASE_URL:-https://api.deepseek.com}
+      LLM_MODEL: ${LLM_MODEL:-deepseek-chat}
       ZHIPU_API_KEY: ${ZHIPU_API_KEY:-fake-zhipu-api-key}
     ports:
       - "8080:8080"
