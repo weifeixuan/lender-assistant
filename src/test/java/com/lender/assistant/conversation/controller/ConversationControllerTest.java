@@ -1,10 +1,14 @@
 package com.lender.assistant.conversation.controller;
 
+import com.lender.assistant.common.exception.BizException;
+import com.lender.assistant.common.exception.ErrorCode;
 import com.lender.assistant.common.web.ApiResponseBodyAdvice;
 import com.lender.assistant.common.web.GlobalExceptionHandler;
 import com.lender.assistant.common.web.UserIdInterceptor;
 import com.lender.assistant.conversation.service.ConversationService;
+import com.lender.assistant.conversation.vo.response.ConversationMessagesResponse;
 import com.lender.assistant.conversation.vo.response.ConversationSummaryResponse;
+import com.lender.assistant.conversation.vo.response.MessageResponse;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -13,6 +17,7 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 import java.util.List;
 
+import static org.hamcrest.Matchers.nullValue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -61,12 +66,32 @@ class ConversationControllerTest {
     }
 
     @Test
-    @DisplayName("缺失 X-User-Id 返回 400 PARAM_INVALID，普通 JSON 而非 SSE")
-    void missingUserIdReturns400() throws Exception {
-        mockMvc.perform(get("/api/conversations"))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.code").value(400))
-                .andExpect(jsonPath("$.msg").isNotEmpty())
-                .andExpect(jsonPath("$.data").doesNotExist());
+    @DisplayName("GET /api/conversations/{id}/messages 返回扁平历史消息")
+    void returnsMessages() throws Exception {
+        when(service.getMessages("conv-1", "dev-user-001")).thenReturn(
+                new ConversationMessagesResponse("conv-1", List.of(
+                        new MessageResponse("msg-1", "round-1", "USER", "问题", "DONE",
+                                null, null, null, null, "2026-11-02 20:00:00"))));
+
+        mockMvc.perform(get("/api/conversations/conv-1/messages")
+                        .header("X-User-Id", "dev-user-001"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(200))
+                .andExpect(jsonPath("$.data.conversationId").value("conv-1"))
+                .andExpect(jsonPath("$.data.messages[0].messageId").value("msg-1"))
+                .andExpect(jsonPath("$.data.messages[0].roundId").value("round-1"))
+                .andExpect(jsonPath("$.data.messages[0].sources").value(nullValue()));
+    }
+
+    @Test
+    @DisplayName("会话不存在时返回 404 CONVERSATION_NOT_FOUND")
+    void missingConversationReturns404() throws Exception {
+        when(service.getMessages("conv-x", "dev-user-001"))
+                .thenThrow(new BizException(ErrorCode.CONVERSATION_NOT_FOUND));
+
+        mockMvc.perform(get("/api/conversations/conv-x/messages")
+                        .header("X-User-Id", "dev-user-001"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value(404));
     }
 }

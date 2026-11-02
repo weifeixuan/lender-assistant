@@ -32,4 +32,14 @@
           AND status = 'ACTIVE'
         ORDER BY update_time DESC, id DESC
     </select>
+
+    <select id="findActiveByConversationIdAndUser" resultMap="conversationRowMap">
+        SELECT conversation_id, user_id, title, status,
+               TO_CHAR(create_time, 'YYYY-MM-DD HH24:MI:SS') AS create_time,
+               TO_CHAR(update_time, 'YYYY-MM-DD HH24:MI:SS') AS update_time
+        FROM conversation
+        WHERE conversation_id = #{conversationId}
+          AND user_id = #{userId}
+          AND status = 'ACTIVE'
+    </select>
 </mapper>

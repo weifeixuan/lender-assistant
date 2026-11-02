@@ -2,8 +2,10 @@ package com.lender.assistant.conversation.controller;
 
 import com.lender.assistant.common.web.UserIdInterceptor;
 import com.lender.assistant.conversation.service.ConversationService;
+import com.lender.assistant.conversation.vo.response.ConversationMessagesResponse;
 import com.lender.assistant.conversation.vo.response.ConversationSummaryResponse;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestAttribute;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -27,5 +29,12 @@ public class ConversationController {
     public List<ConversationSummaryResponse> list(
             @RequestAttribute(UserIdInterceptor.USER_ID_ATTRIBUTE) String userId) {
         return conversationService.listConversations(userId);
+    }
+
+    @GetMapping("/{conversationId}/messages")
+    public ConversationMessagesResponse messages(
+            @PathVariable("conversationId") String conversationId,
+            @RequestAttribute(UserIdInterceptor.USER_ID_ATTRIBUTE) String userId) {
+        return conversationService.getMessages(conversationId, userId);
     }
 }

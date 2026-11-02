@@ -21,4 +21,9 @@ public interface ConversationMapper {
 
     /** 当前用户未删除的会话，按 update_time DESC, id DESC */
     List<ConversationRow> listActiveByUser(@Param("userId") String userId);
+
+    /** 归属校验：会话存在、未删除且属于该用户；任一不满足返回 null */
+    ConversationRow findActiveByConversationIdAndUser(
+            @Param("conversationId") String conversationId,
+            @Param("userId") String userId);
 }
