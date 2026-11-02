@@ -42,4 +42,13 @@
           AND user_id = #{userId}
           AND status = 'ACTIVE'
     </select>
+
+    <update id="softDelete">
+        UPDATE conversation
+        SET status = 'DELETED',
+            update_time = now()
+        WHERE conversation_id = #{conversationId}
+          AND user_id = #{userId}
+          AND status = 'ACTIVE'
+    </update>
 </mapper>

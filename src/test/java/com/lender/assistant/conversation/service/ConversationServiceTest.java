@@ -10,6 +10,7 @@ import com.lender.assistant.conversation.model.MessageRow;
 import com.lender.assistant.conversation.service.impl.ConversationServiceImpl;
 import com.lender.assistant.conversation.vo.response.ConversationMessagesResponse;
 import com.lender.assistant.conversation.vo.response.ConversationSummaryResponse;
+import com.lender.assistant.conversation.vo.response.DeleteConversationResponse;
 import com.lender.assistant.conversation.vo.response.MessageResponse;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -127,6 +128,29 @@ class ConversationServiceTest {
         service.getMessages(CONVERSATION_ID, USER_ID);
 
         verify(conversationMapper).findActiveByConversationIdAndUser(CONVERSATION_ID, USER_ID);
+    }
+
+    @Test
+    @DisplayName("删除会话成功时返回 deleted=true")
+    void deletesConversation() {
+        when(conversationMapper.softDelete(CONVERSATION_ID, USER_ID)).thenReturn(1);
+
+        DeleteConversationResponse result = service.deleteConversation(CONVERSATION_ID, USER_ID);
+
+        assertEquals(CONVERSATION_ID, result.conversationId());
+        assertTrue(result.deleted());
+        verify(conversationMapper).softDelete(CONVERSATION_ID, USER_ID);
+    }
+
+    @Test
+    @DisplayName("删除不存在的、已删除的或他人的会话返回 404")
+    void deletingMissingConversationReturns404() {
+        when(conversationMapper.softDelete(CONVERSATION_ID, USER_ID)).thenReturn(0);
+
+        BizException exception = assertThrows(BizException.class,
+                () -> service.deleteConversation(CONVERSATION_ID, USER_ID));
+
+        assertEquals(ErrorCode.CONVERSATION_NOT_FOUND, exception.errorCode());
     }
 
     private static ConversationRow activeConversation() {

@@ -4,6 +4,8 @@ import com.lender.assistant.common.web.UserIdInterceptor;
 import com.lender.assistant.conversation.service.ConversationService;
 import com.lender.assistant.conversation.vo.response.ConversationMessagesResponse;
 import com.lender.assistant.conversation.vo.response.ConversationSummaryResponse;
+import com.lender.assistant.conversation.vo.response.DeleteConversationResponse;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestAttribute;
@@ -36,5 +38,12 @@ public class ConversationController {
             @PathVariable("conversationId") String conversationId,
             @RequestAttribute(UserIdInterceptor.USER_ID_ATTRIBUTE) String userId) {
         return conversationService.getMessages(conversationId, userId);
+    }
+
+    @DeleteMapping("/{conversationId}")
+    public DeleteConversationResponse delete(
+            @PathVariable("conversationId") String conversationId,
+            @RequestAttribute(UserIdInterceptor.USER_ID_ATTRIBUTE) String userId) {
+        return conversationService.deleteConversation(conversationId, userId);
     }
 }

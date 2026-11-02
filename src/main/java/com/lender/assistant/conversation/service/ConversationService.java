@@ -2,6 +2,7 @@ package com.lender.assistant.conversation.service;
 
 import com.lender.assistant.conversation.vo.response.ConversationMessagesResponse;
 import com.lender.assistant.conversation.vo.response.ConversationSummaryResponse;
+import com.lender.assistant.conversation.vo.response.DeleteConversationResponse;
 
 import java.util.List;
 
@@ -15,4 +16,7 @@ public interface ConversationService {
 
     /** 归属校验后返回扁平历史消息；会话不可见时抛 CONVERSATION_NOT_FOUND */
     ConversationMessagesResponse getMessages(String conversationId, String userId);
+
+    /** 软删会话；不存在、已删除或非本人时抛 CONVERSATION_NOT_FOUND */
+    DeleteConversationResponse deleteConversation(String conversationId, String userId);
 }

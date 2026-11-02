@@ -26,4 +26,8 @@ public interface ConversationMapper {
     ConversationRow findActiveByConversationIdAndUser(
             @Param("conversationId") String conversationId,
             @Param("userId") String userId);
+
+    /** 软删：仅把 ACTIVE 且属于该用户的会话置为 DELETED，返回受影响行数 */
+    int softDelete(@Param("conversationId") String conversationId,
+                   @Param("userId") String userId);
 }

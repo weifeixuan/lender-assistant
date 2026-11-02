@@ -8,6 +8,7 @@ import com.lender.assistant.common.web.UserIdInterceptor;
 import com.lender.assistant.conversation.service.ConversationService;
 import com.lender.assistant.conversation.vo.response.ConversationMessagesResponse;
 import com.lender.assistant.conversation.vo.response.ConversationSummaryResponse;
+import com.lender.assistant.conversation.vo.response.DeleteConversationResponse;
 import com.lender.assistant.conversation.vo.response.MessageResponse;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -20,6 +21,7 @@ import java.util.List;
 import static org.hamcrest.Matchers.nullValue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -90,6 +92,32 @@ class ConversationControllerTest {
                 .thenThrow(new BizException(ErrorCode.CONVERSATION_NOT_FOUND));
 
         mockMvc.perform(get("/api/conversations/conv-x/messages")
+                        .header("X-User-Id", "dev-user-001"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value(404));
+    }
+
+    @Test
+    @DisplayName("DELETE /api/conversations/{id} 返回删除成功")
+    void deletesConversation() throws Exception {
+        when(service.deleteConversation("conv-1", "dev-user-001"))
+                .thenReturn(new DeleteConversationResponse("conv-1", true));
+
+        mockMvc.perform(delete("/api/conversations/conv-1")
+                        .header("X-User-Id", "dev-user-001"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(200))
+                .andExpect(jsonPath("$.data.conversationId").value("conv-1"))
+                .andExpect(jsonPath("$.data.deleted").value(true));
+    }
+
+    @Test
+    @DisplayName("删除不存在的会话返回 404")
+    void deletingMissingConversationReturns404() throws Exception {
+        when(service.deleteConversation("conv-x", "dev-user-001"))
+                .thenThrow(new BizException(ErrorCode.CONVERSATION_NOT_FOUND));
+
+        mockMvc.perform(delete("/api/conversations/conv-x")
                         .header("X-User-Id", "dev-user-001"))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value(404));

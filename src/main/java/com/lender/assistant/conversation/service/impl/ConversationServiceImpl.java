@@ -12,6 +12,7 @@ import com.lender.assistant.conversation.model.MessageRow;
 import com.lender.assistant.conversation.service.ConversationService;
 import com.lender.assistant.conversation.vo.response.ConversationMessagesResponse;
 import com.lender.assistant.conversation.vo.response.ConversationSummaryResponse;
+import com.lender.assistant.conversation.vo.response.DeleteConversationResponse;
 import com.lender.assistant.conversation.vo.response.MessageResponse;
 import com.lender.assistant.rag.vo.response.QaSourceResponse;
 import org.springframework.stereotype.Service;
@@ -58,6 +59,15 @@ public class ConversationServiceImpl implements ConversationService {
                 .map(this::toMessage)
                 .toList();
         return new ConversationMessagesResponse(conversationId, messages);
+    }
+
+    @Override
+    public DeleteConversationResponse deleteConversation(String conversationId, String userId) {
+        int affected = conversationMapper.softDelete(conversationId, userId);
+        if (affected == 0) {
+            throw new BizException(ErrorCode.CONVERSATION_NOT_FOUND);
+        }
+        return new DeleteConversationResponse(conversationId, true);
     }
 
     private MessageResponse toMessage(MessageRow row) {
