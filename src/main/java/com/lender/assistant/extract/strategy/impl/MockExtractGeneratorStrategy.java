@@ -3,6 +3,8 @@ package com.lender.assistant.extract.strategy.impl;
 import com.lender.assistant.extract.model.FieldMapping;
 import com.lender.assistant.extract.service.InternalFieldCatalog;
 import com.lender.assistant.extract.strategy.ExtractGeneratorStrategy;
+import com.lender.assistant.rag.model.DocChunkLine;
+import com.lender.assistant.rag.model.DocContent;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
@@ -48,15 +50,18 @@ public class MockExtractGeneratorStrategy implements ExtractGeneratorStrategy {
             "^\\s*(?:\\d+(?:\\.\\d+)*\\s|[一二三四五六七八九十]+[、.]|（[一二三四五六七八九十]+）)");
 
     @Override
-    public List<FieldMapping> extract(String docTitle, String docText) {
+    public List<FieldMapping> extract(DocContent doc) {
+        String docTitle = doc.docTitle();
+        String docText = doc.text();
         List<FieldMapping> out = new ArrayList<>();
-        List<String> lines = List.of(docText.split("\\r?\\n|。"));
+        List<String> textLines = List.of(docText.split("\\r?\\n|。"));
 
         // 1. 资方名称：标题 → 首行兜底
         String lenderName = extractLenderName(docTitle, docText);
         if (lenderName != null) {
-            out.add(new FieldMapping("lender_name", "资方名称", "资方自称", lenderName,
-                    firstLineOf(docText), CONF_EXACT));
+            FieldMapping lenderNameMapping = new FieldMapping("lender_name", "资方名称", "资方自称", lenderName,
+                    firstLineOf(docText), CONF_EXACT);
+            out.add(lenderNameMapping);
         }
 
         // 2. URL 类：精确正则
@@ -67,8 +72,9 @@ public class MockExtractGeneratorStrategy implements ExtractGeneratorStrategy {
         Matcher authMatcher = AUTH.matcher(docText);
         String auth = authMatcher.find() ? authMatcher.group().trim() : null;
         if (auth != null) {
-            out.add(new FieldMapping("auth_method", "鉴权方式", "认证/签名表述", auth,
-                    lineContaining(lines, auth), CONF_SENTENCE));
+            FieldMapping authMethod = new FieldMapping("auth_method", "鉴权方式", "认证/签名表述", auth,
+                    lineContaining(textLines, auth), CONF_SENTENCE);
+            out.add(authMethod);
         }
 
         // 4. 准入凭证：含"备案/取得/分配/密钥"的句子 + 句内标识符
@@ -77,9 +83,10 @@ public class MockExtractGeneratorStrategy implements ExtractGeneratorStrategy {
             List<String> ids = IDENTIFIER.matcher(credSentence).results()
                     .map(mr -> mr.group()).distinct().toList();
             if (!ids.isEmpty()) {
-                out.add(new FieldMapping("credentials", "准入凭证字段",
+                FieldMapping credentials = new FieldMapping("credentials", "准入凭证字段",
                         String.join(", ", ids), credSentence.trim(),
-                        lineContaining(lines, ids.get(0)), CONF_SENTENCE));
+                        lineContaining(textLines, ids.get(0)), CONF_SENTENCE);
+                out.add(credentials);
             }
         }
 
@@ -89,12 +96,13 @@ public class MockExtractGeneratorStrategy implements ExtractGeneratorStrategy {
             signSentence = firstSentenceContaining(docText, "签名");
         }
         if (signSentence != null) {
-            out.add(new FieldMapping("sign_rule", "签名规则", "签名表述", signSentence.trim(),
-                    lineContaining(lines, "签名"), CONF_SENTENCE));
+            FieldMapping signRule = new FieldMapping("sign_rule", "签名规则", "签名表述", signSentence.trim(),
+                    lineContaining(textLines, "签名"), CONF_SENTENCE);
+            out.add(signRule);
         }
 
         // 6. 接口路径 ×3：按最近章节标题分类
-        out.addAll(extractApiPaths(lines));
+        out.addAll(extractApiPaths(doc.lines()));
 
         // 7. 状态枚举：收集全部匹配取最长——硬切分可能把枚举截断（"SUCCESS / FAIL"），
         //    完整值在相邻 chunk 里；首匹配会抽到残缺形态，最长匹配最稳
@@ -106,8 +114,9 @@ public class MockExtractGeneratorStrategy implements ExtractGeneratorStrategy {
             }
         }
         if (bestStatus != null) {
-            out.add(new FieldMapping("status_enum", "交易状态枚举", "status", bestStatus,
-                    lineContaining(lines, bestStatus), CONF_EXACT));
+            FieldMapping statusEnum = new FieldMapping("status_enum", "交易状态枚举", "status", bestStatus,
+                    lineContaining(textLines, bestStatus), CONF_EXACT);
+            out.add(statusEnum);
         }
 
         // 8. 对账文件：获取方式与格式。
@@ -120,8 +129,9 @@ public class MockExtractGeneratorStrategy implements ExtractGeneratorStrategy {
                     || (low.contains("日末文件") && (low.contains("生成") || low.contains("推送")));
         });
         if (delivery != null) {
-            out.add(new FieldMapping("file_delivery", "对账文件获取方式", "文件获取", delivery.trim(),
-                    lineContaining(lines, "对账"), CONF_SENTENCE));
+            FieldMapping fileDelivery = new FieldMapping("file_delivery", "对账文件获取方式", "文件获取", delivery.trim(),
+                    lineContaining(textLines, "对账"), CONF_SENTENCE);
+            out.add(fileDelivery);
         }
         String fmtSentence = firstSentenceMatching(docText, s -> {
             String low = s.toLowerCase();
@@ -135,8 +145,9 @@ public class MockExtractGeneratorStrategy implements ExtractGeneratorStrategy {
                 if (dl.find()) {
                     value += "，" + dl.group().trim();
                 }
-                out.add(new FieldMapping("file_format", "对账文件格式", "文件格式", value,
-                        lineContaining(lines, cs.group()), CONF_SENTENCE));
+                FieldMapping fileFormat = new FieldMapping("file_format", "对账文件格式", "文件格式", value,
+                        lineContaining(textLines, cs.group()), CONF_SENTENCE);
+                out.add(fileFormat);
             }
         }
 
@@ -167,40 +178,48 @@ public class MockExtractGeneratorStrategy implements ExtractGeneratorStrategy {
                                  String fieldName, String lenderField, Pattern p, double conf) {
         Matcher m = p.matcher(text);
         if (m.find()) {
-            out.add(new FieldMapping(fieldId, fieldName, lenderField, m.group(1).trim(),
-                    lineContaining(List.of(text.split("\\r?\\n|。")), m.group(1)), conf));
+            FieldMapping mapping = new FieldMapping(fieldId, fieldName, lenderField, m.group(1).trim(),
+                    lineContaining(List.of(text.split("\\r?\\n|。")), m.group(1)), conf);
+            out.add(mapping);
         }
     }
 
     /**
      * 接口路径抽取：路径语义在章节标题里，标题来自两个来源——
-     * ①【章节】前缀行（loadDocContent 拼入的 section_path，主通道）；
-     * ② 行首编号标题（直接抽取纯文本时的兜底）。
+     * ① chunk 的 sectionPath（loadDocContent 返回的结构化字段，主通道）；
+     * ② 行内编号标题（直接抽取纯文本时的兜底）。
      * 取"路径出现前最近一次声明的章节"做分类。
      */
-    private List<FieldMapping> extractApiPaths(List<String> lines) {
+    private List<FieldMapping> extractApiPaths(List<DocChunkLine> chunkLines) {
         List<FieldMapping> out = new ArrayList<>();
         String section = "";
-        for (String line : lines) {
-            String t = line.trim();
-            if (t.startsWith("【章节】")) {
-                String[] segments = t.split(">");
-                section = segments[segments.length - 1].trim();
-                continue;
+        for (DocChunkLine chunkLine : chunkLines) {
+            if (chunkLine.sectionPath() != null && !chunkLine.sectionPath().isBlank()) {
+                section = lastSectionOf(chunkLine.sectionPath());
             }
-            if (SECTION_HEADING.matcher(t).find() && t.length() < 30) {
-                section = t;
-            }
-            Matcher path = API_PATH.matcher(t);
-            if (path.find() && !section.isEmpty()) {
-                String fieldId = classifyApiSection(section);
-                if (fieldId != null && out.stream().noneMatch(fm -> fm.internalFieldId().equals(fieldId))) {
-                    String name = InternalFieldCatalog.byId(fieldId).name();
-                    out.add(new FieldMapping(fieldId, name, section, path.group(1), t.trim(), CONF_EXACT));
+            for (String contentLine : chunkLine.content().split("\\r?\\n")) {
+                String line = contentLine.trim();
+                if (SECTION_HEADING.matcher(line).find() && line.length() < 30) {
+                    section = line;
+                }
+                Matcher path = API_PATH.matcher(line);
+                if (path.find() && !section.isEmpty()) {
+                    String fieldId = classifyApiSection(section);
+                    if (fieldId != null && out.stream().noneMatch(fm -> fm.internalFieldId().equals(fieldId))) {
+                        String name = InternalFieldCatalog.byId(fieldId).name();
+                        FieldMapping apiPath = new FieldMapping(fieldId, name, section, path.group(1), line, CONF_EXACT);
+                        out.add(apiPath);
+                    }
                 }
             }
         }
         return out;
+    }
+
+    /** 面包屑取最后一段作为"当前章节"（与旧【章节】行 split(">") 的取法一致） */
+    private String lastSectionOf(String sectionPath) {
+        String[] segments = sectionPath.split(">");
+        return segments[segments.length - 1].trim();
     }
 
     private String classifyApiSection(String sectionTitle) {

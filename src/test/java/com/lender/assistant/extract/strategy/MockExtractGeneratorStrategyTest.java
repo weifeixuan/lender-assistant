@@ -3,6 +3,8 @@ package com.lender.assistant.extract.strategy;
 import com.lender.assistant.extract.model.FieldMapping;
 import com.lender.assistant.extract.service.InternalFieldCatalog;
 import com.lender.assistant.extract.strategy.impl.MockExtractGeneratorStrategy;
+import com.lender.assistant.rag.model.DocChunkLine;
+import com.lender.assistant.rag.model.DocContent;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -44,8 +46,16 @@ class MockExtractGeneratorStrategyTest {
             参数 biz_date 指定对账日期，返回 CSV 内容，UTF-8 编码，逗号分隔。
             """;
 
+    private List<FieldMapping> extract(String title, String text) {
+        return generator.extract(new DocContent(title, text, List.of(new DocChunkLine(title, null, text))));
+    }
+
     private Map<String, FieldMapping> extractAsMap(String title, String text) {
-        List<FieldMapping> mappings = generator.extract(title, text);
+        return extractAsMap(new DocContent(title, text, List.of(new DocChunkLine(title, null, text))));
+    }
+
+    private Map<String, FieldMapping> extractAsMap(DocContent doc) {
+        List<FieldMapping> mappings = generator.extract(doc);
         return mappings.stream()
                 .collect(Collectors.toMap(FieldMapping::internalFieldId, m -> m));
     }
@@ -95,7 +105,7 @@ class MockExtractGeneratorStrategyTest {
     @Test
     @DisplayName("每条映射带原文出处与 (0,1] 置信度，且 internalFieldName 来自字段目录")
     void mappingsCarrySourceQuoteAndConfidence() {
-        List<FieldMapping> mappings = generator.extract("瑞金租赁_资金对接接口文档_v1.0", RUIJIN_TEXT);
+        List<FieldMapping> mappings = extract("瑞金租赁_资金对接接口文档_v1.0", RUIJIN_TEXT);
         assertFalse(mappings.isEmpty());
         for (FieldMapping fm : mappings) {
             assertNotNull(InternalFieldCatalog.byId(fm.internalFieldId()), "未知字段 id: " + fm.internalFieldId());
@@ -108,18 +118,19 @@ class MockExtractGeneratorStrategyTest {
     }
 
     @Test
-    @DisplayName("回归：章节标题在 section_path 前缀行（content 里没有标题），路径仍能按章节分类")
-    void apiPathClassifiedWhenHeadingNotAtLineStart() {
-        // 真实数据形态：SectionChunkSplitterStrategy 把标题存进 section_path 而非 content，
-        // loadDocContent 拼接后每个 chunk 以【章节】行开头
-        String crossChunk = """
-                【章节】瑞金租赁 资金对接接口文档 > 一、接口总则
-                瑞金租赁（虚构）资金对接采用 REST 风格，网关地址 https://fake-ruijin.example.com/openapi。
-                【章节】瑞金租赁 资金对接接口文档 > 二、放款指令接口
-                接口路径 /openapi/loan/order/create。用于合作机构向瑞金租赁发起单笔放款指令。
-                """;
-        Map<String, FieldMapping> m = extractAsMap("瑞金租赁_资金对接接口文档_v1.0", crossChunk);
-        assertTrue(m.containsKey("payment_api"), "章节信息来自【章节】前缀行，路径必须归入 payment_api");
+    @DisplayName("回归：章节标题来自 chunk 的 sectionPath（content 里没有标题），路径仍能按章节分类")
+    void apiPathClassifiedByChunkSectionPath() {
+        // 真实数据形态：SectionChunkSplitterStrategy 把标题存进 section_path 而非 content
+        String firstChapter = "瑞金租赁（虚构）资金对接采用 REST 风格，网关地址 https://fake-ruijin.example.com/openapi。";
+        String secondChapter = "接口路径 /openapi/loan/order/create。用于合作机构向瑞金租赁发起单笔放款指令。";
+        DocContent crossChunk = new DocContent("瑞金租赁_资金对接接口文档_v1.0",
+                firstChapter + "\n" + secondChapter,
+                List.of(new DocChunkLine("瑞金租赁_资金对接接口文档_v1.0",
+                                "瑞金租赁 资金对接接口文档 > 一、接口总则", firstChapter),
+                        new DocChunkLine("瑞金租赁_资金对接接口文档_v1.0",
+                                "瑞金租赁 资金对接接口文档 > 二、放款指令接口", secondChapter)));
+        Map<String, FieldMapping> m = extractAsMap(crossChunk);
+        assertTrue(m.containsKey("payment_api"), "章节信息来自 chunk 的 sectionPath，路径必须归入 payment_api");
         assertEquals("/openapi/loan/order/create", m.get("payment_api").lenderValue());
     }
 

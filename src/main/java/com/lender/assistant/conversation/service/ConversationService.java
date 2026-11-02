@@ -1,8 +1,10 @@
 package com.lender.assistant.conversation.service;
 
+import com.lender.assistant.conversation.model.ConversationRound;
 import com.lender.assistant.conversation.vo.response.ConversationMessagesResponse;
 import com.lender.assistant.conversation.vo.response.ConversationSummaryResponse;
 import com.lender.assistant.conversation.vo.response.DeleteConversationResponse;
+import com.lender.assistant.rag.vo.response.QaSourceResponse;
 
 import java.util.List;
 
@@ -19,4 +21,12 @@ public interface ConversationService {
 
     /** 软删会话；不存在、已删除或非本人时抛 CONVERSATION_NOT_FOUND */
     DeleteConversationResponse deleteConversation(String conversationId, String userId);
+
+    /** 首问懒创建：同一事务内创建会话与用户消息，返回本轮四项标识 */
+    ConversationRound startNewRound(String userId, String question);
+
+    /** 正常结束落助手消息（DONE）并刷新会话更新时间 */
+    void completeRound(String conversationId, String roundId, String assistantMessageId,
+                       String content, List<QaSourceResponse> sources,
+                       String provider, long elapsedMillis);
 }

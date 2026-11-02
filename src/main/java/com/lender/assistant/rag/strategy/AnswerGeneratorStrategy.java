@@ -1,5 +1,8 @@
 package com.lender.assistant.rag.strategy;
 
+import com.lender.assistant.rag.vo.response.SearchItemResponse;
+
+import java.util.List;
 import java.util.function.Consumer;
 
 /**
@@ -13,6 +16,9 @@ import java.util.function.Consumer;
  * provider 二选一（mock / openai）由 @ConditionalOnProperty 在构建期决定，
  * 容器里始终只有一个实现，直接按接口注入即可，不需要工厂。
  *
+ * 入参是结构化召回结果而非拼好的整段 Prompt：每个实现自己决定怎么用
+ * （真实模型拼 Prompt，Mock 直接摘要），避免把上下文序列化成文本再解析回来。
+ *
  * 实现契约：onDelta 会被多个线程/多次回调调用 token 增量，实现方保证顺序性；
  * generate 返回即代表生成结束（同步流式：回调在 generate 调用线程上依次发生）。
  */
@@ -20,10 +26,12 @@ public interface AnswerGeneratorStrategy {
 
     /**
      * @param systemPrompt 系统提示词（角色与三条铁律）
-     * @param userPrompt   用户提示词（召回上下文 + 问题）
+     * @param question     用户问题
+     * @param contextHits  本次召回结果（按召回顺序对应【来源1】、【来源2】…）
      * @param onDelta      每收到一段 token 文本回调一次
      */
-    void generate(String systemPrompt, String userPrompt, Consumer<String> onDelta);
+    void generate(String systemPrompt, String question, List<SearchItemResponse> contextHits,
+                  Consumer<String> onDelta);
 
     /** 实现标识，用于前端展示与日志（如 "Mock" / 实际模型名） */
     String name();

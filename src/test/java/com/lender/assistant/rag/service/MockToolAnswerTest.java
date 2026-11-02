@@ -3,6 +3,7 @@ package com.lender.assistant.rag.service;
 import com.lender.assistant.rag.model.DocSummary;
 import com.lender.assistant.rag.service.DocumentService;
 import com.lender.assistant.rag.strategy.impl.MockAnswerGeneratorStrategy;
+import com.lender.assistant.rag.vo.response.SearchItemResponse;
 import com.lender.assistant.tools.LenderQueryTools;
 import com.lender.assistant.tools.ToolIntentRouter;
 import org.junit.jupiter.api.BeforeEach;
@@ -34,13 +35,13 @@ class MockToolAnswerTest {
         generator = new MockAnswerGeneratorStrategy(new LenderQueryTools(documentService), new ToolIntentRouter());
     }
 
-    private String userPromptWith(String question) {
-        return "【召回资料】\n【来源1】某文档 / 某节\n某内容\n\n【问题】" + question;
+    private List<SearchItemResponse> contextHits() {
+        return List.of(new SearchItemResponse(1L, "doc1", "某文档", "某节", "某内容", null, null, false, null));
     }
 
     private String generateAndCollect(String question) {
         List<String> deltas = new ArrayList<>();
-        generator.generate("sys", userPromptWith(question), deltas::add);
+        generator.generate("sys", question, contextHits(), deltas::add);
         return String.join("", deltas);
     }
 

@@ -7,6 +7,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
+import java.io.InputStream;
 import java.util.List;
 
 /**
@@ -44,7 +45,7 @@ public class OpenAiCompatibleDraftGeneratorStrategy implements DraftGeneratorStr
      * 本类装配时（provider=openai）该 Bean 不存在，构造函数注入会导致启动失败。
      */
     static String loadSkeleton() {
-        try (var in = OpenAiCompatibleDraftGeneratorStrategy.class.getResourceAsStream("/draft/ExampleLenderHandler.java")) {
+        try (InputStream in = OpenAiCompatibleDraftGeneratorStrategy.class.getResourceAsStream("/draft/ExampleLenderHandler.java")) {
             if (in == null) {
                 throw new IllegalStateException("classpath 缺少 draft/ExampleLenderHandler.java 骨架");
             }

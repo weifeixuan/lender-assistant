@@ -51,4 +51,11 @@
           AND user_id = #{userId}
           AND status = 'ACTIVE'
     </update>
+
+    <update id="touch">
+        UPDATE conversation
+        SET update_time = now()
+        WHERE conversation_id = #{conversationId}
+          AND status = 'ACTIVE'
+    </update>
 </mapper>

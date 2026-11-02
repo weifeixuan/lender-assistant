@@ -6,6 +6,7 @@ import com.lender.assistant.extract.model.FieldMapping;
 import com.lender.assistant.extract.model.InternalField;
 import com.lender.assistant.extract.service.InternalFieldCatalog;
 import com.lender.assistant.extract.strategy.ExtractGeneratorStrategy;
+import com.lender.assistant.rag.model.DocContent;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -45,10 +46,10 @@ public class OpenAiCompatibleExtractGeneratorStrategy implements ExtractGenerato
     }
 
     @Override
-    public List<FieldMapping> extract(String docTitle, String docText) {
+    public List<FieldMapping> extract(DocContent doc) {
         String raw = chatClient.prompt()
                 .system(systemPrompt())
-                .user(userPrompt(docTitle, docText))
+                .user(userPrompt(doc.docTitle(), doc.text()))
                 .call()
                 .content();
         return parse(raw);
@@ -94,33 +95,32 @@ public class OpenAiCompatibleExtractGeneratorStrategy implements ExtractGenerato
         if (json == null) {
             throw new IllegalStateException("模型抽取输出中未找到 JSON 数组");
         }
+        JsonNode root;
         try {
-            JsonNode root = objectMapper.readTree(json);
-            if (!root.isArray()) {
-                throw new IllegalStateException("模型抽取输出不是 JSON 数组");
-            }
-            for (JsonNode n : root) {
-                String id = text(n, "internalFieldId");
-                String value = text(n, "lenderValue");
-                InternalField def = id == null ? null : InternalFieldCatalog.byId(id);
-                // 未知字段 id 或空值：丢弃（模型幻觉进不了映射表）
-                if (def == null || value == null || value.isBlank()) {
-                    continue;
-                }
-                String lenderField = text(n, "lenderFieldName");
-                String quote = text(n, "sourceQuote");
-                out.add(new FieldMapping(id, def.name(),
-                        lenderField == null || lenderField.isBlank() ? def.name() : lenderField,
-                        value,
-                        quote == null ? "" : quote,
-                        n.hasNonNull("confidence") ? n.get("confidence").asDouble(DEFAULT_CONFIDENCE)
-                                : DEFAULT_CONFIDENCE));
-            }
-        } catch (IllegalStateException e) {
-            throw e;
+            root = objectMapper.readTree(json);
         } catch (Exception e) {
             // 模型没按 JSON 输出：抛出去，由 ExtractService 的韧性层重试并留痕
             throw new IllegalStateException("模型抽取结果无法解析为 JSON: " + e.getMessage(), e);
+        }
+        if (!root.isArray()) {
+            throw new IllegalStateException("模型抽取输出不是 JSON 数组");
+        }
+        for (JsonNode n : root) {
+            String id = text(n, "internalFieldId");
+            String value = text(n, "lenderValue");
+            InternalField def = id == null ? null : InternalFieldCatalog.byId(id);
+            // 未知字段 id 或空值：丢弃（模型幻觉进不了映射表）
+            if (def == null || value == null || value.isBlank()) {
+                continue;
+            }
+            String lenderField = text(n, "lenderFieldName");
+            String quote = text(n, "sourceQuote");
+            out.add(new FieldMapping(id, def.name(),
+                    lenderField == null || lenderField.isBlank() ? def.name() : lenderField,
+                    value,
+                    quote == null ? "" : quote,
+                    n.hasNonNull("confidence") ? n.get("confidence").asDouble(DEFAULT_CONFIDENCE)
+                            : DEFAULT_CONFIDENCE));
         }
         return out;
     }

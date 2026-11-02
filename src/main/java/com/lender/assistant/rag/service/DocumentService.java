@@ -4,6 +4,7 @@ import com.lender.assistant.rag.model.ChunkRow;
 import com.lender.assistant.rag.model.DocContent;
 import com.lender.assistant.rag.model.DocSummary;
 import com.lender.assistant.rag.vo.response.ChunkPageResponse;
+import com.lender.assistant.rag.vo.response.UploadResponse;
 
 import java.util.List;
 
@@ -16,6 +17,12 @@ import java.util.List;
  */
 public interface DocumentService {
 
+    /**
+     * 上传入库流水线：解析 → 切分 → 向量化 → 原子替换写入。
+     * 解析/切分/向量化是长耗时操作，不放在事务里；只有最后一步写入经 {@link #replaceDocument} 走事务。
+     */
+    UploadResponse ingestDocument(String docId, String fileName, byte[] fileBytes) throws Exception;
+
     /** 先删旧块再插新块：同一 docId 重复入库幂等；删+插必须原子（事务在实现方法上） */
     void replaceDocument(String docId, String docTitle, String sourcePath, List<ChunkRow> rows);
 
@@ -25,7 +32,10 @@ public interface DocumentService {
 
     List<DocSummary> listDocuments();
 
-    /** 按 chunk 序拼全文（每块前置一行【章节】section_path）；文档不存在返回 null */
+    /**
+     * 按 chunk 序取文档内容：text 为拼好的全文（每块前置一行【章节】section_path，供模型 Prompt），
+     * lines 为结构化 chunk 行（供规则抽取按章节分类）；文档不存在返回 null。
+     */
     DocContent loadDocContent(String docId);
 
     /**

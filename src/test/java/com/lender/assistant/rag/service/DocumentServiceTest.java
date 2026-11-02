@@ -8,6 +8,9 @@ import com.lender.assistant.rag.model.ChunkRow;
 import com.lender.assistant.rag.model.DocChunkLine;
 import com.lender.assistant.rag.model.DocContent;
 import com.lender.assistant.rag.service.impl.DocumentServiceImpl;
+import com.lender.assistant.rag.strategy.ChunkSplitterStrategy;
+import com.lender.assistant.rag.strategy.EmbeddingStrategy;
+import com.lender.assistant.rag.strategy.factory.DocumentParserStrategyFactory;
 import com.lender.assistant.rag.vo.response.ChunkItemResponse;
 import com.lender.assistant.rag.vo.response.ChunkPageResponse;
 import org.junit.jupiter.api.BeforeEach;
@@ -34,7 +37,8 @@ class DocumentServiceTest {
     @BeforeEach
     void setUp() {
         mapper = mock(DocChunkMapper.class);
-        service = new DocumentServiceImpl(mapper);
+        service = new DocumentServiceImpl(mapper, mock(DocumentParserStrategyFactory.class),
+                mock(ChunkSplitterStrategy.class), mock(EmbeddingStrategy.class), mock(DocumentService.class));
     }
 
     @Test

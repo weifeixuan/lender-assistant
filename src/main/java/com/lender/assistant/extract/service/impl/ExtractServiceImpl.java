@@ -51,7 +51,7 @@ public class ExtractServiceImpl implements ExtractService {
             throw new BizException(ErrorCode.PARAM_INVALID, "文档不存在或未入库: " + docId);
         }
         return executor.execute(LlmScene.EXTRACT, generator.name(),
-                () -> generator.extract(doc.docTitle(), doc.text()), true);
+                () -> generator.extract(doc), true);
     }
 
     @Override

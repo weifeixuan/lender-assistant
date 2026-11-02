@@ -7,20 +7,29 @@ import com.lender.assistant.conversation.mapper.ConversationMapper;
 import com.lender.assistant.conversation.mapper.MessageMapper;
 import com.lender.assistant.conversation.model.ConversationRow;
 import com.lender.assistant.conversation.model.MessageRow;
+import com.lender.assistant.conversation.model.ConversationRound;
 import com.lender.assistant.conversation.service.impl.ConversationServiceImpl;
 import com.lender.assistant.conversation.vo.response.ConversationMessagesResponse;
 import com.lender.assistant.conversation.vo.response.ConversationSummaryResponse;
 import com.lender.assistant.conversation.vo.response.DeleteConversationResponse;
 import com.lender.assistant.conversation.vo.response.MessageResponse;
+import com.lender.assistant.rag.vo.response.QaSourceResponse;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -128,6 +137,83 @@ class ConversationServiceTest {
         service.getMessages(CONVERSATION_ID, USER_ID);
 
         verify(conversationMapper).findActiveByConversationIdAndUser(CONVERSATION_ID, USER_ID);
+    }
+
+    @Test
+    @DisplayName("首问创建会话与用户消息，四项 id 均由后端生成")
+    void startsNewRound() {
+        when(conversationMapper.insert(anyString(), eq(USER_ID), anyString())).thenReturn(1);
+        when(messageMapper.insert(any())).thenReturn(1);
+
+        ConversationRound round = service.startNewRound(USER_ID, "首套贷款成数上限是多少");
+
+        assertNotNull(round.conversationId());
+        assertNotNull(round.roundId());
+        assertNotNull(round.userMessageId());
+        assertNotNull(round.assistantMessageId());
+        assertNotEquals(round.userMessageId(), round.assistantMessageId());
+
+        ArgumentCaptor<String> conversationId = ArgumentCaptor.forClass(String.class);
+        verify(conversationMapper).insert(conversationId.capture(), eq(USER_ID),
+                eq("首套贷款成数上限是多少"));
+        assertEquals(round.conversationId(), conversationId.getValue());
+
+        verify(messageMapper).insert(argThat(message ->
+                message.conversationId().equals(round.conversationId())
+                        && message.roundId().equals(round.roundId())
+                        && message.messageId().equals(round.userMessageId())
+                        && message.role().equals("USER")
+                        && message.status().equals("DONE")
+                        && message.sourcesJson() == null));
+    }
+
+    @Test
+    @DisplayName("会话标题取去空白后的前 20 个 Unicode code point")
+    void titleUsesTwentyCodePoints() {
+        String question = "  " + "一".repeat(20) + "二三四五  ";
+        when(conversationMapper.insert(anyString(), eq(USER_ID), anyString())).thenReturn(1);
+        when(messageMapper.insert(any())).thenReturn(1);
+
+        service.startNewRound(USER_ID, question);
+
+        verify(conversationMapper).insert(anyString(), eq(USER_ID), eq("一".repeat(20)));
+    }
+
+    @Test
+    @DisplayName("助手正常结束落库 DONE，并刷新会话更新时间")
+    void completesRound() {
+        when(messageMapper.insert(any())).thenReturn(1);
+        when(conversationMapper.touch(CONVERSATION_ID)).thenReturn(1);
+
+        service.completeRound(CONVERSATION_ID, "round-1", "msg-assistant",
+                "回答正文", List.of(source()), "Mock", 1234);
+
+        ArgumentCaptor<com.lender.assistant.conversation.model.MessageInsert> insert =
+                ArgumentCaptor.forClass(com.lender.assistant.conversation.model.MessageInsert.class);
+        verify(messageMapper).insert(insert.capture());
+        assertEquals("ASSISTANT", insert.getValue().role());
+        assertEquals("DONE", insert.getValue().status());
+        assertEquals("回答正文", insert.getValue().content());
+        assertTrue(insert.getValue().sourcesJson().contains("\"idx\""));
+        verify(conversationMapper).touch(CONVERSATION_ID);
+    }
+
+    @Test
+    @DisplayName("助手未召回时 sources 落库为空数组")
+    void completesRoundWithEmptySources() {
+        when(messageMapper.insert(any())).thenReturn(1);
+        when(conversationMapper.touch(CONVERSATION_ID)).thenReturn(1);
+
+        service.completeRound(CONVERSATION_ID, "round-1", "msg-assistant",
+                "未检索到", List.of(), "Mock", 10);
+
+        verify(messageMapper).insert(argThat(message ->
+                message.sourcesJson().equals("[]")));
+    }
+
+    private static QaSourceResponse source() {
+        return new QaSourceResponse(1, "资方接口文档", "3 日末文件", 123L,
+                "切片正文", null, null, false, null);
     }
 
     @Test

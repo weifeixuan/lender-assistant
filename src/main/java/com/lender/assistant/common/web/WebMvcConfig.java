@@ -7,8 +7,7 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 /**
  * 注册用户标识拦截器。
  *
- * 当前只覆盖会话相关接口；问答接口在接入多轮后由对应票追加，避免提前改变既有
- * 单轮 /api/qa 的调用契约。
+ * 覆盖会话查询接口与问答接口：问答已接入多轮，首问需要 userId 才能懒创建会话。
  */
 @Configuration
 public class WebMvcConfig implements WebMvcConfigurer {
@@ -22,6 +21,6 @@ public class WebMvcConfig implements WebMvcConfigurer {
     @Override
     public void addInterceptors(InterceptorRegistry registry) {
         registry.addInterceptor(userIdInterceptor)
-                .addPathPatterns("/api/conversations/**");
+                .addPathPatterns("/api/conversations/**", "/api/qa");
     }
 }

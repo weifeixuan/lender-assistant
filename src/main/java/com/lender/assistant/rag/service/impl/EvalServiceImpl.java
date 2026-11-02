@@ -47,22 +47,32 @@ public class EvalServiceImpl implements EvalService {
     public record EvalItem(int id, String type, String question, String docId,
                            List<String> mustContain, String note) {}
 
+    /** 指标汇总（run 内部分段使用，不对外暴露）：评估条目数 + recall@K / MRR / 平均耗时 */
+    private record EvalSummary(String mode, int topK, int total, int evaluated,
+                               long hits, double recallAtK, double mrr, long avgMillis) {}
+
     @Override
     public EvalRunResponse run(int topK, SearchMode mode) throws Exception {
-        List<EvalItem> items = loadEvalSet();
+        List<EvalItem> evalItems = loadEvalSet();
+        List<EvalItemResponse> results = evaluate(evalItems, topK, mode);
+        EvalSummary summary = summarize(mode.code(), topK, evalItems.size(), results);
+        String markdown = buildMarkdown(summary, results);
+        return new EvalRunResponse(summary.mode(), summary.topK(), summary.total(), summary.evaluated(),
+                summary.hits(), summary.recallAtK(), summary.mrr(), summary.avgMillis(), results, markdown);
+    }
 
+    /** 逐条跑检索并判定是否命中；NEGATIVE 条目直接记为未命中（语义验收时单独看） */
+    private List<EvalItemResponse> evaluate(List<EvalItem> evalItems, int topK, SearchMode mode) {
         List<EvalItemResponse> results = new ArrayList<>();
-        long totalMillis = 0;
-        for (EvalItem item : items) {
+        for (EvalItem item : evalItems) {
             if ("NEGATIVE".equals(item.type())) {
-                // 否定条目不参与 recall/MRR（没有"正确召回"可言），语义验收时单独看
+                // 否定条目不参与 recall/MRR（没有"正确召回"可言）
                 results.add(new EvalItemResponse(item.id(), item.type(), item.question(), false, 0, topK, 0, item.note()));
                 continue;
             }
-            long t0 = System.currentTimeMillis();
+            long startMillis = System.currentTimeMillis();
             List<SearchItemResponse> hits = searchService.search(item.question(), topK, mode);
-            long millis = System.currentTimeMillis() - t0;
-            totalMillis += millis;
+            long millis = System.currentTimeMillis() - startMillis;
 
             int firstHitRank = 0;
             for (int i = 0; i < hits.size(); i++) {
@@ -75,19 +85,22 @@ public class EvalServiceImpl implements EvalService {
             results.add(new EvalItemResponse(item.id(), item.type(), item.question(), firstHitRank > 0,
                     firstHitRank, topK, millis, item.note()));
         }
+        return results;
+    }
 
-        // 正/负样本按 type 判别（NEGATIVE 不参与 recall/MRR）；不可用耗时判别——真实正样本可能恰好耗时 0ms 而被误剔
-        List<EvalItemResponse> positive = results.stream().filter(r -> !"NEGATIVE".equals(r.type())).toList();
-        long recall = positive.stream().filter(EvalItemResponse::hit).count();
-        double recallAtK = positive.isEmpty() ? 0 : (double) recall / positive.size();
+    /** 汇总指标：正/负样本按 type 判别；不可用耗时判别——真实正样本可能恰好耗时 0ms 而被误剔 */
+    private EvalSummary summarize(String mode, int topK, int total, List<EvalItemResponse> results) {
+        List<EvalItemResponse> positive = results.stream()
+                .filter(result -> !"NEGATIVE".equals(result.type()))
+                .toList();
+        long totalMillis = positive.stream().mapToLong(EvalItemResponse::millis).sum();
+        long hits = positive.stream().filter(EvalItemResponse::hit).count();
+        double recallAtK = positive.isEmpty() ? 0 : (double) hits / positive.size();
         double mrr = positive.isEmpty() ? 0
-                : positive.stream().mapToDouble(r -> r.hit() ? 1.0 / r.firstHitRank() : 0).average().orElse(0);
+                : positive.stream().mapToDouble(result -> result.hit() ? 1.0 / result.firstHitRank() : 0)
+                        .average().orElse(0);
         long avgMillis = positive.isEmpty() ? 0 : totalMillis / positive.size();
-
-        String markdown = buildMarkdown(mode.code(), topK, results, positive.size(), recall, recallAtK, mrr, avgMillis);
-
-        return new EvalRunResponse(mode.code(), topK, items.size(), positive.size(), recall, recallAtK, mrr,
-                avgMillis, results, markdown);
+        return new EvalSummary(mode, topK, total, positive.size(), hits, recallAtK, mrr, avgMillis);
     }
 
     private List<EvalItem> loadEvalSet() throws Exception {
@@ -105,16 +118,16 @@ public class EvalServiceImpl implements EvalService {
         return items;
     }
 
-    private String buildMarkdown(String mode, int topK, List<EvalItemResponse> results,
-                                 int evaluated, long hits, double recallAtK, double mrr, long avgMillis) {
+    private String buildMarkdown(EvalSummary summary, List<EvalItemResponse> results) {
         StringBuilder sb = new StringBuilder();
         sb.append("# 检索评估报告\n\n")
-          .append("- 模式: **").append(mode).append("** ｜ topK: ").append(topK)
-          .append(" ｜ 评估条目: ").append(evaluated).append("（NEGATIVE 条目不计入）\n")
-          .append("- **recall@").append(topK).append(": ").append(String.format("%.1f%%", recallAtK * 100))
-          .append("**（").append(hits).append("/").append(evaluated).append("）\n")
-          .append("- **MRR: ").append(String.format("%.3f", mrr)).append("**\n")
-          .append("- 平均检索耗时: ").append(avgMillis).append("ms\n\n")
+          .append("- 模式: **").append(summary.mode()).append("** ｜ topK: ").append(summary.topK())
+          .append(" ｜ 评估条目: ").append(summary.evaluated()).append("（NEGATIVE 条目不计入）\n")
+          .append("- **recall@").append(summary.topK()).append(": ")
+          .append(String.format("%.1f%%", summary.recallAtK() * 100))
+          .append("**（").append(summary.hits()).append("/").append(summary.evaluated()).append("）\n")
+          .append("- **MRR: ").append(String.format("%.3f", summary.mrr())).append("**\n")
+          .append("- 平均检索耗时: ").append(summary.avgMillis()).append("ms\n\n")
           .append("| id | 问题 | 命中 | 首条命中排名 | 耗时ms | 说明 |\n|---|---|---|---|---|---|\n");
         for (EvalItemResponse r : results) {
             sb.append("| ").append(r.id())

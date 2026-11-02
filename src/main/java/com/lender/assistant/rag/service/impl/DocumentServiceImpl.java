@@ -2,18 +2,29 @@ package com.lender.assistant.rag.service.impl;
 
 import com.lender.assistant.common.exception.BizException;
 import com.lender.assistant.common.exception.ErrorCode;
+import com.lender.assistant.common.util.PgVectorUtils;
 import com.lender.assistant.rag.mapper.DocChunkMapper;
+import com.lender.assistant.rag.model.Chunk;
 import com.lender.assistant.rag.model.ChunkItemRow;
 import com.lender.assistant.rag.model.ChunkRow;
 import com.lender.assistant.rag.model.DocChunkLine;
 import com.lender.assistant.rag.model.DocContent;
 import com.lender.assistant.rag.model.DocSummary;
+import com.lender.assistant.rag.model.ParsedDocument;
 import com.lender.assistant.rag.service.DocumentService;
+import com.lender.assistant.rag.strategy.ChunkSplitterStrategy;
+import com.lender.assistant.rag.strategy.DocumentParserStrategy;
+import com.lender.assistant.rag.strategy.EmbeddingStrategy;
+import com.lender.assistant.rag.strategy.factory.DocumentParserStrategyFactory;
 import com.lender.assistant.rag.vo.response.ChunkItemResponse;
 import com.lender.assistant.rag.vo.response.ChunkPageResponse;
+import com.lender.assistant.rag.vo.response.IngestMillisResponse;
+import com.lender.assistant.rag.vo.response.UploadResponse;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
@@ -22,7 +33,7 @@ import java.util.stream.Collectors;
  * doc_chunk 数据访问编排（原 rag/store/DocumentStore 的 MyBatis 化，§11）。
  *
  * 事务从 Store 迁到这里（§6.11：Mapper 上禁止 @Transactional）。
- * 事务内只有 DELETE + 单条多行 INSERT（§7：事务内禁止长耗时操作，解析/切分/向量化留在 Controller）。
+ * 事务内只有 DELETE + 单条多行 INSERT；解析/切分/向量化在 {@link #ingestDocument} 里、事务之外完成（§7）。
  */
 @Service
 public class DocumentServiceImpl implements DocumentService {
@@ -40,9 +51,62 @@ public class DocumentServiceImpl implements DocumentService {
     private static final int MAX_PAGE_SIZE = 100;
 
     private final DocChunkMapper mapper;
+    private final DocumentParserStrategyFactory parserFactory;
+    private final ChunkSplitterStrategy splitter;
+    private final EmbeddingStrategy embeddingStrategy;
+    /** 自身代理：类内直接调 replaceDocument 不经过 Spring 代理，@Transactional 会失效；经它调用才能保证删+插原子 */
+    private final DocumentService self;
 
-    public DocumentServiceImpl(DocChunkMapper mapper) {
+    public DocumentServiceImpl(DocChunkMapper mapper, DocumentParserStrategyFactory parserFactory,
+                               ChunkSplitterStrategy splitter, EmbeddingStrategy embeddingStrategy,
+                               @Lazy DocumentService self) {
         this.mapper = mapper;
+        this.parserFactory = parserFactory;
+        this.splitter = splitter;
+        this.embeddingStrategy = embeddingStrategy;
+        this.self = self;
+    }
+
+    @Override
+    public UploadResponse ingestDocument(String docId, String fileName, byte[] fileBytes) throws Exception {
+        // 解析器按扩展名运行时分发，交给工厂选择（不支持的类型抛可读异常）
+        DocumentParserStrategy parser = parserFactory.resolve(fileName);
+
+        long parseStart = System.currentTimeMillis();
+        ParsedDocument parsed = parser.parse(fileName, fileBytes);
+        long parseMillis = System.currentTimeMillis() - parseStart;
+
+        long splitStart = System.currentTimeMillis();
+        List<Chunk> chunks = splitter.split(parsed);
+        long splitMillis = System.currentTimeMillis() - splitStart;
+
+        long embedStart = System.currentTimeMillis();
+        List<ChunkRow> rows = new ArrayList<>(chunks.size());
+        for (Chunk chunk : chunks) {
+            // 拼接 sectionPath 进向量化输入：标题是强语义信号，丢掉太可惜
+            String embedInput = chunk.sectionPath() == null || chunk.sectionPath().isEmpty()
+                    ? chunk.content()
+                    : chunk.sectionPath() + "\n" + chunk.content();
+            ChunkRow row = new ChunkRow(chunk.sectionPath(), chunk.index(), chunk.content(),
+                    chunk.charCount(), PgVectorUtils.toLiteral(embeddingStrategy.embed(embedInput)));
+            rows.add(row);
+        }
+        long embedMillis = System.currentTimeMillis() - embedStart;
+
+        long storeStart = System.currentTimeMillis();
+        self.replaceDocument(docId, stripExtension(fileName), fileName, rows);
+        long storeMillis = System.currentTimeMillis() - storeStart;
+
+        double avgChunkChars = rows.stream().mapToInt(ChunkRow::charCount).average().orElse(0);
+        return new UploadResponse(docId, parsed.blocks().size(), rows.size(), avgChunkChars,
+                new IngestMillisResponse(parseMillis, splitMillis, embedMillis, storeMillis),
+                embeddingStrategy.getClass().getSimpleName());
+    }
+
+    /** 标题去扩展名：frontend 展示用（"xxx.docx" → "xxx"） */
+    private String stripExtension(String fileName) {
+        int dot = fileName.lastIndexOf('.');
+        return dot < 0 ? fileName : fileName.substring(0, dot);
     }
 
     @Override
@@ -82,7 +146,7 @@ public class DocumentServiceImpl implements DocumentService {
         String text = lines.stream()
                 .map(l -> "【章节】" + l.sectionPath() + "\n" + l.content())
                 .collect(Collectors.joining("\n"));
-        return new DocContent(lines.get(0).docTitle(), text);
+        return new DocContent(lines.get(0).docTitle(), text, lines);
     }
 
     @Override

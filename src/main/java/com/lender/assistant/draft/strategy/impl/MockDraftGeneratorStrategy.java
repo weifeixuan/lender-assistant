@@ -6,6 +6,7 @@ import com.lender.assistant.extract.service.InternalFieldCatalog;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
+import java.io.InputStream;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -32,7 +33,7 @@ public class MockDraftGeneratorStrategy implements DraftGeneratorStrategy {
      * 加载失败属于部署错误，直接抛出去——渲染没有可降级的正确形态。
      */
     private static String loadSkeleton() {
-        try (var in = MockDraftGeneratorStrategy.class.getResourceAsStream("/draft/ExampleLenderHandler.java")) {
+        try (InputStream in = MockDraftGeneratorStrategy.class.getResourceAsStream("/draft/ExampleLenderHandler.java")) {
             if (in == null) {
                 throw new IllegalStateException("classpath 缺少 draft/ExampleLenderHandler.java 骨架");
             }

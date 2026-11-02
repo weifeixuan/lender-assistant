@@ -2,9 +2,11 @@ package com.lender.assistant.rag.strategy.impl;
 
 import com.lender.assistant.rag.model.ParsedDocument;
 import com.lender.assistant.rag.strategy.DocumentParserStrategy;
+import org.apache.poi.xwpf.usermodel.IBodyElement;
 import org.apache.poi.xwpf.usermodel.XWPFDocument;
 import org.apache.poi.xwpf.usermodel.XWPFParagraph;
 import org.apache.poi.xwpf.usermodel.XWPFTable;
+import org.apache.poi.xwpf.usermodel.XWPFTableCell;
 import org.apache.poi.xwpf.usermodel.XWPFTableRow;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -48,7 +50,7 @@ public class DocxDocumentParserStrategy implements DocumentParserStrategy {
         try (XWPFDocument doc = new XWPFDocument(new ByteArrayInputStream(content))) {
             // bodyElements 按文档实际顺序返回段落和表格，不会打乱阅读顺序；
             // PARAGRAPH 元素本身就是 XWPFParagraph 实例，直接强转即可
-            for (var element : doc.getBodyElements()) {
+            for (IBodyElement element : doc.getBodyElements()) {
                 switch (element.getElementType()) {
                     case PARAGRAPH -> {
                         XWPFParagraph p = (XWPFParagraph) element;
@@ -86,7 +88,7 @@ public class DocxDocumentParserStrategy implements DocumentParserStrategy {
         StringBuilder sb = new StringBuilder();
         for (int r = 1; r < rows.size(); r++) {
             StringBuilder line = new StringBuilder();
-            var cells = rows.get(r).getTableCells();
+            List<XWPFTableCell> cells = rows.get(r).getTableCells();
             for (int c = 0; c < cells.size() && c < headers.size(); c++) {
                 if (c > 0) {
                     line.append(" | ");

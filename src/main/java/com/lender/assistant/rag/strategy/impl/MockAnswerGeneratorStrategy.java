@@ -1,11 +1,15 @@
 package com.lender.assistant.rag.strategy.impl;
 
 import com.lender.assistant.rag.strategy.AnswerGeneratorStrategy;
+import com.lender.assistant.rag.vo.response.SearchItemResponse;
+import com.lender.assistant.tools.ToolIntentRouter.ToolIntent;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
+import java.util.List;
+import java.util.Optional;
 import java.util.function.Consumer;
 
 /**
@@ -47,57 +51,42 @@ public class MockAnswerGeneratorStrategy implements AnswerGeneratorStrategy {
     }
 
     @Override
-    public void generate(String systemPrompt, String userPrompt, Consumer<String> onDelta) {
-        streamAnswer(buildAnswer(userPrompt), onDelta);
+    public void generate(String systemPrompt, String question, List<SearchItemResponse> contextHits,
+                         Consumer<String> onDelta) {
+        streamAnswer(buildAnswer(question, contextHits), onDelta);
     }
 
-    private String buildAnswer(String userPrompt) {
-        // 问题在 userPrompt 末尾的【问题】行（QaService 约定的结构）
-        String question = extractQuestion(userPrompt);
-
+    private String buildAnswer(String question, List<SearchItemResponse> contextHits) {
         // 工具意图 → 模拟"模型决定调用" → 真实查库 → 结果直接回答
         // knownDocIds 惰性求值：普通问题零额外查询
-        var intent = toolRouter.route(question, lenderTools::knownDocIds);
+        Optional<ToolIntent> intent = toolRouter.route(question, lenderTools::knownDocIds);
         if (intent.isPresent()) {
-            var i = intent.get();
-            String toolResult = "listIngestedDocs".equals(i.toolName())
+            ToolIntent toolIntent = intent.get();
+            String toolResult = "listIngestedDocs".equals(toolIntent.toolName())
                     ? lenderTools.listIngestedDocs()
-                    : lenderTools.getDocChunkStats(i.argument());
-            return "【工具调用】" + i.toolName() + "（Mock 模式：规则模拟模型决策，"
+                    : lenderTools.getDocChunkStats(toolIntent.argument());
+            return "【工具调用】" + toolIntent.toolName() + "（Mock 模式：规则模拟模型决策，"
                     + "真实模型版由模型按工具 description 自主决定）\n"
-                    + "调用理由: " + i.reason() + "\n\n"
+                    + "调用理由: " + toolIntent.reason() + "\n\n"
                     + "工具返回：\n" + toolResult + "\n\n"
                     + "（以上为工具直查数据库的真实结果；语义总结需配置 LLM_API_KEY）";
         }
 
-        // userPrompt 的结构由 QaService 约定：铁律提示 + 【来源 N】上下文 + 问题。
-        // Mock 直接基于上下文段落拼一个摘要式回答（截取每条来源的前 60 字）。
+        // Mock 直接基于召回结果拼一个摘要式回答（每条来源截取前 60 字）。
         StringBuilder answer = new StringBuilder();
         answer.append("【Mock 模式回答】当前未配置对话模型 API key，以下是依据召回内容生成的摘要（非语义回答）：\n\n");
-        String[] lines = userPrompt.split("\n");
-        boolean inContext = false;
-        for (String line : lines) {
-            if (line.startsWith("【来源")) {
-                inContext = true;
-                answer.append(line).append("\n");
-            } else if (inContext) {
-                if (line.startsWith("【问题】")) {
-                    break;
-                }
-                if (!line.isBlank()) {
-                    String text = line.trim();
-                    answer.append(text, 0, Math.min(SUMMARY_PREVIEW_CHARS, text.length()))
-                          .append(text.length() > SUMMARY_PREVIEW_CHARS ? "……\n" : "\n");
-                }
-            }
+        for (int i = 0; i < contextHits.size(); i++) {
+            SearchItemResponse hit = contextHits.get(i);
+            answer.append("【来源").append(i + 1).append("】")
+                  .append(hit.docTitle()).append(" / ")
+                  .append(hit.sectionPath() == null ? "（无小节）" : hit.sectionPath())
+                  .append("\n");
+            String content = hit.content() == null ? "" : hit.content().trim();
+            answer.append(content, 0, Math.min(SUMMARY_PREVIEW_CHARS, content.length()))
+                  .append(content.length() > SUMMARY_PREVIEW_CHARS ? "……\n" : "\n");
         }
         answer.append("\n（配置 LLM_API_KEY 并设置 rag.chat.provider=openai 后，这里将替换为真实模型回答）");
         return answer.toString();
-    }
-
-    private String extractQuestion(String userPrompt) {
-        int idx = userPrompt.indexOf("【问题】");
-        return idx < 0 ? "" : userPrompt.substring(idx + "【问题】".length()).trim();
     }
 
     private void streamAnswer(String full, Consumer<String> onDelta) {

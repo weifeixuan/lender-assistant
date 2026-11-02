@@ -3,10 +3,12 @@ package com.lender.assistant.rag.controller;
 import com.lender.assistant.common.annotation.RawResponse;
 import com.lender.assistant.common.constant.SearchConstants;
 import com.lender.assistant.common.util.TopKUtils;
+import com.lender.assistant.common.web.UserIdInterceptor;
 import com.lender.assistant.rag.vo.request.QaRequest;
 import com.lender.assistant.rag.service.QaService;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestAttribute;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
@@ -33,11 +35,12 @@ public class QaController {
     }
 
     @PostMapping(value = "/api/qa", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
-    public SseEmitter qa(@RequestBody QaRequest request) {
+    public SseEmitter qa(@RequestBody QaRequest request,
+                         @RequestAttribute(UserIdInterceptor.USER_ID_ATTRIBUTE) String userId) {
         String question = request.question();
         if (question == null || question.isBlank()) {
             throw new IllegalArgumentException("question 不能为空");
         }
-        return qaService.answer(question.trim(), TopKUtils.resolve(request.topK(), SearchConstants.DEFAULT_TOP_K));
+        return qaService.answer(question.trim(), TopKUtils.resolve(request.topK(), SearchConstants.DEFAULT_TOP_K), userId);
     }
 }

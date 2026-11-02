@@ -10,5 +10,5 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 public interface QaService {
 
     /** 立即返回 emitter，检索/生成/send 在独立工作线程执行（真流式的必要条件） */
-    SseEmitter answer(String question, int topK);
+    SseEmitter answer(String question, int topK, String userId);
 }

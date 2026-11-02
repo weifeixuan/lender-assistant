@@ -2,6 +2,7 @@ package com.lender.assistant.rag.controller;
 
 import com.lender.assistant.common.exception.BizException;
 import com.lender.assistant.rag.mapper.DocChunkMapper;
+import com.lender.assistant.rag.service.DocumentService;
 import com.lender.assistant.rag.service.SearchService;
 import com.lender.assistant.rag.service.impl.DocumentServiceImpl;
 import com.lender.assistant.rag.strategy.ChunkSplitterStrategy;
@@ -29,8 +30,9 @@ class DocumentAdminControllerTest {
         ChunkSplitterStrategy splitter = mock(ChunkSplitterStrategy.class);
         EmbeddingStrategy embeddingStrategy = mock(EmbeddingStrategy.class);
         DocChunkMapper mapper = mock(DocChunkMapper.class);
-        DocumentAdminController controller = new DocumentAdminController(parserFactory, splitter,
-                embeddingStrategy, new DocumentServiceImpl(mapper), mock(SearchService.class));
+        DocumentService documentService = new DocumentServiceImpl(mapper, parserFactory, splitter,
+                embeddingStrategy, mock(DocumentService.class));
+        DocumentAdminController controller = new DocumentAdminController(documentService, mock(SearchService.class));
 
         MultipartFile file = mock(MultipartFile.class);
         when(file.getOriginalFilename()).thenReturn("bad.docx");

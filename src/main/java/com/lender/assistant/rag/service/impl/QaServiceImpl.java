@@ -2,10 +2,13 @@ package com.lender.assistant.rag.service.impl;
 
 import com.lender.assistant.common.constant.LlmScene;
 import com.lender.assistant.common.util.ThreadPoolFactory;
+import com.lender.assistant.conversation.model.ConversationRound;
+import com.lender.assistant.conversation.service.ConversationService;
 import com.lender.assistant.rag.service.QaService;
 import com.lender.assistant.rag.service.SearchService;
 import com.lender.assistant.rag.strategy.AnswerGeneratorStrategy;
 import com.lender.assistant.rag.vo.response.QaDoneResponse;
+import com.lender.assistant.rag.vo.response.QaMetaResponse;
 import com.lender.assistant.rag.vo.response.QaSourceResponse;
 import com.lender.assistant.rag.vo.response.SearchItemResponse;
 import jakarta.annotation.PreDestroy;
@@ -27,6 +30,7 @@ import java.util.concurrent.ThreadPoolExecutor;
  * 3. 回答引用【来源 N】，为阶段 3 的引用溯源打底。
  *
  * SSE 事件协议（前端按 event 名分发）：
+ * - meta:    JSON，{conversationId, roundId, userMessageId, assistantMessageId}（首问懒创建的唯一回传入口）
  * - sources: JSON 数组，本次召回的来源列表（先发，前端可先渲染"正在引用 N 份资料"）
  * - delta:   纯文本，模型 token 增量，前端增量拼接渲染
  * - done:    JSON，{provider, elapsedMillis, sourceCount}，收尾信号
@@ -49,6 +53,7 @@ public class QaServiceImpl implements QaService {
     private final SearchService searchService;
     private final AnswerGeneratorStrategy generator;
     private final com.lender.assistant.resilience.ResilientLlmExecutor executor;
+    private final ConversationService conversationService;
 
     /**
      * SSE 工作线程池：检索+生成+send 必须脱离请求线程执行，否则 Spring 会把事件缓冲到
@@ -61,55 +66,58 @@ public class QaServiceImpl implements QaService {
             STREAM_THREAD_KEEP_ALIVE_SECONDS, STREAM_THREAD_NAME_PREFIX);
 
     public QaServiceImpl(SearchService searchService, AnswerGeneratorStrategy generator,
-                     com.lender.assistant.resilience.ResilientLlmExecutor executor) {
+                         com.lender.assistant.resilience.ResilientLlmExecutor executor,
+                         ConversationService conversationService) {
         this.searchService = searchService;
         this.generator = generator;
         this.executor = executor;
+        this.conversationService = conversationService;
     }
 
     @Override
-    public SseEmitter answer(String question, int topK) {
+    public SseEmitter answer(String question, int topK, String userId) {
         SseEmitter emitter = new SseEmitter(SSE_TIMEOUT_MILLIS);
         long t0 = System.currentTimeMillis();
+
+        // 首问懒创建：请求线程内先落会话与用户消息（DB 失败直接以普通 JSON 报错，不必开 SSE），
+        // 拿到本轮四项标识后交给工作线程推送 meta 与回答。
+        ConversationRound round = conversationService.startNewRound(userId, question);
 
         // 关键：立即返回 emitter，把检索+生成+send 放到独立线程。
         // 旧写法在请求线程内 send，Spring 的 ResponseBodyEmitter 会把数据先堆进
         // earlySendAttempts（此时 handler 还未挂上），直到控制器返回才一次性写出——
         // 结果是 TTFB≈TOTAL 的"假流式"，且突发写入后立刻断连会让 Chrome 记 net::ERR_ABORTED。
-        streamExecutor.execute(() -> streamAnswer(emitter, question, topK, t0));
+        streamExecutor.execute(() -> streamAnswer(emitter, question, topK, userId, round, t0));
         return emitter;
     }
 
     /** SSE 推送主流程，运行在 streamExecutor 工作线程上；每个 send 都是即时 flush 的真流式。 */
-    private void streamAnswer(SseEmitter emitter, String question, int topK, long t0) {
+    public void streamAnswer(SseEmitter emitter, String question, int topK, String userId,
+                             ConversationRound round, long t0) {
         try {
+            // meta 必须首事件：前端靠它把本轮增量回答挂到正确的会话/轮次上
+            send(emitter, "meta", new QaMetaResponse(round.conversationId(), round.roundId(),
+                    round.userMessageId(), round.assistantMessageId()));
+
             List<SearchItemResponse> hits = searchService.hybridSearch(question, topK);
             if (hits.isEmpty()) {
-                send(emitter, "delta", "资料库中没有检索到相关内容，请先在上方上传并入库文档。");
+                String guidance = "资料库中没有检索到相关内容，请先在上方上传并入库文档。";
+                send(emitter, "delta", guidance);
+                completeRound(round, guidance, List.of(), System.currentTimeMillis() - t0);
                 emitter.complete();
                 return;
             }
 
             // 先推来源列表，前端立刻能展示"引用了哪些资料"
-            List<QaSourceResponse> sources = new ArrayList<>();
-            for (int i = 0; i < hits.size(); i++) {
-                SearchItemResponse h = hits.get(i);
-                sources.add(new QaSourceResponse(i + 1, h.docTitle(), h.sectionPath(), h.chunkId(),
-                        h.content(), h.vectorDistance(), h.keywordHits(), h.bothChannels(), h.rrfScore()));
-            }
+            List<QaSourceResponse> sources = buildSources(hits);
             send(emitter, "sources", sources);
 
-            // AnswerGeneratorStrategy 契约：generate 返回时生成已结束，token 在调用线程上依次回调。
-            // 韧性（阶段4）：经 ResilientLlmExecutor 走 qa 链路——留痕 + 熔断；
-            // allowRetry=false：SSE token 已推给用户，重试会导致内容重放
-            executor.execute(LlmScene.QA, generator.name(),
-                    () -> {
-                        generator.generate(systemPrompt(), userPrompt(question, hits),
-                                token -> send(emitter, "delta", token));
-                        return true;
-                    }, false);
+            String content = streamModelAnswer(emitter, question, hits);
 
-            QaDoneResponse done = new QaDoneResponse(generator.name(), System.currentTimeMillis() - t0, sources.size());
+            long elapsedMillis = System.currentTimeMillis() - t0;
+            completeRound(round, content, sources, elapsedMillis);
+
+            QaDoneResponse done = new QaDoneResponse(generator.name(), elapsedMillis, sources.size());
             send(emitter, "done", done);
             emitter.complete();
         } catch (io.github.resilience4j.circuitbreaker.CallNotPermittedException e) {
@@ -129,6 +137,44 @@ public class QaServiceImpl implements QaService {
         }
     }
 
+    /** 召回结果 → 前端来源列表（idx 从 1 起，与【来源N】编号一致） */
+    private List<QaSourceResponse> buildSources(List<SearchItemResponse> hits) {
+        List<QaSourceResponse> sources = new ArrayList<>();
+        for (int i = 0; i < hits.size(); i++) {
+            SearchItemResponse hit = hits.get(i);
+            sources.add(new QaSourceResponse(i + 1, hit.docTitle(), hit.sectionPath(), hit.chunkId(),
+                    hit.content(), hit.vectorDistance(), hit.keywordHits(), hit.bothChannels(), hit.rrfScore()));
+        }
+        return sources;
+    }
+
+    /**
+     * 调模型并把 token 增量推给前端，同时累积完整回答用于落库。
+     * AnswerGeneratorStrategy 契约：generate 返回时生成已结束，token 在调用线程上依次回调。
+     * 韧性（阶段4）：经 ResilientLlmExecutor 走 qa 链路——留痕 + 熔断；
+     * allowRetry=false：SSE token 已推给用户，重试会导致内容重放。
+     */
+    private String streamModelAnswer(SseEmitter emitter, String question, List<SearchItemResponse> hits) {
+        StringBuilder answer = new StringBuilder();
+        executor.execute(LlmScene.QA, generator.name(),
+                () -> {
+                    generator.generate(systemPrompt(), question, hits,
+                            token -> {
+                                answer.append(token);
+                                send(emitter, "delta", token);
+                            });
+                    return true;
+                }, false);
+        return answer.toString();
+    }
+
+    /** 正常终态落库：助手消息 DONE + 来源快照 + 会话更新时间刷新 */
+    private void completeRound(ConversationRound round, String content,
+                               List<QaSourceResponse> sources, long elapsedMillis) {
+        conversationService.completeRound(round.conversationId(), round.roundId(),
+                round.assistantMessageId(), content, sources, generator.name(), elapsedMillis);
+    }
+
     private String systemPrompt() {
         return """
                 你是融资租赁资金方对接场景的资料问答助手。严格遵守三条铁律：
@@ -137,18 +183,6 @@ public class QaServiceImpl implements QaService {
                 3. 回答涉及具体字段、格式、规则时，引用原文表述，并在句末标注来源编号，格式如【来源1】。
                 用简体中文回答，简洁直接。
                 """;
-    }
-
-    private String userPrompt(String question, List<SearchItemResponse> hits) {
-        StringBuilder sb = new StringBuilder("【召回资料】\n");
-        for (int i = 0; i < hits.size(); i++) {
-            SearchItemResponse h = hits.get(i);
-            sb.append("【来源").append(i + 1).append("】")
-              .append(h.docTitle()).append(" / ").append(h.sectionPath() == null ? "（无小节）" : h.sectionPath())
-              .append("\n").append(h.content()).append("\n\n");
-        }
-        sb.append("【问题】").append(question);
-        return sb.toString();
     }
 
     private void send(SseEmitter emitter, String event, Object data) {

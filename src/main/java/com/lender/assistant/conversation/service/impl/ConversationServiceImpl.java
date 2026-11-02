@@ -7,7 +7,9 @@ import com.lender.assistant.common.exception.BizException;
 import com.lender.assistant.common.exception.ErrorCode;
 import com.lender.assistant.conversation.mapper.ConversationMapper;
 import com.lender.assistant.conversation.mapper.MessageMapper;
+import com.lender.assistant.conversation.model.ConversationRound;
 import com.lender.assistant.conversation.model.ConversationRow;
+import com.lender.assistant.conversation.model.MessageInsert;
 import com.lender.assistant.conversation.model.MessageRow;
 import com.lender.assistant.conversation.service.ConversationService;
 import com.lender.assistant.conversation.vo.response.ConversationMessagesResponse;
@@ -16,8 +18,10 @@ import com.lender.assistant.conversation.vo.response.DeleteConversationResponse;
 import com.lender.assistant.conversation.vo.response.MessageResponse;
 import com.lender.assistant.rag.vo.response.QaSourceResponse;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.UUID;
 
 /**
  * 会话查询实现：归属过滤与排序交给 SQL（带索引），本层只做行到响应的映射。
@@ -68,6 +72,50 @@ public class ConversationServiceImpl implements ConversationService {
             throw new BizException(ErrorCode.CONVERSATION_NOT_FOUND);
         }
         return new DeleteConversationResponse(conversationId, true);
+    }
+
+    @Override
+    @Transactional
+    public ConversationRound startNewRound(String userId, String question) {
+        ConversationRound round = new ConversationRound(
+                UUID.randomUUID().toString(),
+                UUID.randomUUID().toString(),
+                UUID.randomUUID().toString(),
+                UUID.randomUUID().toString());
+        conversationMapper.insert(round.conversationId(), userId, titleOf(question));
+        messageMapper.insert(new MessageInsert(round.conversationId(), round.roundId(),
+                round.userMessageId(), "USER", question, "DONE",
+                null, null, null, null));
+        return round;
+    }
+
+    @Override
+    @Transactional
+    public void completeRound(String conversationId, String roundId, String assistantMessageId,
+                              String content, List<QaSourceResponse> sources,
+                              String provider, long elapsedMillis) {
+        int elapsedMs = (int) Math.min(Integer.MAX_VALUE, elapsedMillis);
+        messageMapper.insert(new MessageInsert(conversationId, roundId, assistantMessageId,
+                "ASSISTANT", content, "DONE", writeSources(sources), provider, elapsedMs, null));
+        conversationMapper.touch(conversationId);
+    }
+
+    /** 标题取去首尾空白后的前 20 个 Unicode code point，避免截断代理对（emoji） */
+    static String titleOf(String question) {
+        String trimmed = question.strip();
+        int codePoints = trimmed.codePointCount(0, trimmed.length());
+        if (codePoints <= 20) {
+            return trimmed;
+        }
+        return trimmed.substring(0, trimmed.offsetByCodePoints(0, 20));
+    }
+
+    private String writeSources(List<QaSourceResponse> sources) {
+        try {
+            return objectMapper.writeValueAsString(sources);
+        } catch (JsonProcessingException e) {
+            throw new IllegalStateException("消息 sources JSON 无法序列化", e);
+        }
     }
 
     private MessageResponse toMessage(MessageRow row) {

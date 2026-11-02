@@ -1,6 +1,7 @@
 package com.lender.assistant.rag.strategy.impl;
 
 import com.lender.assistant.rag.strategy.AnswerGeneratorStrategy;
+import com.lender.assistant.rag.vo.response.SearchItemResponse;
 import com.lender.assistant.tools.LenderQueryTools;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.beans.factory.annotation.Value;
@@ -9,6 +10,7 @@ import org.springframework.stereotype.Component;
 import reactor.core.publisher.Flux;
 
 import java.time.Duration;
+import java.util.List;
 import java.util.function.Consumer;
 
 /**
@@ -44,10 +46,11 @@ public class OpenAiCompatibleAnswerGeneratorStrategy implements AnswerGeneratorS
     }
 
     @Override
-    public void generate(String systemPrompt, String userPrompt, Consumer<String> onDelta) {
+    public void generate(String systemPrompt, String question, List<SearchItemResponse> contextHits,
+                         Consumer<String> onDelta) {
         Flux<String> flux = chatClient.prompt()
                 .system(systemPrompt)
-                .user(userPrompt)
+                .user(buildUserPrompt(question, contextHits))
                 // Function Calling：把业务查询工具挂给模型，由模型按工具 description
                 // 自主决定是否调用（真 Function Calling）。Mock 版的规则模拟见 ToolIntentRouter。
                 .tools(lenderTools)
@@ -56,6 +59,20 @@ public class OpenAiCompatibleAnswerGeneratorStrategy implements AnswerGeneratorS
                 .timeout(STREAM_TIMEOUT);
         // 同步流式：token 依次回调，流结束才返回（QaService 依赖这个契约收尾 SSE）
         flux.doOnNext(onDelta::accept).blockLast();
+    }
+
+    /** 把结构化召回结果按【来源N】拼成用户提示词，问题放在末尾 */
+    private String buildUserPrompt(String question, List<SearchItemResponse> contextHits) {
+        StringBuilder prompt = new StringBuilder("【召回资料】\n");
+        for (int i = 0; i < contextHits.size(); i++) {
+            SearchItemResponse hit = contextHits.get(i);
+            prompt.append("【来源").append(i + 1).append("】")
+                  .append(hit.docTitle()).append(" / ")
+                  .append(hit.sectionPath() == null ? "（无小节）" : hit.sectionPath())
+                  .append("\n").append(hit.content()).append("\n\n");
+        }
+        prompt.append("【问题】").append(question);
+        return prompt.toString();
     }
 
     @Override

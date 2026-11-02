@@ -30,4 +30,7 @@ public interface ConversationMapper {
     /** 软删：仅把 ACTIVE 且属于该用户的会话置为 DELETED，返回受影响行数 */
     int softDelete(@Param("conversationId") String conversationId,
                    @Param("userId") String userId);
+
+    /** 刷新会话最近更新时间；返回 0 表示会话已不可见（如流式中被删除） */
+    int touch(@Param("conversationId") String conversationId);
 }
