@@ -45,6 +45,10 @@ rag:
   draft:
     # provider: mock=模板渲染(无key联调) / openai=模型生成(有key后切换)
     provider: ${RAG_DRAFT_PROVIDER:mock}
+  qa:
+    # 追问回放给模型的历史上限：最近 6 个完整轮次、总字符 2000（超限从最旧一轮整轮丢弃）
+    history-max-rounds: ${RAG_QA_HISTORY_MAX_ROUNDS:6}
+    history-max-chars: ${RAG_QA_HISTORY_MAX_CHARS:2000}
   search:
     # 向量通道余弦距离阈值：> 该值的召回丢弃；-1 表示关闭（默认）。是否开启由阶段3评估数据决定
     max-distance: -1

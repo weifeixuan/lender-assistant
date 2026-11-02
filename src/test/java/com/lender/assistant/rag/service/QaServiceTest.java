@@ -2,9 +2,11 @@ package com.lender.assistant.rag.service;
 
 import com.lender.assistant.common.exception.BizException;
 import com.lender.assistant.common.exception.ErrorCode;
+import com.lender.assistant.conversation.service.ConversationHistoryAssembler;
 import com.lender.assistant.conversation.service.ConversationLockRegistry;
 import com.lender.assistant.conversation.service.ConversationService;
 import com.lender.assistant.conversation.model.ConversationRound;
+import com.lender.assistant.rag.vo.ChatTurn;
 import com.lender.assistant.rag.vo.response.SearchItemResponse;
 import com.lender.assistant.rag.service.SearchService;
 import com.lender.assistant.rag.service.impl.QaServiceImpl;
@@ -52,6 +54,7 @@ class QaServiceTest {
     private SearchService searchService;
     private ConversationService conversationService;
     private ConversationLockRegistry lockRegistry;
+    private ConversationHistoryAssembler historyAssembler;
     /** 桩生成器：抓取收到的 system Prompt、问题与召回结果，并回流一个固定 token */
     private RecordingGenerator generator;
     private QaServiceImpl qaService;
@@ -61,13 +64,15 @@ class QaServiceTest {
     static class RecordingGenerator implements AnswerGeneratorStrategy {
         String system;
         String question;
+        List<ChatTurn> history;
         List<SearchItemResponse> contextHits;
         final List<String> deltas = new java.util.ArrayList<>();
 
         @Override
-        public void generate(String systemPrompt, String question, List<SearchItemResponse> contextHits,
-                             Consumer<String> onDelta) {
+        public void generate(String systemPrompt, List<ChatTurn> history, String question,
+                             List<SearchItemResponse> contextHits, Consumer<String> onDelta) {
             this.system = systemPrompt;
+            this.history = history;
             this.question = question;
             this.contextHits = contextHits;
             onDelta.accept("测试答案片段");
@@ -84,6 +89,7 @@ class QaServiceTest {
         searchService = mock(SearchService.class);
         conversationService = mock(ConversationService.class);
         lockRegistry = new ConversationLockRegistry();
+        historyAssembler = mock(ConversationHistoryAssembler.class);
         generator = new RecordingGenerator();
         // 真实韧性执行器（chaos=false 直通）+ mock JDBC 的留痕器
         com.lender.assistant.resilience.ResilientLlmExecutor executor =
@@ -91,9 +97,11 @@ class QaServiceTest {
                         new com.lender.assistant.resilience.LlmCallLogger(
                                 mock(com.lender.assistant.resilience.mapper.LlmCallLogMapper.class)),
                         3, 10, 2, false);
-        qaService = new QaServiceImpl(searchService, generator, executor, conversationService, lockRegistry);
+        qaService = new QaServiceImpl(searchService, generator, executor, conversationService,
+                lockRegistry, historyAssembler);
         round = new ConversationRound("conv-1", "round-1", "msg-user", "msg-assistant");
         when(conversationService.startNewRound(eq(USER_ID), any())).thenReturn(round);
+        when(historyAssembler.assemble(anyString(), anyString())).thenReturn(List.of());
     }
 
     private SearchItemResponse hit(long chunkId, String title, String section, String content) {
@@ -171,8 +179,8 @@ class QaServiceTest {
                 .thenReturn(List.of(hit(1, "某文档", "某节", "内容")));
         AnswerGeneratorStrategy broken = new AnswerGeneratorStrategy() {
             @Override
-            public void generate(String systemPrompt, String question, List<SearchItemResponse> contextHits,
-                                 Consumer<String> onDelta) {
+            public void generate(String systemPrompt, List<ChatTurn> history, String question,
+                                 List<SearchItemResponse> contextHits, Consumer<String> onDelta) {
                 throw new RuntimeException("模拟模型超时");
             }
 
@@ -185,7 +193,7 @@ class QaServiceTest {
                 new com.lender.assistant.resilience.ResilientLlmExecutor(
                         new com.lender.assistant.resilience.LlmCallLogger(
                                 mock(com.lender.assistant.resilience.mapper.LlmCallLogMapper.class)),
-                        3, 10, 2, false), conversationService, lockRegistry);
+                        3, 10, 2, false), conversationService, lockRegistry, historyAssembler);
 
         assertDoesNotThrow(() -> svc.answer("问题", 4, null, USER_ID),
                 "阶段4韧性改造的契约底线：模型故障不允许把异常抛出 answer() 之外");
@@ -299,7 +307,7 @@ class QaServiceTest {
                 .thenReturn(List.of(hit(1, "某文档", "某节", "内容")));
         AnswerGeneratorStrategy broken = new AnswerGeneratorStrategy() {
             @Override
-            public void generate(String systemPrompt, String question,
+            public void generate(String systemPrompt, List<ChatTurn> history, String question,
                                  List<SearchItemResponse> contextHits, Consumer<String> onDelta) {
                 onDelta.accept("已生成的一半");
                 throw new RuntimeException("模拟模型超时");
@@ -314,7 +322,7 @@ class QaServiceTest {
                 new com.lender.assistant.resilience.ResilientLlmExecutor(
                         new com.lender.assistant.resilience.LlmCallLogger(
                                 mock(com.lender.assistant.resilience.mapper.LlmCallLogMapper.class)),
-                        3, 10, 2, false), conversationService, lockRegistry);
+                        3, 10, 2, false), conversationService, lockRegistry, historyAssembler);
 
         svc.streamAnswer(new RecordingEmitter(), "问题", 4, USER_ID, round,
                 System.currentTimeMillis());
@@ -410,6 +418,36 @@ class QaServiceTest {
 
         verify(conversationService).startNewRound(eq(USER_ID), eq("首问"));
         assertFalse(lockRegistry.isBusy("conv-1"));
+    }
+
+    @Test
+    @DisplayName("追问：历史按序传给生成器，检索 query 拼接最近一条历史用户提问")
+    void passesHistoryAndPrependsLastUserQuestionToRetrieval() {
+        when(historyAssembler.assemble("conv-1", "round-1")).thenReturn(List.of(
+                new ChatTurn("USER", "首轮问题"), new ChatTurn("ASSISTANT", "首轮回答")));
+        when(searchService.hybridSearch("首轮问题\n追问", 4))
+                .thenReturn(List.of(hit(1, "某文档", "某节", "内容")));
+
+        qaService.streamAnswer(new RecordingEmitter(), "追问", 4, USER_ID, round,
+                System.currentTimeMillis());
+
+        assertEquals(List.of(new ChatTurn("USER", "首轮问题"), new ChatTurn("ASSISTANT", "首轮回答")),
+                generator.history);
+        assertEquals("追问", generator.question, "传给模型的是当前问题，历史单独成列");
+        verify(searchService).hybridSearch("首轮问题\n追问", 4);
+    }
+
+    @Test
+    @DisplayName("首问：无历史时不拼接检索 query，生成器收到空历史")
+    void firstQuestionSendsEmptyHistory() {
+        when(searchService.hybridSearch("首问", 4))
+                .thenReturn(List.of(hit(1, "某文档", "某节", "内容")));
+
+        qaService.streamAnswer(new RecordingEmitter(), "首问", 4, USER_ID, round,
+                System.currentTimeMillis());
+
+        verify(searchService).hybridSearch("首问", 4);
+        assertEquals(List.of(), generator.history);
     }
 
     @Test

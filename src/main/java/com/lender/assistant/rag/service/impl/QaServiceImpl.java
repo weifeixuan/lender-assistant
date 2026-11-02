@@ -6,11 +6,13 @@ import com.lender.assistant.common.exception.ErrorCode;
 import com.lender.assistant.common.util.ThreadPoolFactory;
 import com.lender.assistant.conversation.model.AssistantMessageCompletion;
 import com.lender.assistant.conversation.model.ConversationRound;
+import com.lender.assistant.conversation.service.ConversationHistoryAssembler;
 import com.lender.assistant.conversation.service.ConversationLockRegistry;
 import com.lender.assistant.conversation.service.ConversationService;
 import com.lender.assistant.rag.service.QaService;
 import com.lender.assistant.rag.service.SearchService;
 import com.lender.assistant.rag.strategy.AnswerGeneratorStrategy;
+import com.lender.assistant.rag.vo.ChatTurn;
 import com.lender.assistant.rag.vo.response.QaDoneResponse;
 import com.lender.assistant.rag.vo.response.QaMetaResponse;
 import com.lender.assistant.rag.vo.response.QaSourceResponse;
@@ -60,6 +62,7 @@ public class QaServiceImpl implements QaService {
     private final com.lender.assistant.resilience.ResilientLlmExecutor executor;
     private final ConversationService conversationService;
     private final ConversationLockRegistry lockRegistry;
+    private final ConversationHistoryAssembler historyAssembler;
 
     /**
      * SSE 工作线程池：检索+生成+send 必须脱离请求线程执行，否则 Spring 会把事件缓冲到
@@ -74,12 +77,14 @@ public class QaServiceImpl implements QaService {
     public QaServiceImpl(SearchService searchService, AnswerGeneratorStrategy generator,
                          com.lender.assistant.resilience.ResilientLlmExecutor executor,
                          ConversationService conversationService,
-                         ConversationLockRegistry lockRegistry) {
+                         ConversationLockRegistry lockRegistry,
+                         ConversationHistoryAssembler historyAssembler) {
         this.searchService = searchService;
         this.generator = generator;
         this.executor = executor;
         this.conversationService = conversationService;
         this.lockRegistry = lockRegistry;
+        this.historyAssembler = historyAssembler;
     }
 
     @Override
@@ -137,7 +142,9 @@ public class QaServiceImpl implements QaService {
             send(emitter, "meta", new QaMetaResponse(round.conversationId(), round.roundId(),
                     round.userMessageId(), round.assistantMessageId()));
 
-            List<SearchItemResponse> hits = searchService.hybridSearch(question, topK);
+            // 历史只在追问时非空；检索 query 带最近一条历史用户提问，让"那二套呢"这类指代能召回正确资料
+            List<ChatTurn> history = historyAssembler.assemble(round.conversationId(), round.roundId());
+            List<SearchItemResponse> hits = searchService.hybridSearch(retrievalQuery(history, question), topK);
             List<QaSourceResponse> sources = hits.isEmpty() ? List.of() : buildSources(hits);
             stream.sources(sources);
             // 来源列表先发；未召回时也发空数组，前端协议保持单一形态
@@ -156,7 +163,7 @@ public class QaServiceImpl implements QaService {
                 return;
             }
 
-            streamModelAnswer(emitter, question, hits, stream);
+            streamModelAnswer(emitter, question, history, hits, stream);
 
             long elapsedMillis = System.currentTimeMillis() - t0;
             stream.done();
@@ -200,11 +207,11 @@ public class QaServiceImpl implements QaService {
      * 韧性（阶段4）：经 ResilientLlmExecutor 走 qa 链路——留痕 + 熔断；
      * allowRetry=false：SSE token 已推给用户，重试会导致内容重放。
      */
-    private void streamModelAnswer(SseEmitter emitter, String question, List<SearchItemResponse> hits,
-                                   RoundStream stream) {
+    private void streamModelAnswer(SseEmitter emitter, String question, List<ChatTurn> history,
+                                   List<SearchItemResponse> hits, RoundStream stream) {
         executor.execute(LlmScene.QA, generator.name(),
                 () -> {
-                    generator.generate(systemPrompt(), question, hits, token -> {
+                    generator.generate(systemPrompt(), history, question, hits, token -> {
                         stream.append(token);
                         if (!send(emitter, "delta", token)) {
                             // 客户端已断开：按用户停止处理，不再尝试推送后续事件或 error
@@ -213,6 +220,12 @@ public class QaServiceImpl implements QaService {
                     });
                     return true;
                 }, false);
+    }
+
+    /** 检索 query：最近一条历史用户正文 + 换行 + 当前问题；无历史只用当前问题（不做 LLM 改写） */
+    private static String retrievalQuery(List<ChatTurn> history, String question) {
+        String lastUser = ConversationHistoryAssembler.lastUserContent(history);
+        return lastUser == null ? question : lastUser + "\n" + question;
     }
 
     /** 单轮流式状态：累积正文与来源快照，并保证终态只落库一次 */

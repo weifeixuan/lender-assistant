@@ -41,7 +41,7 @@ class MockToolAnswerTest {
 
     private String generateAndCollect(String question) {
         List<String> deltas = new ArrayList<>();
-        generator.generate("sys", question, contextHits(), deltas::add);
+        generator.generate("sys", List.of(), question, contextHits(), deltas::add);
         return String.join("", deltas);
     }
 

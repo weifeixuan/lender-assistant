@@ -1,5 +1,6 @@
 package com.lender.assistant.rag.strategy;
 
+import com.lender.assistant.rag.vo.ChatTurn;
 import com.lender.assistant.rag.vo.response.SearchItemResponse;
 
 import java.util.List;
@@ -26,12 +27,13 @@ public interface AnswerGeneratorStrategy {
 
     /**
      * @param systemPrompt 系统提示词（角色与三条铁律）
-     * @param question     用户问题
+     * @param history      有序历史（USER/ASSISTANT 正文），已按完整轮次过滤与裁剪
+     * @param question     当前问题
      * @param contextHits  本次召回结果（按召回顺序对应【来源1】、【来源2】…）
      * @param onDelta      每收到一段 token 文本回调一次
      */
-    void generate(String systemPrompt, String question, List<SearchItemResponse> contextHits,
-                  Consumer<String> onDelta);
+    void generate(String systemPrompt, List<ChatTurn> history, String question,
+                  List<SearchItemResponse> contextHits, Consumer<String> onDelta);
 
     /** 实现标识，用于前端展示与日志（如 "Mock" / 实际模型名） */
     String name();

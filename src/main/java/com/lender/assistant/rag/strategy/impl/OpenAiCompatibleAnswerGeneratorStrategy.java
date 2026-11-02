@@ -1,15 +1,20 @@
 package com.lender.assistant.rag.strategy.impl;
 
 import com.lender.assistant.rag.strategy.AnswerGeneratorStrategy;
+import com.lender.assistant.rag.vo.ChatTurn;
 import com.lender.assistant.rag.vo.response.SearchItemResponse;
 import com.lender.assistant.tools.LenderQueryTools;
 import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.ai.chat.messages.AssistantMessage;
+import org.springframework.ai.chat.messages.Message;
+import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 import reactor.core.publisher.Flux;
 
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Consumer;
 
@@ -46,11 +51,20 @@ public class OpenAiCompatibleAnswerGeneratorStrategy implements AnswerGeneratorS
     }
 
     @Override
-    public void generate(String systemPrompt, String question, List<SearchItemResponse> contextHits,
-                         Consumer<String> onDelta) {
+    public void generate(String systemPrompt, List<ChatTurn> history, String question,
+                         List<SearchItemResponse> contextHits, Consumer<String> onDelta) {
+        List<Message> messages = new ArrayList<>();
+        for (ChatTurn turn : history) {
+            messages.add("ASSISTANT".equals(turn.role())
+                    ? new AssistantMessage(turn.content())
+                    : new UserMessage(turn.content()));
+        }
+        // 当前问题（含召回资料）永远最后追加，历史只作为前序对话
+        messages.add(new UserMessage(buildUserPrompt(question, contextHits)));
+
         Flux<String> flux = chatClient.prompt()
                 .system(systemPrompt)
-                .user(buildUserPrompt(question, contextHits))
+                .messages(messages)
                 // Function Calling：把业务查询工具挂给模型，由模型按工具 description
                 // 自主决定是否调用（真 Function Calling）。Mock 版的规则模拟见 ToolIntentRouter。
                 .tools(lenderTools)
