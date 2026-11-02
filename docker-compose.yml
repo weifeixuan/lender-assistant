@@ -49,6 +49,9 @@ services:
       ZHIPU_API_KEY: ${ZHIPU_API_KEY:-fake-zhipu-api-key}
     ports:
       - "8080:8080"
+    volumes:
+      # 容器 WORKDIR=/app，日志写 /app/logs；挂回宿主 ./logs 后与本地 java -jar 落盘位置一致
+      - ./logs:/app/logs
     depends_on:
       lender-pg:
         condition: service_healthy

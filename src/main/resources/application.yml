@@ -64,5 +64,9 @@ server:
   port: 8080
 
 logging:
+  file:
+    # 日志落盘目录：本地为工作目录下 logs/，容器内为 /app/logs（compose 挂回宿主 ./logs）。
+    # 不拆 application-{local,prod}.yml：本地与生产的差异已由环境变量表达，此处路径天然同构
+    path: ${LOG_PATH:./logs}
   level:
     org.springframework.ai: INFO

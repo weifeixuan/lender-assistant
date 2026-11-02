@@ -1,6 +1,8 @@
 target/
 *.class
 *.log
+# 日志落盘目录（含 .log.gz 历史文件，*.log 通配覆盖不到）
+logs/
 .idea/
 *.iml
 .vscode/

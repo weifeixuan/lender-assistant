@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+    <!-- 落盘目录：取 logging.file.path（application.yml 默认 ./logs），需要时用 LOG_PATH 环境变量覆盖。
+         本地 IDE / java -jar 的 cwd 是项目根，容器 WORKDIR 是 /app；两边都落在各自工作目录的 logs/ 下，
+         docker-compose 再把容器 /app/logs 挂回宿主 ./logs，因此本地与生产不需要区分 profile。 -->
+    <springProperty scope="context" name="LOG_PATH" source="logging.file.path" defaultValue="./logs"/>
+
+    <!-- 统一格式：与 ControllerLogAspect 的「接口调用/返回/耗时」同一口径，grep 时间即可串起一次请求 -->
+    <property name="LOG_PATTERN"
+              value="%d{yyyy-MM-dd HH:mm:ss.SSS} %-5level [%thread] %logger{40} - %msg%n"/>
+
+    <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>${LOG_PATTERN}</pattern>
+            <charset>UTF-8</charset>
+        </encoder>
+    </appender>
+
+    <!-- 全量日志。TODO 暂不启用滚动（按大小/日期切割 + 压缩 + 过期清理）：
+         先在生产观察增长速率，再决定 maxFileSize / maxHistory / totalSizeCap；
+         当前单文件会持续增大，需要人工留意磁盘。 -->
+    <appender name="FILE" class="ch.qos.logback.core.FileAppender">
+        <file>${LOG_PATH}/lender-assistant.log</file>
+        <append>true</append>
+        <encoder>
+            <pattern>${LOG_PATTERN}</pattern>
+            <charset>UTF-8</charset>
+        </encoder>
+    </appender>
+
+    <!-- 只收 ERROR：线上排查故障时免于在混合日志里翻；主日志仍保留 ERROR 行，保证时间线完整 -->
+    <appender name="ERROR_FILE" class="ch.qos.logback.core.FileAppender">
+        <file>${LOG_PATH}/error.log</file>
+        <append>true</append>
+        <filter class="ch.qos.logback.classic.filter.LevelFilter">
+            <level>ERROR</level>
+            <onMatch>ACCEPT</onMatch>
+            <onMismatch>DENY</onMismatch>
+        </filter>
+        <encoder>
+            <pattern>${LOG_PATTERN}</pattern>
+            <charset>UTF-8</charset>
+        </encoder>
+    </appender>
+
+    <root level="INFO">
+        <appender-ref ref="CONSOLE"/>
+        <appender-ref ref="FILE"/>
+        <appender-ref ref="ERROR_FILE"/>
+    </root>
+</configuration>
