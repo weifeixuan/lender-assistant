@@ -1,0 +1,31 @@
+package com.lender.assistant.conversation.controller;
+
+import com.lender.assistant.common.web.UserIdInterceptor;
+import com.lender.assistant.conversation.service.ConversationService;
+import com.lender.assistant.conversation.vo.response.ConversationSummaryResponse;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RequestAttribute;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
+
+import java.util.List;
+
+/**
+ * 会话列表入口。userId 来自拦截器解析后的 request attribute，controller 不解析请求头。
+ */
+@RestController
+@RequestMapping("/api/conversations")
+public class ConversationController {
+
+    private final ConversationService conversationService;
+
+    public ConversationController(ConversationService conversationService) {
+        this.conversationService = conversationService;
+    }
+
+    @GetMapping
+    public List<ConversationSummaryResponse> list(
+            @RequestAttribute(UserIdInterceptor.USER_ID_ATTRIBUTE) String userId) {
+        return conversationService.listConversations(userId);
+    }
+}
