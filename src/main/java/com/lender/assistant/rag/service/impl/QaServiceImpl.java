@@ -20,6 +20,7 @@ import com.lender.assistant.rag.vo.response.SearchItemResponse;
 import jakarta.annotation.PreDestroy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
@@ -70,21 +71,33 @@ public class QaServiceImpl implements QaService {
      * 经 ThreadPoolFactory 装配：命名 daemon 线程 + 有界队列 + 明确拒绝策略（§8.1）；
      * 生命周期（应用关停时关闭）不交给工厂，留在本类 @PreDestroy。
      */
-    private final ThreadPoolExecutor streamExecutor = ThreadPoolFactory.create(
-            STREAM_POOL_SIZE, STREAM_POOL_SIZE, STREAM_QUEUE_CAPACITY,
-            STREAM_THREAD_KEEP_ALIVE_SECONDS, STREAM_THREAD_NAME_PREFIX);
+    private final ThreadPoolExecutor streamExecutor;
 
+    @Autowired
     public QaServiceImpl(SearchService searchService, AnswerGeneratorStrategy generator,
                          com.lender.assistant.resilience.ResilientLlmExecutor executor,
                          ConversationService conversationService,
                          ConversationLockRegistry lockRegistry,
                          ConversationHistoryAssembler historyAssembler) {
+        this(searchService, generator, executor, conversationService, lockRegistry, historyAssembler,
+                ThreadPoolFactory.create(STREAM_POOL_SIZE, STREAM_POOL_SIZE, STREAM_QUEUE_CAPACITY,
+                        STREAM_THREAD_KEEP_ALIVE_SECONDS, STREAM_THREAD_NAME_PREFIX));
+    }
+
+    /** 测试可注入受控线程池（例如已 shutdown 的池，用于验证拒绝路径） */
+    public QaServiceImpl(SearchService searchService, AnswerGeneratorStrategy generator,
+                         com.lender.assistant.resilience.ResilientLlmExecutor executor,
+                         ConversationService conversationService,
+                         ConversationLockRegistry lockRegistry,
+                         ConversationHistoryAssembler historyAssembler,
+                         ThreadPoolExecutor streamExecutor) {
         this.searchService = searchService;
         this.generator = generator;
         this.executor = executor;
         this.conversationService = conversationService;
         this.lockRegistry = lockRegistry;
         this.historyAssembler = historyAssembler;
+        this.streamExecutor = streamExecutor;
     }
 
     @Override
@@ -102,15 +115,28 @@ public class QaServiceImpl implements QaService {
         // 旧写法在请求线程内 send，Spring 的 ResponseBodyEmitter 会把数据先堆进
         // earlySendAttempts（此时 handler 还未挂上），直到控制器返回才一次性写出——
         // 结果是 TTFB≈TOTAL 的"假流式"，且突发写入后立刻断连会让 Chrome 记 net::ERR_ABORTED。
-        streamExecutor.execute(() -> {
-            try {
-                streamAnswer(emitter, question, topK, userId, round, t0);
-            } finally {
-                if (conversationId != null) {
-                    lockRegistry.release(conversationId);
+        try {
+            streamExecutor.execute(() -> {
+                try {
+                    streamAnswer(emitter, question, topK, userId, round, t0);
+                } finally {
+                    if (conversationId != null) {
+                        lockRegistry.release(conversationId);
+                    }
                 }
+            });
+        } catch (RuntimeException e) {
+            // 线程池饱和/已关闭：不留半开 SSE，落一条 FAILED 兜底后按 500 普通 JSON 返回
+            log.error("SSE 任务提交失败，已落 FAILED 兜底: conversationId={}", round.conversationId(), e);
+            if (conversationId != null) {
+                lockRegistry.release(conversationId);
             }
-        });
+            conversationService.completeRound(new AssistantMessageCompletion(
+                    round.conversationId(), round.roundId(), round.assistantMessageId(),
+                    "", List.of(), generator.name(), 0, "FAILED",
+                    "流式任务提交失败：" + e.getMessage()));
+            throw new BizException(ErrorCode.INTERNAL_ERROR, "服务繁忙，请稍后重试");
+        }
         return emitter;
     }
 
@@ -131,16 +157,16 @@ public class QaServiceImpl implements QaService {
     public void streamAnswer(SseEmitter emitter, String question, int topK, String userId,
                              ConversationRound round, long t0) {
         RoundStream stream = new RoundStream(round, t0);
-        // 超时 / 连接异常 / 提前完成都按"用户停止或断连"落 STOPPED；
+        // 超时 / 连接异常 / 提前完成都置位"客户端已断开"并落 STOPPED；
         // 正常路径先落 DONE 再 complete，因此这些回调不会覆盖终态。
-        emitter.onTimeout(stream::stopped);
-        emitter.onError(e -> stream.stopped());
-        emitter.onCompletion(stream::stopped);
+        emitter.onTimeout(stream::timeout);
+        emitter.onError(e -> stream.disconnected());
+        emitter.onCompletion(stream::disconnected);
 
         try {
             // meta 必须首事件：前端靠它把本轮增量回答挂到正确的会话/轮次上
             send(emitter, "meta", new QaMetaResponse(round.conversationId(), round.roundId(),
-                    round.userMessageId(), round.assistantMessageId()));
+                    round.userMessageId(), round.assistantMessageId()), stream);
 
             // 历史只在追问时非空；检索 query 带最近一条历史用户提问，让"那二套呢"这类指代能召回正确资料
             List<ChatTurn> history = historyAssembler.assemble(round.conversationId(), round.roundId());
@@ -148,16 +174,14 @@ public class QaServiceImpl implements QaService {
             List<QaSourceResponse> sources = hits.isEmpty() ? List.of() : buildSources(hits);
             stream.sources(sources);
             // 来源列表先发；未召回时也发空数组，前端协议保持单一形态
-            send(emitter, "sources", sources);
+            send(emitter, "sources", sources, stream);
 
             if (hits.isEmpty()) {
                 String guidance = "资料库中没有检索到相关内容，请先在上方上传并入库文档。";
                 stream.append(guidance);
-                if (!send(emitter, "delta", guidance)) {
-                    stream.stopped();
-                }
+                send(emitter, "delta", guidance, stream);
                 send(emitter, "done",
-                        new QaDoneResponse(generator.name(), System.currentTimeMillis() - t0, 0));
+                        new QaDoneResponse(generator.name(), System.currentTimeMillis() - t0, 0), stream);
                 stream.done();
                 emitter.complete();
                 return;
@@ -169,7 +193,7 @@ public class QaServiceImpl implements QaService {
             stream.done();
 
             QaDoneResponse done = new QaDoneResponse(generator.name(), elapsedMillis, sources.size());
-            send(emitter, "done", done);
+            send(emitter, "done", done, stream);
             emitter.complete();
         } catch (io.github.resilience4j.circuitbreaker.CallNotPermittedException e) {
             // 熔断打开：连续失败触发保护，快速失败。降级而非崩溃（手册验收线）——
@@ -177,14 +201,14 @@ public class QaServiceImpl implements QaService {
             // 记 WARN 不记 ERROR：这是熔断器的正常降级动作，但需有人从日志看到"模型在连续失败"
             log.warn("问答链路熔断打开，已降级为可读提示: {}", e.getMessage());
             send(emitter, "error", "模型服务熔断中（连续失败已触发保护），已转人工流程兜底；"
-                    + "上方召回来源仍可查看。模型恢复前请使用检索测试区块。");
+                    + "上方召回来源仍可查看。模型恢复前请使用检索测试区块。", stream);
             stream.failed("模型服务熔断中");
             emitter.completeWithError(e);
         } catch (Exception e) {
             // 模型超时/网络异常/DB 异常统一走 error 事件——前端能拿到可读信息而非静默断流。
             // 必须带堆栈落 ERROR：SSE 已断流，这是排查链路上唯一的完整证据
             log.error("问答链路故障，已推送 error 事件并断流: question={}", question, e);
-            send(emitter, "error", "问答失败：" + e.getMessage());
+            send(emitter, "error", "问答失败：" + e.getMessage(), stream);
             stream.failed("问答失败：" + e.getMessage());
             emitter.completeWithError(e);
         }
@@ -212,11 +236,12 @@ public class QaServiceImpl implements QaService {
         executor.execute(LlmScene.QA, generator.name(),
                 () -> {
                     generator.generate(systemPrompt(), history, question, hits, token -> {
-                        stream.append(token);
-                        if (!send(emitter, "delta", token)) {
-                            // 客户端已断开：按用户停止处理，不再尝试推送后续事件或 error
-                            stream.stopped();
+                        // 已断开（超时/客户端取消）时不再累积，也不再尝试推送
+                        if (stream.isDisconnected()) {
+                            return;
                         }
+                        stream.append(token);
+                        send(emitter, "delta", token, stream);
                     });
                     return true;
                 }, false);
@@ -235,6 +260,8 @@ public class QaServiceImpl implements QaService {
         private final long startedAt;
         private final StringBuilder content = new StringBuilder();
         private final AtomicBoolean finished = new AtomicBoolean(false);
+        /** 客户端断开标志：置位后不再累积正文、不再推送任何事件 */
+        private final AtomicBoolean disconnected = new AtomicBoolean(false);
         private List<QaSourceResponse> sources = List.of();
 
         private RoundStream(ConversationRound round, long startedAt) {
@@ -254,6 +281,21 @@ public class QaServiceImpl implements QaService {
 
         void done() {
             persist("DONE", null);
+        }
+
+        boolean isDisconnected() {
+            return disconnected.get();
+        }
+
+        /** 生命周期回调（断开/超时）与发送失败统一走这里：置位断开并落 STOPPED */
+        void disconnected() {
+            disconnected.set(true);
+            stopped();
+        }
+
+        void timeout() {
+            disconnected.set(true);
+            stopped();
         }
 
         void failed(String error) {
@@ -291,15 +333,19 @@ public class QaServiceImpl implements QaService {
                 """;
     }
 
-    /** @return false 表示客户端已断开（调用方据此把本轮标记为 STOPPED） */
-    private boolean send(SseEmitter emitter, String event, Object data) {
+    /** @return false 表示客户端已断开或已置位断开标志（调用方无需重复处理） */
+    private boolean send(SseEmitter emitter, String event, Object data, RoundStream stream) {
+        if (stream.isDisconnected()) {
+            return false;
+        }
         try {
             emitter.send(SseEmitter.event().name(event).data(data));
             return true;
         } catch (Exception e) {
-            // 客户端断开（用户关页面/取消）时 send 抛异常，静默结束即可；
-            // 记 DEBUG 留痕但不打扰——正常取消不该刷 ERROR 日志
+            // 客户端断开（用户关页面/取消）时 send 抛异常：置位断开、按 STOPPED 收尾，
+            // 后续 token 不再推送；DEBUG 留痕即可，正常取消不该刷 ERROR 日志
             log.debug("SSE 事件发送失败，客户端可能已断开: event={}", event);
+            stream.disconnected();
             return false;
         }
     }

@@ -20,6 +20,7 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
@@ -55,6 +56,7 @@ class QaServiceTest {
     private ConversationService conversationService;
     private ConversationLockRegistry lockRegistry;
     private ConversationHistoryAssembler historyAssembler;
+    private com.lender.assistant.resilience.ResilientLlmExecutor resilientExecutor;
     /** 桩生成器：抓取收到的 system Prompt、问题与召回结果，并回流一个固定 token */
     private RecordingGenerator generator;
     private QaServiceImpl qaService;
@@ -92,12 +94,11 @@ class QaServiceTest {
         historyAssembler = mock(ConversationHistoryAssembler.class);
         generator = new RecordingGenerator();
         // 真实韧性执行器（chaos=false 直通）+ mock JDBC 的留痕器
-        com.lender.assistant.resilience.ResilientLlmExecutor executor =
-                new com.lender.assistant.resilience.ResilientLlmExecutor(
-                        new com.lender.assistant.resilience.LlmCallLogger(
-                                mock(com.lender.assistant.resilience.mapper.LlmCallLogMapper.class)),
-                        3, 10, 2, false);
-        qaService = new QaServiceImpl(searchService, generator, executor, conversationService,
+        resilientExecutor = new com.lender.assistant.resilience.ResilientLlmExecutor(
+                new com.lender.assistant.resilience.LlmCallLogger(
+                        mock(com.lender.assistant.resilience.mapper.LlmCallLogMapper.class)),
+                3, 10, 2, false);
+        qaService = new QaServiceImpl(searchService, generator, resilientExecutor, conversationService,
                 lockRegistry, historyAssembler);
         round = new ConversationRound("conv-1", "round-1", "msg-user", "msg-assistant");
         when(conversationService.startNewRound(eq(USER_ID), any())).thenReturn(round);
@@ -229,11 +230,29 @@ class QaServiceTest {
         }
     }
 
-    /** 模拟客户端断开：任何 send 都抛 IOException */
-    static class DisconnectedEmitter extends SseEmitter {
+    /** 模拟客户端在生成中途断开：前 sendsAllowed 次发送成功，之后抛出 IOException */
+    static class FailAfterEmitter extends SseEmitter {
+        private int sendsAllowed;
+
+        FailAfterEmitter(int sendsAllowed) {
+            this.sendsAllowed = sendsAllowed;
+        }
+
         @Override
         public synchronized void send(SseEventBuilder builder) throws IOException {
-            throw new IOException("client gone");
+            if (sendsAllowed-- <= 0) {
+                throw new IOException("client gone");
+            }
+        }
+    }
+
+    /** 捕获超时回调，测试里手动触发（Spring 容器的超时由真实连接驱动） */
+    static class CallbackEmitter extends SseEmitter {
+        Runnable timeoutAction;
+
+        @Override
+        public void onTimeout(Runnable callback) {
+            this.timeoutAction = callback;
         }
     }
 
@@ -340,7 +359,7 @@ class QaServiceTest {
         when(searchService.hybridSearch(any(), anyInt()))
                 .thenReturn(List.of(hit(1, "某文档", "某节", "内容")));
 
-        qaService.streamAnswer(new DisconnectedEmitter(), "问题", 4, USER_ID, round,
+        qaService.streamAnswer(new FailAfterEmitter(2), "问题", 4, USER_ID, round,
                 System.currentTimeMillis());
 
         verify(conversationService).completeRound(argThat(completion ->
@@ -458,5 +477,73 @@ class QaServiceTest {
 
         assertDoesNotThrow(() -> qaService.answer("A", 4, "conv-a", USER_ID));
         assertDoesNotThrow(() -> qaService.answer("B", 4, "conv-b", USER_ID));
+    }
+
+    @Test
+    @DisplayName("线程池拒绝：返回 500 业务异常，并落一条空正文的 FAILED 助手消息")
+    void rejectedSubmissionPersistsFailedMessage() {
+        QaServiceImpl svc = serviceWithRejectingExecutor();
+
+        BizException exception = assertThrows(BizException.class,
+                () -> svc.answer("问题", 4, null, USER_ID));
+
+        assertEquals(ErrorCode.INTERNAL_ERROR, exception.errorCode());
+        verify(conversationService).completeRound(argThat(completion ->
+                completion.roundId().equals("round-1")
+                        && completion.content().isEmpty()
+                        && completion.status().equals("FAILED")
+                        && completion.error() != null));
+    }
+
+    @Test
+    @DisplayName("追问提交失败：释放会话锁，同一会话可立即再次提问")
+    void rejectedFollowUpReleasesLock() {
+        when(conversationService.startFollowUpRound(eq("conv-1"), eq(USER_ID), any())).thenReturn(round);
+        QaServiceImpl svc = serviceWithRejectingExecutor();
+
+        assertThrows(BizException.class, () -> svc.answer("追问", 4, "conv-1", USER_ID));
+
+        assertFalse(lockRegistry.isBusy("conv-1"));
+        verify(conversationService).completeRound(argThat(completion ->
+                completion.status().equals("FAILED")));
+    }
+
+    @Test
+    @DisplayName("SSE 超时按客户端断开处理：落 STOPPED 并停止后续推送")
+    void timeoutPersistsStoppedAndStopsPushing() {
+        when(searchService.hybridSearch(any(), anyInt()))
+                .thenReturn(List.of(hit(1, "某文档", "某节", "内容")));
+        CallbackEmitter emitter = new CallbackEmitter();
+        AnswerGeneratorStrategy slow = new AnswerGeneratorStrategy() {
+            @Override
+            public void generate(String systemPrompt, List<ChatTurn> history, String question,
+                                 List<SearchItemResponse> contextHits, Consumer<String> onDelta) {
+                onDelta.accept("前半段");
+                emitter.timeoutAction.run();
+                onDelta.accept("后半段不应写入");
+            }
+
+            @Override
+            public String name() {
+                return "Slow";
+            }
+        };
+        QaServiceImpl svc = new QaServiceImpl(searchService, slow, resilientExecutor,
+                conversationService, lockRegistry, historyAssembler);
+
+        svc.streamAnswer(emitter, "问题", 4, USER_ID, round, System.currentTimeMillis());
+
+        verify(conversationService).completeRound(argThat(completion ->
+                completion.status().equals("STOPPED")
+                        && completion.content().equals("前半段")));
+    }
+
+    /** 已 shutdown 的线程池：execute 必抛 RejectedExecutionException */
+    private QaServiceImpl serviceWithRejectingExecutor() {
+        ThreadPoolExecutor rejecting = new ThreadPoolExecutor(1, 1, 0, TimeUnit.MILLISECONDS,
+                new java.util.concurrent.ArrayBlockingQueue<>(1));
+        rejecting.shutdown();
+        return new QaServiceImpl(searchService, generator, resilientExecutor,
+                conversationService, lockRegistry, historyAssembler, rejecting);
     }
 }
