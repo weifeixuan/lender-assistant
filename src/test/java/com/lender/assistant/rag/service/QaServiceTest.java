@@ -14,6 +14,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
@@ -220,6 +221,14 @@ class QaServiceTest {
         }
     }
 
+    /** 模拟客户端断开：任何 send 都抛 IOException */
+    static class DisconnectedEmitter extends SseEmitter {
+        @Override
+        public synchronized void send(SseEventBuilder builder) throws IOException {
+            throw new IOException("client gone");
+        }
+    }
+
     @Test
     @DisplayName("meta 是流的第一个事件，之后才推送 sources/delta/done")
     void metaIsFirstEvent() {
@@ -245,9 +254,15 @@ class QaServiceTest {
         qaService.streamAnswer(new RecordingEmitter(), "问题", 4, USER_ID, round,
                 System.currentTimeMillis());
 
-        verify(conversationService).completeRound(eq("conv-1"), eq("round-1"), eq("msg-assistant"),
-                eq("测试答案片段"), argThat(sources -> sources.size() == 1),
-                eq("RecordingMock"), anyLong());
+        verify(conversationService).completeRound(argThat(completion ->
+                completion.conversationId().equals("conv-1")
+                        && completion.roundId().equals("round-1")
+                        && completion.messageId().equals("msg-assistant")
+                        && completion.content().equals("测试答案片段")
+                        && completion.sources().size() == 1
+                        && completion.provider().equals("RecordingMock")
+                        && completion.status().equals("DONE")
+                        && completion.error() == null));
     }
 
     @Test
@@ -258,10 +273,72 @@ class QaServiceTest {
         qaService.streamAnswer(new RecordingEmitter(), "问题", 4, USER_ID, round,
                 System.currentTimeMillis());
 
-        verify(conversationService).completeRound(eq("conv-1"), eq("round-1"), eq("msg-assistant"),
-                argThat(content -> content.contains("没有检索到相关内容")),
-                argThat(List::isEmpty), eq("RecordingMock"), anyLong());
+        verify(conversationService).completeRound(argThat(completion ->
+                completion.content().contains("没有检索到相关内容")
+                        && completion.sources().isEmpty()
+                        && completion.status().equals("DONE")));
         assertNull(generator.system, "无召回不应调用生成器");
+    }
+
+    @Test
+    @DisplayName("未召回时 sources 事件是空数组，delta 与 done 照常推送")
+    void emptyHitsStillSendSourcesDeltaAndDone() {
+        when(searchService.hybridSearch(any(), anyInt())).thenReturn(List.of());
+        RecordingEmitter emitter = new RecordingEmitter();
+
+        qaService.streamAnswer(emitter, "问题", 4, USER_ID, round, System.currentTimeMillis());
+
+        List<String> names = emitter.eventNames();
+        assertEquals(List.of("event:meta", "event:sources", "event:delta", "event:done"), names);
+    }
+
+    @Test
+    @DisplayName("模型异常：保留已生成正文，按 FAILED 落库且 error 非空")
+    void persistsFailedRoundOnModelException() {
+        when(searchService.hybridSearch(any(), anyInt()))
+                .thenReturn(List.of(hit(1, "某文档", "某节", "内容")));
+        AnswerGeneratorStrategy broken = new AnswerGeneratorStrategy() {
+            @Override
+            public void generate(String systemPrompt, String question,
+                                 List<SearchItemResponse> contextHits, Consumer<String> onDelta) {
+                onDelta.accept("已生成的一半");
+                throw new RuntimeException("模拟模型超时");
+            }
+
+            @Override
+            public String name() {
+                return "Broken";
+            }
+        };
+        QaServiceImpl svc = new QaServiceImpl(searchService, broken,
+                new com.lender.assistant.resilience.ResilientLlmExecutor(
+                        new com.lender.assistant.resilience.LlmCallLogger(
+                                mock(com.lender.assistant.resilience.mapper.LlmCallLogMapper.class)),
+                        3, 10, 2, false), conversationService, lockRegistry);
+
+        svc.streamAnswer(new RecordingEmitter(), "问题", 4, USER_ID, round,
+                System.currentTimeMillis());
+
+        verify(conversationService).completeRound(argThat(completion ->
+                completion.status().equals("FAILED")
+                        && completion.content().equals("已生成的一半")
+                        && completion.error() != null
+                        && completion.sources().size() == 1));
+    }
+
+    @Test
+    @DisplayName("客户端断开：保留已生成正文，按 STOPPED 落库且不推 error")
+    void persistsStoppedRoundWhenClientDisconnects() {
+        when(searchService.hybridSearch(any(), anyInt()))
+                .thenReturn(List.of(hit(1, "某文档", "某节", "内容")));
+
+        qaService.streamAnswer(new DisconnectedEmitter(), "问题", 4, USER_ID, round,
+                System.currentTimeMillis());
+
+        verify(conversationService).completeRound(argThat(completion ->
+                completion.status().equals("STOPPED")
+                        && completion.content().equals("测试答案片段")
+                        && completion.error() == null));
     }
 
     @Test

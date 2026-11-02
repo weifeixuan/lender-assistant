@@ -7,6 +7,7 @@ import com.lender.assistant.common.exception.BizException;
 import com.lender.assistant.common.exception.ErrorCode;
 import com.lender.assistant.conversation.mapper.ConversationMapper;
 import com.lender.assistant.conversation.mapper.MessageMapper;
+import com.lender.assistant.conversation.model.AssistantMessageCompletion;
 import com.lender.assistant.conversation.model.ConversationRound;
 import com.lender.assistant.conversation.model.ConversationRow;
 import com.lender.assistant.conversation.model.MessageInsert;
@@ -110,13 +111,17 @@ public class ConversationServiceImpl implements ConversationService {
 
     @Override
     @Transactional
-    public void completeRound(String conversationId, String roundId, String assistantMessageId,
-                              String content, List<QaSourceResponse> sources,
-                              String provider, long elapsedMillis) {
-        int elapsedMs = (int) Math.min(Integer.MAX_VALUE, elapsedMillis);
-        messageMapper.insert(new MessageInsert(conversationId, roundId, assistantMessageId,
-                "ASSISTANT", content, "DONE", writeSources(sources), provider, elapsedMs, null));
-        conversationMapper.touch(conversationId);
+    public void completeRound(AssistantMessageCompletion completion) {
+        // 流式期间会话可能已被删除：结束后不再落助手消息，也不刷新 update_time
+        if (conversationMapper.countActiveByConversationId(completion.conversationId()) == 0) {
+            return;
+        }
+        int elapsedMs = (int) Math.min(Integer.MAX_VALUE, completion.elapsedMillis());
+        messageMapper.insert(new MessageInsert(completion.conversationId(), completion.roundId(),
+                completion.messageId(), "ASSISTANT", completion.content(), completion.status(),
+                writeSources(completion.sources()), completion.provider(), elapsedMs,
+                completion.error()));
+        conversationMapper.touch(completion.conversationId());
     }
 
     /** 标题取去首尾空白后的前 20 个 Unicode code point，避免截断代理对（emoji） */

@@ -33,4 +33,7 @@ public interface ConversationMapper {
 
     /** 刷新会话最近更新时间；返回 0 表示会话已不可见（如流式中被删除） */
     int touch(@Param("conversationId") String conversationId);
+
+    /** 会话是否仍为 ACTIVE（流式结束落库前确认未被删除） */
+    int countActiveByConversationId(@Param("conversationId") String conversationId);
 }

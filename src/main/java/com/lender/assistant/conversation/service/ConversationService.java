@@ -1,10 +1,10 @@
 package com.lender.assistant.conversation.service;
 
+import com.lender.assistant.conversation.model.AssistantMessageCompletion;
 import com.lender.assistant.conversation.model.ConversationRound;
 import com.lender.assistant.conversation.vo.response.ConversationMessagesResponse;
 import com.lender.assistant.conversation.vo.response.ConversationSummaryResponse;
 import com.lender.assistant.conversation.vo.response.DeleteConversationResponse;
-import com.lender.assistant.rag.vo.response.QaSourceResponse;
 
 import java.util.List;
 
@@ -28,8 +28,9 @@ public interface ConversationService {
     /** 既有会话追问：归属校验后追加用户消息并刷新会话更新时间；不存在/已删除/非本人抛 404 */
     ConversationRound startFollowUpRound(String conversationId, String userId, String question);
 
-    /** 正常结束落助手消息（DONE）并刷新会话更新时间 */
-    void completeRound(String conversationId, String roundId, String assistantMessageId,
-                       String content, List<QaSourceResponse> sources,
-                       String provider, long elapsedMillis);
+    /**
+     * 助手消息终态落库（DONE / FAILED / STOPPED）。
+     * 会话在流式过程中被删除时跳过落库且不刷新 update_time。
+     */
+    void completeRound(AssistantMessageCompletion completion);
 }

@@ -4,6 +4,7 @@ import com.lender.assistant.common.constant.LlmScene;
 import com.lender.assistant.common.exception.BizException;
 import com.lender.assistant.common.exception.ErrorCode;
 import com.lender.assistant.common.util.ThreadPoolFactory;
+import com.lender.assistant.conversation.model.AssistantMessageCompletion;
 import com.lender.assistant.conversation.model.ConversationRound;
 import com.lender.assistant.conversation.service.ConversationLockRegistry;
 import com.lender.assistant.conversation.service.ConversationService;
@@ -23,6 +24,7 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * 问答编排（阶段 2 核心）：检索 → 拼 Prompt → 模型生成 → SSE 流式推给前端。
@@ -123,28 +125,41 @@ public class QaServiceImpl implements QaService {
     /** SSE 推送主流程，运行在 streamExecutor 工作线程上；每个 send 都是即时 flush 的真流式。 */
     public void streamAnswer(SseEmitter emitter, String question, int topK, String userId,
                              ConversationRound round, long t0) {
+        RoundStream stream = new RoundStream(round, t0);
+        // 超时 / 连接异常 / 提前完成都按"用户停止或断连"落 STOPPED；
+        // 正常路径先落 DONE 再 complete，因此这些回调不会覆盖终态。
+        emitter.onTimeout(stream::stopped);
+        emitter.onError(e -> stream.stopped());
+        emitter.onCompletion(stream::stopped);
+
         try {
             // meta 必须首事件：前端靠它把本轮增量回答挂到正确的会话/轮次上
             send(emitter, "meta", new QaMetaResponse(round.conversationId(), round.roundId(),
                     round.userMessageId(), round.assistantMessageId()));
 
             List<SearchItemResponse> hits = searchService.hybridSearch(question, topK);
+            List<QaSourceResponse> sources = hits.isEmpty() ? List.of() : buildSources(hits);
+            stream.sources(sources);
+            // 来源列表先发；未召回时也发空数组，前端协议保持单一形态
+            send(emitter, "sources", sources);
+
             if (hits.isEmpty()) {
                 String guidance = "资料库中没有检索到相关内容，请先在上方上传并入库文档。";
-                send(emitter, "delta", guidance);
-                completeRound(round, guidance, List.of(), System.currentTimeMillis() - t0);
+                stream.append(guidance);
+                if (!send(emitter, "delta", guidance)) {
+                    stream.stopped();
+                }
+                send(emitter, "done",
+                        new QaDoneResponse(generator.name(), System.currentTimeMillis() - t0, 0));
+                stream.done();
                 emitter.complete();
                 return;
             }
 
-            // 先推来源列表，前端立刻能展示"引用了哪些资料"
-            List<QaSourceResponse> sources = buildSources(hits);
-            send(emitter, "sources", sources);
-
-            String content = streamModelAnswer(emitter, question, hits);
+            streamModelAnswer(emitter, question, hits, stream);
 
             long elapsedMillis = System.currentTimeMillis() - t0;
-            completeRound(round, content, sources, elapsedMillis);
+            stream.done();
 
             QaDoneResponse done = new QaDoneResponse(generator.name(), elapsedMillis, sources.size());
             send(emitter, "done", done);
@@ -156,12 +171,14 @@ public class QaServiceImpl implements QaService {
             log.warn("问答链路熔断打开，已降级为可读提示: {}", e.getMessage());
             send(emitter, "error", "模型服务熔断中（连续失败已触发保护），已转人工流程兜底；"
                     + "上方召回来源仍可查看。模型恢复前请使用检索测试区块。");
+            stream.failed("模型服务熔断中");
             emitter.completeWithError(e);
         } catch (Exception e) {
             // 模型超时/网络异常/DB 异常统一走 error 事件——前端能拿到可读信息而非静默断流。
             // 必须带堆栈落 ERROR：SSE 已断流，这是排查链路上唯一的完整证据
             log.error("问答链路故障，已推送 error 事件并断流: question={}", question, e);
             send(emitter, "error", "问答失败：" + e.getMessage());
+            stream.failed("问答失败：" + e.getMessage());
             emitter.completeWithError(e);
         }
     }
@@ -183,25 +200,72 @@ public class QaServiceImpl implements QaService {
      * 韧性（阶段4）：经 ResilientLlmExecutor 走 qa 链路——留痕 + 熔断；
      * allowRetry=false：SSE token 已推给用户，重试会导致内容重放。
      */
-    private String streamModelAnswer(SseEmitter emitter, String question, List<SearchItemResponse> hits) {
-        StringBuilder answer = new StringBuilder();
+    private void streamModelAnswer(SseEmitter emitter, String question, List<SearchItemResponse> hits,
+                                   RoundStream stream) {
         executor.execute(LlmScene.QA, generator.name(),
                 () -> {
-                    generator.generate(systemPrompt(), question, hits,
-                            token -> {
-                                answer.append(token);
-                                send(emitter, "delta", token);
-                            });
+                    generator.generate(systemPrompt(), question, hits, token -> {
+                        stream.append(token);
+                        if (!send(emitter, "delta", token)) {
+                            // 客户端已断开：按用户停止处理，不再尝试推送后续事件或 error
+                            stream.stopped();
+                        }
+                    });
                     return true;
                 }, false);
-        return answer.toString();
     }
 
-    /** 正常终态落库：助手消息 DONE + 来源快照 + 会话更新时间刷新 */
-    private void completeRound(ConversationRound round, String content,
-                               List<QaSourceResponse> sources, long elapsedMillis) {
-        conversationService.completeRound(round.conversationId(), round.roundId(),
-                round.assistantMessageId(), content, sources, generator.name(), elapsedMillis);
+    /** 单轮流式状态：累积正文与来源快照，并保证终态只落库一次 */
+    private final class RoundStream {
+
+        private final ConversationRound round;
+        private final long startedAt;
+        private final StringBuilder content = new StringBuilder();
+        private final AtomicBoolean finished = new AtomicBoolean(false);
+        private List<QaSourceResponse> sources = List.of();
+
+        private RoundStream(ConversationRound round, long startedAt) {
+            this.round = round;
+            this.startedAt = startedAt;
+        }
+
+        synchronized void append(String token) {
+            if (!finished.get()) {
+                content.append(token);
+            }
+        }
+
+        synchronized void sources(List<QaSourceResponse> value) {
+            this.sources = value;
+        }
+
+        void done() {
+            persist("DONE", null);
+        }
+
+        void failed(String error) {
+            persist("FAILED", error);
+        }
+
+        void stopped() {
+            persist("STOPPED", null);
+        }
+
+        private void persist(String status, String error) {
+            if (!finished.compareAndSet(false, true)) {
+                return;
+            }
+            String text;
+            List<QaSourceResponse> snapshot;
+            synchronized (this) {
+                text = content.toString();
+                snapshot = sources;
+            }
+            conversationService.completeRound(new AssistantMessageCompletion(
+                    round.conversationId(), round.roundId(), round.assistantMessageId(),
+                    text, snapshot, generator.name(), System.currentTimeMillis() - startedAt,
+                    status, error));
+        }
     }
 
     private String systemPrompt() {
@@ -214,13 +278,16 @@ public class QaServiceImpl implements QaService {
                 """;
     }
 
-    private void send(SseEmitter emitter, String event, Object data) {
+    /** @return false 表示客户端已断开（调用方据此把本轮标记为 STOPPED） */
+    private boolean send(SseEmitter emitter, String event, Object data) {
         try {
             emitter.send(SseEmitter.event().name(event).data(data));
+            return true;
         } catch (Exception e) {
             // 客户端断开（用户关页面/取消）时 send 抛异常，静默结束即可；
             // 记 DEBUG 留痕但不打扰——正常取消不该刷 ERROR 日志
             log.debug("SSE 事件发送失败，客户端可能已断开: event={}", event);
+            return false;
         }
     }
 

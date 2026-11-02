@@ -5,6 +5,7 @@ import com.lender.assistant.common.exception.BizException;
 import com.lender.assistant.common.exception.ErrorCode;
 import com.lender.assistant.conversation.mapper.ConversationMapper;
 import com.lender.assistant.conversation.mapper.MessageMapper;
+import com.lender.assistant.conversation.model.AssistantMessageCompletion;
 import com.lender.assistant.conversation.model.ConversationRow;
 import com.lender.assistant.conversation.model.MessageRow;
 import com.lender.assistant.conversation.model.ConversationRound;
@@ -182,11 +183,12 @@ class ConversationServiceTest {
     @Test
     @DisplayName("助手正常结束落库 DONE，并刷新会话更新时间")
     void completesRound() {
+        when(conversationMapper.countActiveByConversationId(CONVERSATION_ID)).thenReturn(1);
         when(messageMapper.insert(any())).thenReturn(1);
         when(conversationMapper.touch(CONVERSATION_ID)).thenReturn(1);
 
-        service.completeRound(CONVERSATION_ID, "round-1", "msg-assistant",
-                "回答正文", List.of(source()), "Mock", 1234);
+        service.completeRound(new AssistantMessageCompletion(CONVERSATION_ID, "round-1",
+                "msg-assistant", "回答正文", List.of(source()), "Mock", 1234, "DONE", null));
 
         ArgumentCaptor<com.lender.assistant.conversation.model.MessageInsert> insert =
                 ArgumentCaptor.forClass(com.lender.assistant.conversation.model.MessageInsert.class);
@@ -201,14 +203,59 @@ class ConversationServiceTest {
     @Test
     @DisplayName("助手未召回时 sources 落库为空数组")
     void completesRoundWithEmptySources() {
+        when(conversationMapper.countActiveByConversationId(CONVERSATION_ID)).thenReturn(1);
         when(messageMapper.insert(any())).thenReturn(1);
         when(conversationMapper.touch(CONVERSATION_ID)).thenReturn(1);
 
-        service.completeRound(CONVERSATION_ID, "round-1", "msg-assistant",
-                "未检索到", List.of(), "Mock", 10);
+        service.completeRound(new AssistantMessageCompletion(CONVERSATION_ID, "round-1",
+                "msg-assistant", "未检索到", List.of(), "Mock", 10, "DONE", null));
 
         verify(messageMapper).insert(argThat(message ->
                 message.sourcesJson().equals("[]")));
+    }
+
+    @Test
+    @DisplayName("FAILED 终态：保留已生成正文与 error 字段")
+    void persistsFailedRound() {
+        when(conversationMapper.countActiveByConversationId(CONVERSATION_ID)).thenReturn(1);
+        when(messageMapper.insert(any())).thenReturn(1);
+        when(conversationMapper.touch(CONVERSATION_ID)).thenReturn(1);
+
+        service.completeRound(new AssistantMessageCompletion(CONVERSATION_ID, "round-1",
+                "msg-assistant", "已生成的部分", List.of(), "Mock", 5, "FAILED", "模型超时"));
+
+        verify(messageMapper).insert(argThat(message ->
+                message.status().equals("FAILED")
+                        && message.content().equals("已生成的部分")
+                        && message.errorMsg().equals("模型超时")));
+    }
+
+    @Test
+    @DisplayName("STOPPED 终态：保留已生成正文，error 为空")
+    void persistsStoppedRound() {
+        when(conversationMapper.countActiveByConversationId(CONVERSATION_ID)).thenReturn(1);
+        when(messageMapper.insert(any())).thenReturn(1);
+        when(conversationMapper.touch(CONVERSATION_ID)).thenReturn(1);
+
+        service.completeRound(new AssistantMessageCompletion(CONVERSATION_ID, "round-1",
+                "msg-assistant", "半截回答", List.of(source()), "Mock", 5, "STOPPED", null));
+
+        verify(messageMapper).insert(argThat(message ->
+                message.status().equals("STOPPED")
+                        && message.content().equals("半截回答")
+                        && message.errorMsg() == null));
+    }
+
+    @Test
+    @DisplayName("流式过程中会话被删除：跳过助手消息落库，也不刷新 update_time")
+    void skipsPersistenceWhenConversationDeletedDuringStream() {
+        when(conversationMapper.countActiveByConversationId(CONVERSATION_ID)).thenReturn(0);
+
+        service.completeRound(new AssistantMessageCompletion(CONVERSATION_ID, "round-1",
+                "msg-assistant", "回答", List.of(), "Mock", 10, "DONE", null));
+
+        verify(messageMapper, org.mockito.Mockito.never()).insert(any());
+        verify(conversationMapper, org.mockito.Mockito.never()).touch(anyString());
     }
 
     @Test
