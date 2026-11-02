@@ -7,11 +7,11 @@ import com.fasterxml.jackson.annotation.JsonInclude;
  *
  * 为什么用可空包装类型：不同模式下参与的字段不同——纯向量召回没有 keywordHits、
  * 纯关键词召回没有 vectorDistance、非 hybrid 模式没有 rrfScore。
- * 组件名与旧 Map 键名逐字一致（前端 index.html 按名取值），null 表示"该模式未产出此字段"。
+ * 组件名与旧 Map 键名逐字一致（前端按名取值），null 表示"该模式未产出此字段"。
  *
  * 为什么加 NON_NULL：上一版是 LinkedHashMap，只在产出该字段时才 put —— 即**缺字段时 JSON 里没有这个键**。
  * record 默认会把 null 也序列化成 `"keywordHits": null`，属对外契约变化；
- * NON_NULL 让缺失字段不输出，与旧 Map 行为逐字对齐（前端 index.html 虽已用 `??` 容错，但契约不应对不上）。
+ * NON_NULL 让缺失字段不输出，与旧 Map 行为逐字对齐（前端虽已用 `??` 容错，但契约不应对不上）。
  *
  * 为什么 sectionPath 单独标 ALWAYS：旧 Map 里它是**无条件 put** 的，即无小节时也输出 `"sectionPath": null`
  * （保留 null 键是旧契约的一部分），故这一项要豁免 NON_NULL。

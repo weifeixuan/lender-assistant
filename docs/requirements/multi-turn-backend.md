@@ -331,10 +331,10 @@ data: {"provider":"deepseek-chat","elapsedMillis":1234,"sourceCount":3}
 
 ### 5.2 常量与错误码
 
-- 新增 `common/constant/MessageRole`（`USER` / `ASSISTANT`）、`MessageStatus`（`DONE` / `FAILED` / `STOPPED`）、`ConversationStatus`（`ACTIVE` / `DELETED`），均按"code + desc 双字段枚举"实现。
+- 角色、消息状态、会话状态以字符串字面量落库（`USER` / `ASSISTANT`、`DONE` / `FAILED` / `STOPPED`、`ACTIVE` / `DELETED`），与 `docs/schema.sql` 的列注释一致；不额外定义枚举类。
 - `common/exception/ErrorCode` 新增：
   - `CONVERSATION_NOT_FOUND(404, "会话不存在")`
-  - `CONVERSATION_BUSY(409, "该会话正在生成回答，请稍后")`
+  - `CONVERSATION_BUSY(409, "会话正在生成回答，请等待本轮结束后再提问")`
 - 现有 `GlobalExceptionHandler` 无需改动：`HttpStatus.resolve(409)` 可直接映射 HTTP 409。
 
 ### 5.3 用户标识解析

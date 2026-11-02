@@ -68,7 +68,7 @@ mvn package -DskipTests
 java -jar target/lender-assistant-0.1.0-SNAPSHOT.jar --server.port=8080
 ```
 
-打开 <http://localhost:8080> 操作台，六个区块依次体验：① 上传文档 → ② 查看入库 → ③ 检索 → ④ 问答（SSE）→ ⑤ 字段抽取与人工确认 → ⑥ 代码草稿生成。
+后端对外提供 REST + SSE 接口：会话列表 `/api/conversations`、历史 `/api/conversations/{id}/messages`、问答 `/api/qa`（SSE）。所有业务接口需携带 `X-User-Id`，首问不带 `conversationId` 时由服务端懒创建并通过 SSE 首个 `meta` 事件回传。交互原型见 [docs/requirements/multi-turn-ui-prototype.html](docs/requirements/multi-turn-ui-prototype.html)。
 
 ### 接入真实模型（可选）
 

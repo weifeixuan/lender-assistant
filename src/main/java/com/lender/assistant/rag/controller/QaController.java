@@ -22,7 +22,7 @@ import java.util.regex.Pattern;
  *
  * 为什么用 POST 而不是 GET：原生 EventSource 只支持 GET，
  * 但问题文本放 URL 不合适（长、且会进访问日志）——
- * 前端用 fetch POST + ReadableStream 手工解析 SSE 报文（见 index.html），
+ * 前端用 fetch POST + ReadableStream 手工解析 SSE 报文（见 docs/requirements/multi-turn-ui-prototype.html），
  * 拿回"URL 干净 + 请求体传参 + 流式渲染"三者兼得。
  *
  * @RawResponse：SSE 是原始流式响应，必须跳过统一响应体包装（包一层 {code,msg,data} 会破坏事件协议）。

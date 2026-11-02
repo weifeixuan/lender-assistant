@@ -16,7 +16,7 @@ import java.util.List;
 public interface MessageMapper {
 
     /** 插入一条消息；sourcesJson 可为 null（用户消息） */
-    int insert(MessageInsert message);
+    int insert(@Param("message") MessageInsert message);
 
     /** 按会话读取全部消息，id ASC 即会话内稳定时序 */
     List<MessageRow> listByConversation(@Param("conversationId") String conversationId);

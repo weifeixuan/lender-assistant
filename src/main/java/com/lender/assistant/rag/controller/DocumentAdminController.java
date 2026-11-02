@@ -24,7 +24,7 @@ import org.springframework.web.multipart.MultipartFile;
 import java.util.List;
 
 /**
- * 文档入库与检索的管理接口（阶段 1 的操作台）。
+ * 文档入库与检索的管理接口（阶段 1 文档链路）。
  *
  * 入库是"流水线"（解析 -> 切分 -> 向量化 -> 原子替换入库），编排在 DocumentService；
  * 本类只做参数校验与响应组装。
