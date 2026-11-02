@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<!--
+  conversation 读写。结果映射用位置式 <constructor>（select 列顺序 == record 组件顺序），
+  不依赖 argNameBasedConstructorAutoMapping。时间列统一 TO_CHAR 成 YYYY-MM-DD HH24:MI:SS。
+-->
+<mapper namespace="com.lender.assistant.conversation.mapper.ConversationMapper">
+
+    <resultMap id="conversationRowMap" type="com.lender.assistant.conversation.model.ConversationRow">
+        <constructor>
+            <arg column="conversation_id" javaType="java.lang.String"/>
+            <arg column="user_id" javaType="java.lang.String"/>
+            <arg column="title" javaType="java.lang.String"/>
+            <arg column="status" javaType="java.lang.String"/>
+            <arg column="create_time" javaType="java.lang.String"/>
+            <arg column="update_time" javaType="java.lang.String"/>
+        </constructor>
+    </resultMap>
+
+    <insert id="insert">
+        INSERT INTO conversation (conversation_id, user_id, title)
+        VALUES (#{conversationId}, #{userId}, #{title})
+    </insert>
+
+    <select id="listActiveByUser" resultMap="conversationRowMap">
+        SELECT conversation_id, user_id, title, status,
+               TO_CHAR(create_time, 'YYYY-MM-DD HH24:MI:SS') AS create_time,
+               TO_CHAR(update_time, 'YYYY-MM-DD HH24:MI:SS') AS update_time
+        FROM conversation
+        WHERE user_id = #{userId}
+          AND status = 'ACTIVE'
+        ORDER BY update_time DESC, id DESC
+    </select>
+</mapper>

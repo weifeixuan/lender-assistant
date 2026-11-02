@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<!--
+  message 读写。sources 列是 JSONB：写入用 CAST(... AS jsonb)，读取用 sources::text，
+  由上层服务负责 JSON 序列化/反序列化（不在 Mapper 里引类型处理器）。
+  结果映射用位置式 <constructor>，列顺序必须与 MessageRow 组件顺序一致。
+-->
+<mapper namespace="com.lender.assistant.conversation.mapper.MessageMapper">
+
+    <resultMap id="messageRowMap" type="com.lender.assistant.conversation.model.MessageRow">
+        <constructor>
+            <arg column="message_id" javaType="java.lang.String"/>
+            <arg column="conversation_id" javaType="java.lang.String"/>
+            <arg column="round_id" javaType="java.lang.String"/>
+            <arg column="role" javaType="java.lang.String"/>
+            <arg column="content" javaType="java.lang.String"/>
+            <arg column="status" javaType="java.lang.String"/>
+            <arg column="sources_json" javaType="java.lang.String"/>
+            <arg column="provider" javaType="java.lang.String"/>
+            <arg column="elapsed_ms" javaType="java.lang.Integer"/>
+            <arg column="error_msg" javaType="java.lang.String"/>
+            <arg column="create_time" javaType="java.lang.String"/>
+        </constructor>
+    </resultMap>
+
+    <insert id="insert">
+        INSERT INTO message
+            (conversation_id, round_id, message_id, role, content, status,
+             sources, provider, elapsed_ms, error_msg)
+        VALUES
+            (#{message.conversationId}, #{message.roundId}, #{message.messageId},
+             #{message.role}, #{message.content}, #{message.status},
+             CAST(#{message.sourcesJson,jdbcType=VARCHAR} AS jsonb),
+             #{message.provider}, #{message.elapsedMs}, #{message.errorMsg})
+    </insert>
+
+    <select id="listByConversation" resultMap="messageRowMap">
+        SELECT message_id, conversation_id, round_id, role, content, status,
+               sources::text AS sources_json,
+               provider, elapsed_ms, error_msg,
+               TO_CHAR(create_time, 'YYYY-MM-DD HH24:MI:SS') AS create_time
+        FROM message
+        WHERE conversation_id = #{conversationId}
+        ORDER BY id ASC
+    </select>
+</mapper>

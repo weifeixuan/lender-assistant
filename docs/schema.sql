@@ -110,3 +110,71 @@ CREATE TABLE IF NOT EXISTS llm_call_log (
 );
 
 CREATE INDEX IF NOT EXISTS idx_llm_call_log_created ON llm_call_log (created_at DESC);
+
+-- ========== 多轮对话：会话与消息 ==========
+
+-- 会话表：只在首问受理时创建（懒创建），库中不存在"没有首问的空会话"（ADR-0009）。
+-- status: ACTIVE / DELETED，仅内部使用；删除为软删，消息保留。
+CREATE TABLE IF NOT EXISTS conversation (
+    id              BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    conversation_id TEXT        NOT NULL,
+    user_id         TEXT        NOT NULL,
+    title           TEXT        NOT NULL,
+    status          TEXT        NOT NULL DEFAULT 'ACTIVE',
+    create_time     TIMESTAMPTZ NOT NULL DEFAULT now(),
+    update_time     TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CONSTRAINT uk_conversation_conversation_id UNIQUE (conversation_id)
+);
+
+-- 会话列表按"用户 + 状态 + 最近更新"读取（GET /api/conversations）
+CREATE INDEX IF NOT EXISTS idx_conversation_user_status_update
+    ON conversation (user_id, status, update_time DESC);
+
+COMMENT ON TABLE conversation IS '会话：一轮或多轮问答的归属单元，首问受理时懒创建';
+COMMENT ON COLUMN conversation.conversation_id IS '对外会话标识（UUID v4），SSE meta 回传';
+COMMENT ON COLUMN conversation.user_id IS '会话归属用户，来自 X-User-Id';
+COMMENT ON COLUMN conversation.title IS '会话标题，取首问正文去空白后的前 20 个 Unicode code point';
+COMMENT ON COLUMN conversation.status IS '会话状态：ACTIVE / DELETED（软删）';
+COMMENT ON COLUMN conversation.create_time IS '创建时间';
+COMMENT ON COLUMN conversation.update_time IS '最近一次消息落库时间，用于会话列表排序';
+
+-- 消息表：一轮问答由同一 round_id 的两条记录组成（USER + ASSISTANT，ADR-0008）。
+-- status: USER 恒为 DONE；ASSISTANT 为 DONE / FAILED / STOPPED。
+-- sources 仅 ASSISTANT 写入，JSONB 快照；用户消息为 NULL，助手未召回时为空数组 []。
+CREATE TABLE IF NOT EXISTS message (
+    id              BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    conversation_id TEXT        NOT NULL,
+    round_id        TEXT        NOT NULL,
+    message_id      TEXT        NOT NULL,
+    role            TEXT        NOT NULL,
+    content         TEXT        NOT NULL,
+    status          TEXT        NOT NULL,
+    sources         JSONB,
+    provider        TEXT,
+    elapsed_ms      INT,
+    error_msg       TEXT,
+    create_time     TIMESTAMPTZ NOT NULL DEFAULT now(),
+    update_time     TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CONSTRAINT uk_message_message_id UNIQUE (message_id),
+    CONSTRAINT uk_message_round_role UNIQUE (conversation_id, round_id, role),
+    CONSTRAINT fk_message_conversation FOREIGN KEY (conversation_id)
+        REFERENCES conversation (conversation_id)
+);
+
+-- 历史消息按会话读取，并以自增 id 作为会话内稳定时序（GET /api/conversations/{id}/messages）
+CREATE INDEX IF NOT EXISTS idx_message_conversation_id
+    ON message (conversation_id, id);
+
+COMMENT ON TABLE message IS '消息：一轮问答由同一 round_id 的 USER 与 ASSISTANT 两条记录组成';
+COMMENT ON COLUMN message.conversation_id IS '所属会话，外键指向 conversation.conversation_id';
+COMMENT ON COLUMN message.round_id IS '轮次关联键；同一轮的用户消息与助手消息共享此值';
+COMMENT ON COLUMN message.message_id IS '对外消息标识（UUID v4），SSE meta 与历史接口使用';
+COMMENT ON COLUMN message.role IS '角色：USER / ASSISTANT';
+COMMENT ON COLUMN message.content IS '消息正文；失败或停止时保留已生成部分';
+COMMENT ON COLUMN message.status IS '消息状态：DONE / FAILED / STOPPED';
+COMMENT ON COLUMN message.sources IS '助手消息的引用来源 JSONB 快照；用户消息为 NULL';
+COMMENT ON COLUMN message.provider IS '生成该回答的模型标识';
+COMMENT ON COLUMN message.elapsed_ms IS '生成耗时（毫秒）';
+COMMENT ON COLUMN message.error_msg IS 'FAILED 时的错误说明';
+COMMENT ON COLUMN message.create_time IS '消息创建时间';
+COMMENT ON COLUMN message.update_time IS '消息最近更新时间';
