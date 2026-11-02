@@ -25,6 +25,9 @@ public interface ConversationService {
     /** 首问懒创建：同一事务内创建会话与用户消息，返回本轮四项标识 */
     ConversationRound startNewRound(String userId, String question);
 
+    /** 既有会话追问：归属校验后追加用户消息并刷新会话更新时间；不存在/已删除/非本人抛 404 */
+    ConversationRound startFollowUpRound(String conversationId, String userId, String question);
+
     /** 正常结束落助手消息（DONE）并刷新会话更新时间 */
     void completeRound(String conversationId, String roundId, String assistantMessageId,
                        String content, List<QaSourceResponse> sources,

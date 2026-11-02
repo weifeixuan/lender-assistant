@@ -1,8 +1,11 @@
 package com.lender.assistant.rag.service.impl;
 
 import com.lender.assistant.common.constant.LlmScene;
+import com.lender.assistant.common.exception.BizException;
+import com.lender.assistant.common.exception.ErrorCode;
 import com.lender.assistant.common.util.ThreadPoolFactory;
 import com.lender.assistant.conversation.model.ConversationRound;
+import com.lender.assistant.conversation.service.ConversationLockRegistry;
 import com.lender.assistant.conversation.service.ConversationService;
 import com.lender.assistant.rag.service.QaService;
 import com.lender.assistant.rag.service.SearchService;
@@ -54,6 +57,7 @@ public class QaServiceImpl implements QaService {
     private final AnswerGeneratorStrategy generator;
     private final com.lender.assistant.resilience.ResilientLlmExecutor executor;
     private final ConversationService conversationService;
+    private final ConversationLockRegistry lockRegistry;
 
     /**
      * SSE 工作线程池：检索+生成+send 必须脱离请求线程执行，否则 Spring 会把事件缓冲到
@@ -67,28 +71,53 @@ public class QaServiceImpl implements QaService {
 
     public QaServiceImpl(SearchService searchService, AnswerGeneratorStrategy generator,
                          com.lender.assistant.resilience.ResilientLlmExecutor executor,
-                         ConversationService conversationService) {
+                         ConversationService conversationService,
+                         ConversationLockRegistry lockRegistry) {
         this.searchService = searchService;
         this.generator = generator;
         this.executor = executor;
         this.conversationService = conversationService;
+        this.lockRegistry = lockRegistry;
     }
 
     @Override
-    public SseEmitter answer(String question, int topK, String userId) {
+    public SseEmitter answer(String question, int topK, String conversationId, String userId) {
         SseEmitter emitter = new SseEmitter(SSE_TIMEOUT_MILLIS);
         long t0 = System.currentTimeMillis();
 
-        // 首问懒创建：请求线程内先落会话与用户消息（DB 失败直接以普通 JSON 报错，不必开 SSE），
-        // 拿到本轮四项标识后交给工作线程推送 meta 与回答。
-        ConversationRound round = conversationService.startNewRound(userId, question);
+        // 首问懒创建 / 既有会话追问：都在请求线程内先落用户消息（DB 失败直接以普通 JSON 报错，不必开 SSE）。
+        // 追问路径先取进程内会话锁，避免同一会话并发把历史写乱；锁由工作线程 finally 释放。
+        ConversationRound round = conversationId == null
+                ? conversationService.startNewRound(userId, question)
+                : startFollowUpRound(conversationId, userId, question);
 
         // 关键：立即返回 emitter，把检索+生成+send 放到独立线程。
         // 旧写法在请求线程内 send，Spring 的 ResponseBodyEmitter 会把数据先堆进
         // earlySendAttempts（此时 handler 还未挂上），直到控制器返回才一次性写出——
         // 结果是 TTFB≈TOTAL 的"假流式"，且突发写入后立刻断连会让 Chrome 记 net::ERR_ABORTED。
-        streamExecutor.execute(() -> streamAnswer(emitter, question, topK, userId, round, t0));
+        streamExecutor.execute(() -> {
+            try {
+                streamAnswer(emitter, question, topK, userId, round, t0);
+            } finally {
+                if (conversationId != null) {
+                    lockRegistry.release(conversationId);
+                }
+            }
+        });
         return emitter;
+    }
+
+    /** 追问受理：先占会话锁（失败 409、不写任何消息），再归属校验并落用户消息；失败路径必须释放锁 */
+    private ConversationRound startFollowUpRound(String conversationId, String userId, String question) {
+        if (!lockRegistry.tryAcquire(conversationId)) {
+            throw new BizException(ErrorCode.CONVERSATION_BUSY);
+        }
+        try {
+            return conversationService.startFollowUpRound(conversationId, userId, question);
+        } catch (RuntimeException e) {
+            lockRegistry.release(conversationId);
+            throw e;
+        }
     }
 
     /** SSE 推送主流程，运行在 streamExecutor 工作线程上；每个 send 都是即时 flush 的真流式。 */

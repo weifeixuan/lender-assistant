@@ -1,5 +1,8 @@
 package com.lender.assistant.rag.service;
 
+import com.lender.assistant.common.exception.BizException;
+import com.lender.assistant.common.exception.ErrorCode;
+import com.lender.assistant.conversation.service.ConversationLockRegistry;
 import com.lender.assistant.conversation.service.ConversationService;
 import com.lender.assistant.conversation.model.ConversationRound;
 import com.lender.assistant.rag.vo.response.SearchItemResponse;
@@ -13,6 +16,8 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
 
@@ -20,10 +25,12 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -43,6 +50,7 @@ class QaServiceTest {
 
     private SearchService searchService;
     private ConversationService conversationService;
+    private ConversationLockRegistry lockRegistry;
     /** 桩生成器：抓取收到的 system Prompt、问题与召回结果，并回流一个固定 token */
     private RecordingGenerator generator;
     private QaServiceImpl qaService;
@@ -74,6 +82,7 @@ class QaServiceTest {
     void setUp() {
         searchService = mock(SearchService.class);
         conversationService = mock(ConversationService.class);
+        lockRegistry = new ConversationLockRegistry();
         generator = new RecordingGenerator();
         // 真实韧性执行器（chaos=false 直通）+ mock JDBC 的留痕器
         com.lender.assistant.resilience.ResilientLlmExecutor executor =
@@ -81,7 +90,7 @@ class QaServiceTest {
                         new com.lender.assistant.resilience.LlmCallLogger(
                                 mock(com.lender.assistant.resilience.mapper.LlmCallLogMapper.class)),
                         3, 10, 2, false);
-        qaService = new QaServiceImpl(searchService, generator, executor, conversationService);
+        qaService = new QaServiceImpl(searchService, generator, executor, conversationService, lockRegistry);
         round = new ConversationRound("conv-1", "round-1", "msg-user", "msg-assistant");
         when(conversationService.startNewRound(eq(USER_ID), any())).thenReturn(round);
     }
@@ -112,7 +121,7 @@ class QaServiceTest {
         when(searchService.hybridSearch(any(), anyInt()))
                 .thenReturn(List.of(hit(1, "华信银行_日末文件格式说明", "3 逾期文件", "逾期阶段 M1/M2/M3")));
 
-        qaService.answer("逾期阶段怎么划分", 4, USER_ID);
+        qaService.answer("逾期阶段怎么划分", 4, null, USER_ID);
         awaitAsyncDone(() -> generator.system != null);   // answer() 已异步：等生成器真正被调用
 
         assertNotNull(generator.system);
@@ -128,7 +137,7 @@ class QaServiceTest {
                 hit(1, "华信银行_日末文件格式说明", "3 逾期文件", "逾期阶段 M1 为 1-30 天"),
                 hit(2, "华信银行_对公收付接口文档", "2 单笔代收接口", "单笔限额 500 万元")));
 
-        qaService.answer("逾期阶段怎么划分", 4, USER_ID);
+        qaService.answer("逾期阶段怎么划分", 4, null, USER_ID);
         awaitAsyncDone(() -> generator.contextHits != null);   // answer() 已异步：等生成器真正被调用
 
         assertEquals("逾期阶段怎么划分", generator.question);
@@ -144,7 +153,7 @@ class QaServiceTest {
     void emptyHitsSkipsGenerator() {
         when(searchService.hybridSearch(any(), anyInt())).thenReturn(List.of());
 
-        qaService.answer("随便问", 4, USER_ID);
+        qaService.answer("随便问", 4, null, USER_ID);
         // 等异步流程确认 hybridSearch 确实被调用过，再断言生成器全程未被调用
         awaitAsyncDone(() -> {
             try { verify(searchService).hybridSearch("随便问", 4); return true; }
@@ -175,9 +184,9 @@ class QaServiceTest {
                 new com.lender.assistant.resilience.ResilientLlmExecutor(
                         new com.lender.assistant.resilience.LlmCallLogger(
                                 mock(com.lender.assistant.resilience.mapper.LlmCallLogMapper.class)),
-                        3, 10, 2, false), conversationService);
+                        3, 10, 2, false), conversationService, lockRegistry);
 
-        assertDoesNotThrow(() -> svc.answer("问题", 4, USER_ID),
+        assertDoesNotThrow(() -> svc.answer("问题", 4, null, USER_ID),
                 "阶段4韧性改造的契约底线：模型故障不允许把异常抛出 answer() 之外");
         // 生成器异常发生在工作线程内：等异步流程跑到检索这一步即证明异常未外泄
         awaitAsyncDone(() -> {
@@ -253,5 +262,86 @@ class QaServiceTest {
                 argThat(content -> content.contains("没有检索到相关内容")),
                 argThat(List::isEmpty), eq("RecordingMock"), anyLong());
         assertNull(generator.system, "无召回不应调用生成器");
+    }
+
+    @Test
+    @DisplayName("追问：取锁后追加一轮；流进行中再问同一会话返回 409，且不写消息")
+    void followUpLocksConversationWhileStreaming() throws Exception {
+        when(conversationService.startFollowUpRound(eq("conv-1"), eq(USER_ID), any())).thenReturn(round);
+        CountDownLatch searching = new CountDownLatch(1);
+        CountDownLatch resume = new CountDownLatch(1);
+        when(searchService.hybridSearch(any(), anyInt())).thenAnswer(invocation -> {
+            searching.countDown();
+            assertTrue(resume.await(5, TimeUnit.SECONDS), "测试等待超时");
+            return List.of();
+        });
+
+        qaService.answer("那二套呢", 4, "conv-1", USER_ID);
+        awaitAsyncDone(() -> searching.getCount() == 0);
+
+        BizException busy = assertThrows(BizException.class,
+                () -> qaService.answer("再问一次", 4, "conv-1", USER_ID));
+        assertEquals(ErrorCode.CONVERSATION_BUSY, busy.errorCode());
+        verify(conversationService, times(1)).startFollowUpRound(anyString(), anyString(), any());
+
+        resume.countDown();
+    }
+
+    @Test
+    @DisplayName("流结束后释放会话锁，同一会话可以再次提问")
+    void releasesLockAfterStream() throws Exception {
+        when(conversationService.startFollowUpRound(anyString(), eq(USER_ID), any())).thenReturn(round);
+        CountDownLatch searching = new CountDownLatch(1);
+        CountDownLatch resume = new CountDownLatch(1);
+        when(searchService.hybridSearch(any(), anyInt())).thenAnswer(invocation -> {
+            searching.countDown();
+            assertTrue(resume.await(5, TimeUnit.SECONDS), "测试等待超时");
+            return List.of();
+        });
+
+        qaService.answer("第一问", 4, "conv-1", USER_ID);
+        awaitAsyncDone(() -> searching.getCount() == 0);
+        assertTrue(lockRegistry.isBusy("conv-1"), "流进行中会话应被占用");
+
+        resume.countDown();
+        awaitAsyncDone(() -> !lockRegistry.isBusy("conv-1"));
+
+        when(searchService.hybridSearch(any(), anyInt())).thenReturn(List.of());
+        assertDoesNotThrow(() -> qaService.answer("第二问", 4, "conv-1", USER_ID),
+                "上一轮结束后锁必须已释放");
+    }
+
+    @Test
+    @DisplayName("追问的会话不存在/非本人：404 向外抛出，且锁已释放")
+    void followUpOnInvisibleConversationReleasesLock() {
+        when(conversationService.startFollowUpRound(eq("conv-1"), eq(USER_ID), any()))
+                .thenThrow(new BizException(ErrorCode.CONVERSATION_NOT_FOUND));
+
+        BizException exception = assertThrows(BizException.class,
+                () -> qaService.answer("问题", 4, "conv-1", USER_ID));
+
+        assertEquals(ErrorCode.CONVERSATION_NOT_FOUND, exception.errorCode());
+        assertFalse(lockRegistry.isBusy("conv-1"));
+    }
+
+    @Test
+    @DisplayName("首问不占用会话锁")
+    void firstQuestionDoesNotLockAnyConversation() {
+        when(searchService.hybridSearch(any(), anyInt())).thenReturn(List.of());
+
+        qaService.answer("首问", 4, null, USER_ID);
+
+        verify(conversationService).startNewRound(eq(USER_ID), eq("首问"));
+        assertFalse(lockRegistry.isBusy("conv-1"));
+    }
+
+    @Test
+    @DisplayName("不同会话互不阻塞")
+    void differentConversationsAreIndependent() {
+        when(conversationService.startFollowUpRound(anyString(), eq(USER_ID), any())).thenReturn(round);
+        when(searchService.hybridSearch(any(), anyInt())).thenReturn(List.of());
+
+        assertDoesNotThrow(() -> qaService.answer("A", 4, "conv-a", USER_ID));
+        assertDoesNotThrow(() -> qaService.answer("B", 4, "conv-b", USER_ID));
     }
 }

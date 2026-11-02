@@ -211,6 +211,42 @@ class ConversationServiceTest {
                 message.sourcesJson().equals("[]")));
     }
 
+    @Test
+    @DisplayName("追问在既有会话下追加用户消息，并刷新会话更新时间")
+    void startsFollowUpRound() {
+        when(conversationMapper.findActiveByConversationIdAndUser(CONVERSATION_ID, USER_ID))
+                .thenReturn(activeConversation());
+        when(messageMapper.insert(any())).thenReturn(1);
+        when(conversationMapper.touch(CONVERSATION_ID)).thenReturn(1);
+
+        ConversationRound round = service.startFollowUpRound(CONVERSATION_ID, USER_ID, "那二套呢");
+
+        assertEquals(CONVERSATION_ID, round.conversationId());
+        assertNotNull(round.roundId());
+        assertNotNull(round.userMessageId());
+        assertNotNull(round.assistantMessageId());
+        verify(messageMapper).insert(argThat(message ->
+                message.conversationId().equals(CONVERSATION_ID)
+                        && message.roundId().equals(round.roundId())
+                        && message.messageId().equals(round.userMessageId())
+                        && message.role().equals("USER")
+                        && message.status().equals("DONE")));
+        verify(conversationMapper).touch(CONVERSATION_ID);
+    }
+
+    @Test
+    @DisplayName("追问的会话不存在、已删除或不属于当前用户时返回 404，且不写消息")
+    void followUpOnMissingConversationReturns404() {
+        when(conversationMapper.findActiveByConversationIdAndUser(CONVERSATION_ID, USER_ID))
+                .thenReturn(null);
+
+        BizException exception = assertThrows(BizException.class,
+                () -> service.startFollowUpRound(CONVERSATION_ID, USER_ID, "问题"));
+
+        assertEquals(ErrorCode.CONVERSATION_NOT_FOUND, exception.errorCode());
+        verify(messageMapper, org.mockito.Mockito.never()).insert(any());
+    }
+
     private static QaSourceResponse source() {
         return new QaSourceResponse(1, "资方接口文档", "3 日末文件", 123L,
                 "切片正文", null, null, false, null);

@@ -91,6 +91,25 @@ public class ConversationServiceImpl implements ConversationService {
 
     @Override
     @Transactional
+    public ConversationRound startFollowUpRound(String conversationId, String userId, String question) {
+        ConversationRow conversation =
+                conversationMapper.findActiveByConversationIdAndUser(conversationId, userId);
+        if (conversation == null) {
+            throw new BizException(ErrorCode.CONVERSATION_NOT_FOUND);
+        }
+        ConversationRound round = new ConversationRound(conversationId,
+                UUID.randomUUID().toString(),
+                UUID.randomUUID().toString(),
+                UUID.randomUUID().toString());
+        messageMapper.insert(new MessageInsert(conversationId, round.roundId(),
+                round.userMessageId(), "USER", question, "DONE",
+                null, null, null, null));
+        conversationMapper.touch(conversationId);
+        return round;
+    }
+
+    @Override
+    @Transactional
     public void completeRound(String conversationId, String roundId, String assistantMessageId,
                               String content, List<QaSourceResponse> sources,
                               String provider, long elapsedMillis) {

@@ -9,6 +9,11 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
  */
 public interface QaService {
 
-    /** 立即返回 emitter，检索/生成/send 在独立工作线程执行（真流式的必要条件） */
-    SseEmitter answer(String question, int topK, String userId);
+    /**
+     * 立即返回 emitter，检索/生成/send 在独立工作线程执行（真流式的必要条件）。
+     *
+     * @param conversationId 为 null 时首问懒创建；非 null 时校验归属并追加一轮
+     * @param userId        X-User-Id 解析出的当前用户，用于归属隔离
+     */
+    SseEmitter answer(String question, int topK, String conversationId, String userId);
 }

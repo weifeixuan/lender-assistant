@@ -2,6 +2,8 @@ package com.lender.assistant.rag.controller;
 
 import com.lender.assistant.common.annotation.RawResponse;
 import com.lender.assistant.common.constant.SearchConstants;
+import com.lender.assistant.common.exception.BizException;
+import com.lender.assistant.common.exception.ErrorCode;
 import com.lender.assistant.common.util.TopKUtils;
 import com.lender.assistant.common.web.UserIdInterceptor;
 import com.lender.assistant.rag.vo.request.QaRequest;
@@ -12,6 +14,8 @@ import org.springframework.web.bind.annotation.RequestAttribute;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
+
+import java.util.regex.Pattern;
 
 /**
  * 问答接口（阶段 2）：POST /api/qa，SSE 流式返回。
@@ -28,6 +32,10 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 @RawResponse
 public class QaController {
 
+    /** 会话 id 由后端 UUID 生成；客户端回传非法格式属入参错误，不进 SSE 流 */
+    private static final Pattern UUID_PATTERN = Pattern.compile(
+            "[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}");
+
     private final QaService qaService;
 
     public QaController(QaService qaService) {
@@ -41,6 +49,11 @@ public class QaController {
         if (question == null || question.isBlank()) {
             throw new IllegalArgumentException("question 不能为空");
         }
-        return qaService.answer(question.trim(), TopKUtils.resolve(request.topK(), SearchConstants.DEFAULT_TOP_K), userId);
+        String conversationId = request.conversationId();
+        if (conversationId != null && !UUID_PATTERN.matcher(conversationId).matches()) {
+            throw new BizException(ErrorCode.PARAM_INVALID, "conversationId 必须是 UUID");
+        }
+        return qaService.answer(question.trim(),
+                TopKUtils.resolve(request.topK(), SearchConstants.DEFAULT_TOP_K), conversationId, userId);
     }
 }
