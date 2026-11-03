@@ -562,7 +562,7 @@ class QaServiceTest {
     }
 
     @Test
-    @DisplayName("线程池拒绝：返回 500 业务异常，并落一条空正文的 FAILED 助手消息")
+    @DisplayName("线程池拒绝：返回 500 业务异常，并落一条空正文、provider 为 null 的 FAILED 助手消息")
     void rejectedSubmissionPersistsFailedMessage() {
         QaServiceImpl svc = serviceWithRejectingExecutor();
 
@@ -578,7 +578,8 @@ class QaServiceTest {
                 completion.roundId().equals(roundId)
                         && completion.content().isEmpty()
                         && completion.status().equals("FAILED")
-                        && completion.error() != null));
+                        && completion.provider() == null
+                        && completion.error().equals("服务繁忙，请重试")));
     }
 
     @Test

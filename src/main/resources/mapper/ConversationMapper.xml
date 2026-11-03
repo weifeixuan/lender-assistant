@@ -58,11 +58,4 @@
         WHERE conversation_id = #{conversationId}
           AND status = 'ACTIVE'
     </update>
-
-    <select id="countActiveByConversationId" resultType="int">
-        SELECT COUNT(*)
-        FROM conversation
-        WHERE conversation_id = #{conversationId}
-          AND status = 'ACTIVE'
-    </select>
 </mapper>

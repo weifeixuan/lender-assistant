@@ -103,10 +103,8 @@ public class ConversationServiceImpl implements ConversationService {
     @Override
     @Transactional
     public void completeRound(AssistantMessageCompletion completion) {
-        // 流式期间会话可能已被删除：结束后不再落助手消息，也不刷新 update_time
-        if (conversationMapper.countActiveByConversationId(completion.conversationId()) == 0) {
-            return;
-        }
+        // 消息与会话无级联关系：流式期间会话被删，助手消息照常落库；
+        // touch 自带 status='ACTIVE'，已删会话的时间线不会被推后。
         int elapsedMs = (int) Math.min(Integer.MAX_VALUE, completion.elapsedMillis());
         messageMapper.insert(new MessageInsert(completion.conversationId(), completion.roundId(),
                 completion.messageId(), "ASSISTANT", completion.content(), completion.status(),

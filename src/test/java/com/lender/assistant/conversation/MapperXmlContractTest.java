@@ -57,6 +57,15 @@ class MapperXmlContractTest {
     }
 
     @Test
+    @DisplayName("touch 只更新 ACTIVE 会话：已删会话的时间线不被推后")
+    void touchRequiresActiveStatus() {
+        Configuration configuration = parse(CONVERSATION_MAPPER);
+        String statementId = "com.lender.assistant.conversation.mapper.ConversationMapper.touch";
+        String sql = configuration.getMappedStatement(statementId).getBoundSql("conv-1").getSql();
+        assertTrue(sql.contains("status = 'ACTIVE'"), "touch 必须自带 ACTIVE 条件");
+    }
+
+    @Test
     @DisplayName("MessageMapper.xml 可解析且语句完整")
     void messageMapperParses() {
         Configuration configuration = parse(MESSAGE_MAPPER);

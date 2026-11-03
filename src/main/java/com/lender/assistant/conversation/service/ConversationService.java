@@ -36,7 +36,7 @@ public interface ConversationService {
 
     /**
      * 助手消息终态落库（DONE / FAILED / STOPPED）。
-     * 会话在流式过程中被删除时跳过落库且不刷新 update_time。
+     * 会话在流式过程中被删除时助手消息照常落库（消息与会话无级联关系），但不刷新已删会话的 update_time。
      */
     void completeRound(AssistantMessageCompletion completion);
 }

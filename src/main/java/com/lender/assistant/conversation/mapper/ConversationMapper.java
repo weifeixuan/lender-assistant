@@ -31,9 +31,6 @@ public interface ConversationMapper {
     int softDelete(@Param("conversationId") String conversationId,
                    @Param("userId") String userId);
 
-    /** 刷新会话最近更新时间；返回 0 表示会话已不可见（如流式中被删除） */
+    /** 刷新 ACTIVE 会话的最近更新时间；已删会话命中 0 行，时间线不被推后 */
     int touch(@Param("conversationId") String conversationId);
-
-    /** 会话是否仍为 ACTIVE（流式结束落库前确认未被删除） */
-    int countActiveByConversationId(@Param("conversationId") String conversationId);
 }

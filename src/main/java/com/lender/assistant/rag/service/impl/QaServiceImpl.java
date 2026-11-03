@@ -127,11 +127,12 @@ public class QaServiceImpl implements QaService {
             // 线程池饱和/已关闭：不留半开 SSE，落一条 FAILED 兜底后按 500 普通 JSON 返回
             log.error("SSE 任务提交失败，已落 FAILED 兜底: conversationId={}", round.conversationId(), e);
             lockRegistry.release(round.conversationId());
+            // 模型从未运行：provider 按 PRD §2.5 为 null；诊断信息只进日志（见上一行），不写进用户可见的 error
             conversationService.completeRound(new AssistantMessageCompletion(
                     round.conversationId(), round.roundId(), round.assistantMessageId(),
-                    "", List.of(), generator.name(), 0, "FAILED",
-                    "流式任务提交失败：" + e.getMessage()));
-            throw new BizException(ErrorCode.INTERNAL_ERROR, "服务繁忙，请稍后重试");
+                    "", List.of(), null, 0, "FAILED",
+                    "服务繁忙，请重试"));
+            throw new BizException(ErrorCode.INTERNAL_ERROR, "服务繁忙，请重试");
         }
         return emitter;
     }

@@ -175,7 +175,6 @@ class ConversationServiceTest {
     @Test
     @DisplayName("助手正常结束落库 DONE，并刷新会话更新时间")
     void completesRound() {
-        when(conversationMapper.countActiveByConversationId(CONVERSATION_ID)).thenReturn(1);
         when(messageMapper.insert(any())).thenReturn(1);
         when(conversationMapper.touch(CONVERSATION_ID)).thenReturn(1);
 
@@ -195,7 +194,6 @@ class ConversationServiceTest {
     @Test
     @DisplayName("助手未召回时 sources 落库为空数组")
     void completesRoundWithEmptySources() {
-        when(conversationMapper.countActiveByConversationId(CONVERSATION_ID)).thenReturn(1);
         when(messageMapper.insert(any())).thenReturn(1);
         when(conversationMapper.touch(CONVERSATION_ID)).thenReturn(1);
 
@@ -209,7 +207,6 @@ class ConversationServiceTest {
     @Test
     @DisplayName("FAILED 终态：保留已生成正文与 error 字段")
     void persistsFailedRound() {
-        when(conversationMapper.countActiveByConversationId(CONVERSATION_ID)).thenReturn(1);
         when(messageMapper.insert(any())).thenReturn(1);
         when(conversationMapper.touch(CONVERSATION_ID)).thenReturn(1);
 
@@ -225,7 +222,6 @@ class ConversationServiceTest {
     @Test
     @DisplayName("STOPPED 终态：保留已生成正文，error 为空")
     void persistsStoppedRound() {
-        when(conversationMapper.countActiveByConversationId(CONVERSATION_ID)).thenReturn(1);
         when(messageMapper.insert(any())).thenReturn(1);
         when(conversationMapper.touch(CONVERSATION_ID)).thenReturn(1);
 
@@ -239,15 +235,21 @@ class ConversationServiceTest {
     }
 
     @Test
-    @DisplayName("流式过程中会话被删除：跳过助手消息落库，也不刷新 update_time")
-    void skipsPersistenceWhenConversationDeletedDuringStream() {
-        when(conversationMapper.countActiveByConversationId(CONVERSATION_ID)).thenReturn(0);
+    @DisplayName("流式过程中会话被删除：助手消息照常落库，但已删会话的时间线不被推后")
+    void persistsMessageEvenWhenConversationDeletedDuringStream() {
+        when(messageMapper.insert(any())).thenReturn(1);
+        when(conversationMapper.touch(CONVERSATION_ID)).thenReturn(0);
 
         service.completeRound(new AssistantMessageCompletion(CONVERSATION_ID, "round-1",
                 "msg-assistant", "回答", List.of(), "Mock", 10, "DONE", null));
 
-        verify(messageMapper, org.mockito.Mockito.never()).insert(any());
-        verify(conversationMapper, org.mockito.Mockito.never()).touch(anyString());
+        verify(messageMapper).insert(argThat(message ->
+                message.conversationId().equals(CONVERSATION_ID)
+                        && message.roundId().equals("round-1")
+                        && message.messageId().equals("msg-assistant")
+                        && message.role().equals("ASSISTANT")
+                        && message.content().equals("回答")));
+        verify(conversationMapper).touch(CONVERSATION_ID);
     }
 
     @Test
