@@ -72,7 +72,8 @@ class QaServiceTest {
 
         @Override
         public void generate(String systemPrompt, List<ChatTurn> history, String question,
-                             List<SearchItemResponse> contextHits, Consumer<String> onDelta) {
+                             List<SearchItemResponse> contextHits, Consumer<String> onDelta,
+                             com.lender.assistant.rag.strategy.AnswerCancellation cancellation) {
             this.system = systemPrompt;
             this.history = history;
             this.question = question;
@@ -181,7 +182,8 @@ class QaServiceTest {
         AnswerGeneratorStrategy broken = new AnswerGeneratorStrategy() {
             @Override
             public void generate(String systemPrompt, List<ChatTurn> history, String question,
-                                 List<SearchItemResponse> contextHits, Consumer<String> onDelta) {
+                                 List<SearchItemResponse> contextHits, Consumer<String> onDelta,
+                                 com.lender.assistant.rag.strategy.AnswerCancellation cancellation) {
                 throw new RuntimeException("模拟模型超时");
             }
 
@@ -327,7 +329,8 @@ class QaServiceTest {
         AnswerGeneratorStrategy broken = new AnswerGeneratorStrategy() {
             @Override
             public void generate(String systemPrompt, List<ChatTurn> history, String question,
-                                 List<SearchItemResponse> contextHits, Consumer<String> onDelta) {
+                                 List<SearchItemResponse> contextHits, Consumer<String> onDelta,
+                                 com.lender.assistant.rag.strategy.AnswerCancellation cancellation) {
                 onDelta.accept("已生成的一半");
                 throw new RuntimeException("模拟模型超时");
             }
@@ -365,6 +368,56 @@ class QaServiceTest {
         verify(conversationService).completeRound(argThat(completion ->
                 completion.status().equals("STOPPED")
                         && completion.content().equals("测试答案片段")
+                        && completion.error() == null));
+    }
+
+    @Test
+    @DisplayName("客户端断开：立即取消上游生成，不再消费剩余 token（而不是等自然结束）")
+    void clientDisconnectCancelsUpstreamGeneration() {
+        when(searchService.hybridSearch(any(), anyInt()))
+                .thenReturn(List.of(hit(1, "某文档", "某节", "内容")));
+        java.util.concurrent.atomic.AtomicInteger emitted = new java.util.concurrent.atomic.AtomicInteger();
+        AnswerGeneratorStrategy longRunning = new AnswerGeneratorStrategy() {
+            @Override
+            public void generate(String systemPrompt, List<ChatTurn> history, String question,
+                                 List<SearchItemResponse> contextHits, Consumer<String> onDelta,
+                                 com.lender.assistant.rag.strategy.AnswerCancellation cancellation) {
+                // 150 片 × 20ms ≈ 3s：这是"不取消就会一直烧 token 到自然结束"的基线
+                for (int i = 0; i < 150; i++) {
+                    if (cancellation.isCancelled()) {
+                        return;
+                    }
+                    onDelta.accept("片段" + i);
+                    emitted.incrementAndGet();
+                    try {
+                        Thread.sleep(20);
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                        return;
+                    }
+                }
+            }
+
+            @Override
+            public String name() {
+                return "LongRunning";
+            }
+        };
+        QaServiceImpl svc = new QaServiceImpl(searchService, longRunning, resilientExecutor,
+                conversationService, lockRegistry, historyAssembler);
+
+        long start = System.currentTimeMillis();
+        // meta + sources + 第一片成功，第二片 send 抛 IOException → 模拟客户端 abort
+        svc.streamAnswer(new FailAfterEmitter(3), "问题", 4, USER_ID, round, start);
+        long elapsed = System.currentTimeMillis() - start;
+
+        assertTrue(elapsed < 1000,
+                "断开后应立刻停止消费上游，实际耗时 " + elapsed + "ms（自然结束约 3000ms）");
+        assertTrue(emitted.get() <= 3,
+                "取消后不应再消费 token，实际消费 " + emitted.get() + " 片");
+        verify(conversationService).completeRound(argThat(completion ->
+                completion.status().equals("STOPPED")
+                        && completion.content().startsWith("片段0")
                         && completion.error() == null));
     }
 
@@ -517,7 +570,8 @@ class QaServiceTest {
         AnswerGeneratorStrategy slow = new AnswerGeneratorStrategy() {
             @Override
             public void generate(String systemPrompt, List<ChatTurn> history, String question,
-                                 List<SearchItemResponse> contextHits, Consumer<String> onDelta) {
+                                 List<SearchItemResponse> contextHits, Consumer<String> onDelta,
+                                 com.lender.assistant.rag.strategy.AnswerCancellation cancellation) {
                 onDelta.accept("前半段");
                 emitter.timeoutAction.run();
                 onDelta.accept("后半段不应写入");

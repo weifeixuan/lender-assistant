@@ -1,5 +1,6 @@
 package com.lender.assistant.rag.strategy.impl;
 
+import com.lender.assistant.rag.strategy.AnswerCancellation;
 import com.lender.assistant.rag.strategy.AnswerGeneratorStrategy;
 import com.lender.assistant.rag.vo.ChatTurn;
 import com.lender.assistant.rag.vo.response.SearchItemResponse;
@@ -12,6 +13,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 import reactor.core.publisher.Flux;
+import reactor.core.publisher.Sinks;
 
 import java.time.Duration;
 import java.util.ArrayList;
@@ -52,7 +54,8 @@ public class OpenAiCompatibleAnswerGeneratorStrategy implements AnswerGeneratorS
 
     @Override
     public void generate(String systemPrompt, List<ChatTurn> history, String question,
-                         List<SearchItemResponse> contextHits, Consumer<String> onDelta) {
+                         List<SearchItemResponse> contextHits, Consumer<String> onDelta,
+                         AnswerCancellation cancellation) {
         List<Message> messages = new ArrayList<>();
         for (ChatTurn turn : history) {
             messages.add("ASSISTANT".equals(turn.role())
@@ -61,6 +64,11 @@ public class OpenAiCompatibleAnswerGeneratorStrategy implements AnswerGeneratorS
         }
         // 当前问题（含召回资料）永远最后追加，历史只作为前序对话
         messages.add(new UserMessage(buildUserPrompt(question, contextHits)));
+
+        // 取消信号：SSE 断开时 takeUntilOther 立即 dispose 上游订阅，blockLast 立刻返回，
+        // 不再继续消费 token（Flux 可能正卡在等下一个 token 的网络等待里，光靠标记位停不下来）
+        Sinks.One<Boolean> cancelled = Sinks.one();
+        cancellation.onCancel(() -> cancelled.tryEmitValue(Boolean.TRUE));
 
         Flux<String> flux = chatClient.prompt()
                 .system(systemPrompt)
@@ -71,8 +79,8 @@ public class OpenAiCompatibleAnswerGeneratorStrategy implements AnswerGeneratorS
                 .stream()
                 .content()
                 .timeout(STREAM_TIMEOUT);
-        // 同步流式：token 依次回调，流结束才返回（QaService 依赖这个契约收尾 SSE）
-        flux.doOnNext(onDelta::accept).blockLast();
+        // 同步流式：token 依次回调，流结束（或取消）才返回（QaService 依赖这个契约收尾 SSE）
+        flux.takeUntilOther(cancelled.asMono()).doOnNext(onDelta::accept).blockLast();
     }
 
     /** 把结构化召回结果按【来源N】拼成用户提示词，问题放在末尾 */

@@ -22,6 +22,11 @@ import java.util.function.Consumer;
  *
  * 实现契约：onDelta 会被多个线程/多次回调调用 token 增量，实现方保证顺序性；
  * generate 返回即代表生成结束（同步流式：回调在 generate 调用线程上依次发生）。
+ *
+ * 取消契约（2026-11 客户端断开取消）：SSE 断开时编排方 cancel 传入的
+ * {@link AnswerCancellation}，实现方必须尽快停止消费上游 token 并返回——
+ * Mock 每片之间轮询，真实模型 dispose Reactor 订阅。取消后已回流的正文不回收，
+ * 由编排方按 STOPPED 落库。
  */
 public interface AnswerGeneratorStrategy {
 
@@ -31,9 +36,11 @@ public interface AnswerGeneratorStrategy {
      * @param question     当前问题
      * @param contextHits  本次召回结果（按召回顺序对应【来源1】、【来源2】…）
      * @param onDelta      每收到一段 token 文本回调一次
+     * @param cancellation 取消句柄；实现方据此停止消费上游
      */
     void generate(String systemPrompt, List<ChatTurn> history, String question,
-                  List<SearchItemResponse> contextHits, Consumer<String> onDelta);
+                  List<SearchItemResponse> contextHits, Consumer<String> onDelta,
+                  AnswerCancellation cancellation);
 
     /** 实现标识，用于前端展示与日志（如 "Mock" / 实际模型名） */
     String name();

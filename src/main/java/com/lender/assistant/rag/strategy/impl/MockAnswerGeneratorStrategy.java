@@ -1,5 +1,6 @@
 package com.lender.assistant.rag.strategy.impl;
 
+import com.lender.assistant.rag.strategy.AnswerCancellation;
 import com.lender.assistant.rag.strategy.AnswerGeneratorStrategy;
 import com.lender.assistant.rag.vo.ChatTurn;
 import com.lender.assistant.rag.vo.response.SearchItemResponse;
@@ -53,9 +54,10 @@ public class MockAnswerGeneratorStrategy implements AnswerGeneratorStrategy {
 
     @Override
     public void generate(String systemPrompt, List<ChatTurn> history, String question,
-                         List<SearchItemResponse> contextHits, Consumer<String> onDelta) {
+                         List<SearchItemResponse> contextHits, Consumer<String> onDelta,
+                         AnswerCancellation cancellation) {
         // Mock 不模拟多轮语义：签名与真实实现保持一致，历史直接忽略
-        streamAnswer(buildAnswer(question, contextHits), onDelta);
+        streamAnswer(buildAnswer(question, contextHits), onDelta, cancellation);
     }
 
     private String buildAnswer(String question, List<SearchItemResponse> contextHits) {
@@ -91,8 +93,13 @@ public class MockAnswerGeneratorStrategy implements AnswerGeneratorStrategy {
         return answer.toString();
     }
 
-    private void streamAnswer(String full, Consumer<String> onDelta) {
+    private void streamAnswer(String full, Consumer<String> onDelta, AnswerCancellation cancellation) {
         for (int i = 0; i < full.length(); i += STREAM_DELTA_CHARS) {
+            // 客户端断开后立即停止：不再切片、不再回调（模拟"停止消费上游 token"）
+            if (cancellation.isCancelled()) {
+                log.debug("生成已取消，剩余片段不再推送");
+                return;
+            }
             onDelta.accept(full.substring(i, Math.min(i + STREAM_DELTA_CHARS, full.length())));
             try {
                 Thread.sleep(STREAM_DELTA_INTERVAL_MILLIS);

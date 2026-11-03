@@ -11,6 +11,7 @@ import com.lender.assistant.conversation.service.ConversationLockRegistry;
 import com.lender.assistant.conversation.service.ConversationService;
 import com.lender.assistant.rag.service.QaService;
 import com.lender.assistant.rag.service.SearchService;
+import com.lender.assistant.rag.strategy.AnswerCancellation;
 import com.lender.assistant.rag.strategy.AnswerGeneratorStrategy;
 import com.lender.assistant.rag.vo.ChatTurn;
 import com.lender.assistant.rag.vo.response.QaDoneResponse;
@@ -242,7 +243,7 @@ public class QaServiceImpl implements QaService {
                         }
                         stream.append(token);
                         send(emitter, "delta", token, stream);
-                    });
+                    }, stream.cancellation());
                     return true;
                 }, false);
     }
@@ -262,6 +263,11 @@ public class QaServiceImpl implements QaService {
         private final AtomicBoolean finished = new AtomicBoolean(false);
         /** 客户端断开标志：置位后不再累积正文、不再推送任何事件 */
         private final AtomicBoolean disconnected = new AtomicBoolean(false);
+        /**
+         * 上游生成取消句柄：断开/超时的同一时刻 cancel，让模型侧停止消费 token，
+         * 而不是等 generate 自然结束（否则白烧 token，且会话锁要多占一整段生成时间）。
+         */
+        private final AnswerCancellation cancellation = new AnswerCancellation();
         private List<QaSourceResponse> sources = List.of();
 
         private RoundStream(ConversationRound round, long startedAt) {
@@ -287,14 +293,20 @@ public class QaServiceImpl implements QaService {
             return disconnected.get();
         }
 
-        /** 生命周期回调（断开/超时）与发送失败统一走这里：置位断开并落 STOPPED */
+        AnswerCancellation cancellation() {
+            return cancellation;
+        }
+
+        /** 生命周期回调（断开/超时）与发送失败统一走这里：取消上游、落 STOPPED */
         void disconnected() {
             disconnected.set(true);
+            cancellation.cancel();
             stopped();
         }
 
         void timeout() {
             disconnected.set(true);
+            cancellation.cancel();
             stopped();
         }
 

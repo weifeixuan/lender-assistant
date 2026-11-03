@@ -41,7 +41,8 @@ class MockToolAnswerTest {
 
     private String generateAndCollect(String question) {
         List<String> deltas = new ArrayList<>();
-        generator.generate("sys", List.of(), question, contextHits(), deltas::add);
+        generator.generate("sys", List.of(), question, contextHits(), deltas::add,
+                new com.lender.assistant.rag.strategy.AnswerCancellation());
         return String.join("", deltas);
     }
 
