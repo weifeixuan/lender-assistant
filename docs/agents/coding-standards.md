@@ -109,6 +109,7 @@ com.lender.assistant
 9. Mapper 只取数、不加 `@Transactional`，业务判定留 Service；禁止循环内单条查 DB，批量写用 `<foreach>` + `ExecutorType.BATCH`。
 10. 事务边界在 Service：`@Transactional(rollbackFor = Exception.class)`；非原子的「删+插」与多表写必须加事务。
 11. 事务内禁止长耗时操作（模型调用、文件 IO）与循环内远程 / DB 调用。
+12. Mapper 方法若是**单个 record 参数**、XML 又用带前缀的占位符（如 `#{message.conversationId}`），参数必须显式标 `@Param("message")`，前缀与注解值一致。单参数 record 运行时按属性名直接取值、不会包成 `ParamMap`，漏注解会抛 `ReflectionException: There is no getter for property named 'message'`，接口直接 500。多参数方法天然生成 `ParamMap`，无此问题。
 
 ## 7. 并发与异步
 
