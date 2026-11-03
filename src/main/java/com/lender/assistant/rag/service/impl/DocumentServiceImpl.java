@@ -88,25 +88,11 @@ public class DocumentServiceImpl implements DocumentService {
         // 且重复上传直接复用既有文档，省掉整轮向量化与写库
         DocSummary duplicate = chunks.isEmpty() ? null : findDuplicateDocument(chunks);
         if (duplicate != null) {
-            double avgChunkChars = duplicate.chunkCount() == 0
-                    ? 0
-                    : (double) duplicate.charCountTotal() / duplicate.chunkCount();
-            return new UploadResponse(duplicate.docId(), parsed.blocks().size(), duplicate.chunkCount(),
-                    avgChunkChars, new IngestMillisResponse(parseMillis, splitMillis, 0, 0),
-                    embeddingStrategy.getClass().getSimpleName());
+            return duplicateResponse(duplicate, parsed, parseMillis, splitMillis);
         }
 
         long embedStart = System.currentTimeMillis();
-        List<ChunkRow> rows = new ArrayList<>(chunks.size());
-        for (Chunk chunk : chunks) {
-            // 拼接 sectionPath 进向量化输入：标题是强语义信号，丢掉太可惜
-            String embedInput = chunk.sectionPath() == null || chunk.sectionPath().isEmpty()
-                    ? chunk.content()
-                    : chunk.sectionPath() + "\n" + chunk.content();
-            ChunkRow row = new ChunkRow(chunk.sectionPath(), chunk.index(), chunk.content(),
-                    chunk.charCount(), PgVectorUtils.toLiteral(embeddingStrategy.embed(embedInput)));
-            rows.add(row);
-        }
+        List<ChunkRow> rows = embedChunks(chunks);
         long embedMillis = System.currentTimeMillis() - embedStart;
 
         long storeStart = System.currentTimeMillis();
@@ -117,6 +103,30 @@ public class DocumentServiceImpl implements DocumentService {
         return new UploadResponse(docId, parsed.blocks().size(), rows.size(), avgChunkChars,
                 new IngestMillisResponse(parseMillis, splitMillis, embedMillis, storeMillis),
                 embeddingStrategy.getClass().getSimpleName());
+    }
+
+    /** 重复上传：直接复用既有文档的统计值，向量化与写库耗时记 0 */
+    private UploadResponse duplicateResponse(DocSummary duplicate, ParsedDocument parsed,
+                                             long parseMillis, long splitMillis) {
+        double avgChunkChars = duplicate.chunkCount() == 0
+                ? 0
+                : (double) duplicate.charCountTotal() / duplicate.chunkCount();
+        return new UploadResponse(duplicate.docId(), parsed.blocks().size(), duplicate.chunkCount(),
+                avgChunkChars, new IngestMillisResponse(parseMillis, splitMillis, 0, 0),
+                embeddingStrategy.getClass().getSimpleName());
+    }
+
+    /** 逐切片向量化：章节路径拼进向量化输入（标题是强语义信号，丢掉太可惜） */
+    private List<ChunkRow> embedChunks(List<Chunk> chunks) {
+        List<ChunkRow> rows = new ArrayList<>(chunks.size());
+        for (Chunk chunk : chunks) {
+            String embedInput = chunk.sectionPath() == null || chunk.sectionPath().isEmpty()
+                    ? chunk.content()
+                    : chunk.sectionPath() + "\n" + chunk.content();
+            rows.add(new ChunkRow(chunk.sectionPath(), chunk.index(), chunk.content(),
+                    chunk.charCount(), PgVectorUtils.toLiteral(embeddingStrategy.embed(embedInput))));
+        }
+        return rows;
     }
 
     /**

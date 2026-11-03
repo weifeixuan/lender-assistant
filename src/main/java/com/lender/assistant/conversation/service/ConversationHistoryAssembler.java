@@ -1,5 +1,6 @@
 package com.lender.assistant.conversation.service;
 
+import com.lender.assistant.common.constant.MessageConstants;
 import com.lender.assistant.conversation.mapper.MessageMapper;
 import com.lender.assistant.conversation.model.MessageRow;
 import com.lender.assistant.rag.vo.ChatTurn;
@@ -22,10 +23,6 @@ import java.util.Map;
  */
 @Component
 public class ConversationHistoryAssembler {
-
-    private static final String ROLE_USER = "USER";
-    private static final String ROLE_ASSISTANT = "ASSISTANT";
-    private static final String STATUS_DONE = "DONE";
 
     private final MessageMapper messageMapper;
     private final int maxRounds;
@@ -50,12 +47,12 @@ public class ConversationHistoryAssembler {
                 continue;
             }
             RoundMessages round = rounds.computeIfAbsent(row.roundId(), ignored -> new RoundMessages());
-            if (!STATUS_DONE.equals(row.status())) {
+            if (!MessageConstants.STATUS_DONE.equals(row.status())) {
                 continue;
             }
-            if (ROLE_USER.equals(row.role())) {
+            if (MessageConstants.ROLE_USER.equals(row.role())) {
                 round.user = row;
-            } else if (ROLE_ASSISTANT.equals(row.role())) {
+            } else if (MessageConstants.ROLE_ASSISTANT.equals(row.role())) {
                 round.assistant = row;
             }
         }
@@ -63,8 +60,8 @@ public class ConversationHistoryAssembler {
         List<ChatTurn> complete = new ArrayList<>();
         for (RoundMessages round : rounds.values()) {
             if (round.user != null && round.assistant != null) {
-                complete.add(new ChatTurn(ROLE_USER, round.user.content()));
-                complete.add(new ChatTurn(ROLE_ASSISTANT, round.assistant.content()));
+                complete.add(new ChatTurn(MessageConstants.ROLE_USER, round.user.content()));
+                complete.add(new ChatTurn(MessageConstants.ROLE_ASSISTANT, round.assistant.content()));
             }
         }
 
@@ -83,7 +80,7 @@ public class ConversationHistoryAssembler {
     /** 检索 query 用的最近一条历史用户正文；没有可用历史返回 null */
     public static String lastUserContent(List<ChatTurn> history) {
         for (int i = history.size() - 1; i >= 0; i--) {
-            if (ROLE_USER.equals(history.get(i).role())) {
+            if (MessageConstants.ROLE_USER.equals(history.get(i).role())) {
                 return history.get(i).content();
             }
         }

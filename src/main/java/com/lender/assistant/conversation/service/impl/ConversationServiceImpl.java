@@ -3,6 +3,7 @@ package com.lender.assistant.conversation.service.impl;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.lender.assistant.common.constant.MessageConstants;
 import com.lender.assistant.common.exception.BizException;
 import com.lender.assistant.common.exception.ErrorCode;
 import com.lender.assistant.conversation.mapper.ConversationMapper;
@@ -82,34 +83,34 @@ public class ConversationServiceImpl implements ConversationService {
     }
 
     @Override
-    @Transactional
+    @Transactional(rollbackFor = Exception.class)
     public void startNewRound(ConversationRound round, String userId, String question) {
         conversationMapper.insert(round.conversationId(), userId, titleOf(question));
         messageMapper.insert(new MessageInsert(round.conversationId(), round.roundId(),
-                round.userMessageId(), "USER", question, "DONE",
-                null, null, null, null));
+                round.userMessageId(), MessageConstants.ROLE_USER, question,
+                MessageConstants.STATUS_DONE, null, null, null, null));
     }
 
     @Override
-    @Transactional
+    @Transactional(rollbackFor = Exception.class)
     public void startFollowUpRound(ConversationRound round, String userId, String question) {
         validateOwnership(round.conversationId(), userId);
         messageMapper.insert(new MessageInsert(round.conversationId(), round.roundId(),
-                round.userMessageId(), "USER", question, "DONE",
-                null, null, null, null));
+                round.userMessageId(), MessageConstants.ROLE_USER, question,
+                MessageConstants.STATUS_DONE, null, null, null, null));
         conversationMapper.touch(round.conversationId());
     }
 
     @Override
-    @Transactional
+    @Transactional(rollbackFor = Exception.class)
     public void completeRound(AssistantMessageCompletion completion) {
         // 消息与会话无级联关系：流式期间会话被删，助手消息照常落库；
         // touch 自带 status='ACTIVE'，已删会话的时间线不会被推后。
         int elapsedMs = (int) Math.min(Integer.MAX_VALUE, completion.elapsedMillis());
         messageMapper.insert(new MessageInsert(completion.conversationId(), completion.roundId(),
-                completion.messageId(), "ASSISTANT", completion.content(), completion.status(),
-                writeSources(completion.sources()), completion.provider(), elapsedMs,
-                completion.error()));
+                completion.messageId(), MessageConstants.ROLE_ASSISTANT, completion.content(),
+                completion.status(), writeSources(completion.sources()), completion.provider(),
+                elapsedMs, completion.error()));
         conversationMapper.touch(completion.conversationId());
     }
 

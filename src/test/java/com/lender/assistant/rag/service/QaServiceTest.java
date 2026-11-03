@@ -276,6 +276,19 @@ class QaServiceTest {
     }
 
     @Test
+    @DisplayName("meta 发送失败：不再装配历史与检索，直接按 STOPPED 收尾")
+    void metaSendFailureSkipsRetrieval() {
+        qaService.streamAnswer(new FailAfterEmitter(0), "问题", 4, USER_ID, round,
+                System.currentTimeMillis());
+
+        verify(searchService, never()).hybridSearch(any(), any(), anyInt());
+        verify(historyAssembler, never()).assemble(anyString(), anyString());
+        verify(conversationService).completeRound(argThat(completion ->
+                completion.status().equals("STOPPED")
+                        && completion.content().isEmpty()));
+    }
+
+    @Test
     @DisplayName("正常结束把完整回答、来源与模型名落库")
     void persistsAssistantOnSuccess() {
         when(searchService.hybridSearch(any(), any(), anyInt()))

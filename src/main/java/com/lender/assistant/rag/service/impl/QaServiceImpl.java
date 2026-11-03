@@ -1,6 +1,7 @@
 package com.lender.assistant.rag.service.impl;
 
 import com.lender.assistant.common.constant.LlmScene;
+import com.lender.assistant.common.constant.MessageConstants;
 import com.lender.assistant.common.exception.BizException;
 import com.lender.assistant.common.exception.ErrorCode;
 import com.lender.assistant.common.util.ThreadPoolFactory;
@@ -130,7 +131,7 @@ public class QaServiceImpl implements QaService {
             // 模型从未运行：provider 按 PRD §2.5 为 null；诊断信息只进日志（见上一行），不写进用户可见的 error
             conversationService.completeRound(new AssistantMessageCompletion(
                     round.conversationId(), round.roundId(), round.assistantMessageId(),
-                    "", List.of(), null, 0, "FAILED",
+                    "", List.of(), null, 0, MessageConstants.STATUS_FAILED,
                     "服务繁忙，请重试"));
             throw new BizException(ErrorCode.INTERNAL_ERROR, "服务繁忙，请重试");
         }
@@ -181,8 +182,10 @@ public class QaServiceImpl implements QaService {
 
         try {
             // meta 必须首事件：前端靠它把本轮增量回答挂到正确的会话/轮次上
-            send(emitter, "meta", new QaMetaResponse(round.conversationId(), round.roundId(),
-                    round.userMessageId(), round.assistantMessageId()), stream);
+            if (!send(emitter, "meta", new QaMetaResponse(round.conversationId(), round.roundId(),
+                    round.userMessageId(), round.assistantMessageId()), stream)) {
+                return;
+            }
 
             // 历史只在追问时非空；检索 query 带最近一条历史用户提问，让"那二套呢"这类指代能召回正确资料
             List<ChatTurn> history = historyAssembler.assemble(round.conversationId(), round.roundId());
@@ -190,19 +193,12 @@ public class QaServiceImpl implements QaService {
             // 避免上一轮长问题按顺序把当前追问的关键词挤出配额（票 08）
             String lastUser = ConversationHistoryAssembler.lastUserContent(history);
             List<SearchItemResponse> hits = searchService.hybridSearch(question, lastUser, topK);
-            List<QaSourceResponse> sources = hits.isEmpty() ? List.of() : buildSources(hits);
-            stream.sources(sources);
-            // 来源列表先发；未召回时也发空数组，前端协议保持单一形态
-            send(emitter, "sources", sources, stream);
+            if (!pushSources(emitter, hits, stream)) {
+                return;
+            }
 
             if (hits.isEmpty()) {
-                String guidance = "资料库中没有检索到相关内容，请先在上方上传并入库文档。";
-                stream.append(guidance);
-                send(emitter, "delta", guidance, stream);
-                send(emitter, "done",
-                        new QaDoneResponse(generator.name(), System.currentTimeMillis() - t0, 0), stream);
-                stream.done();
-                emitter.complete();
+                emitNoRecall(emitter, stream, t0);
                 return;
             }
 
@@ -210,25 +206,65 @@ public class QaServiceImpl implements QaService {
 
             long elapsedMillis = System.currentTimeMillis() - t0;
             stream.done();
-
-            QaDoneResponse done = new QaDoneResponse(generator.name(), elapsedMillis, sources.size());
-            send(emitter, "done", done, stream);
+            if (!send(emitter, "done",
+                    new QaDoneResponse(generator.name(), elapsedMillis, hits.size()), stream)) {
+                return;
+            }
             emitter.complete();
         } catch (io.github.resilience4j.circuitbreaker.CallNotPermittedException e) {
-            // 熔断打开：连续失败触发保护，快速失败。降级而非崩溃（手册验收线）——
-            // sources 已经推给前端，检索能力不受模型故障影响。
-            // 记 WARN 不记 ERROR：这是熔断器的正常降级动作，但需有人从日志看到"模型在连续失败"
-            log.warn("问答链路熔断打开，已降级为可读提示: {}", e.getMessage());
-            send(emitter, "error", "模型服务熔断中（连续失败已触发保护），已转人工流程兜底；"
-                    + "上方召回来源仍可查看。模型恢复前请使用检索测试区块。", stream);
-            stream.failed("模型服务熔断中");
-            emitter.completeWithError(e);
+            handleCircuitOpen(emitter, e, stream);
         } catch (Exception e) {
-            // 模型超时/网络异常/DB 异常统一走 error 事件——前端能拿到可读信息而非静默断流。
-            // 必须带堆栈落 ERROR：SSE 已断流，这是排查链路上唯一的完整证据
-            log.error("问答链路故障，已推送 error 事件并断流: question={}", question, e);
-            send(emitter, "error", "问答失败：" + e.getMessage(), stream);
-            stream.failed("问答失败：" + e.getMessage());
+            handleFailure(emitter, question, e, stream);
+        }
+    }
+
+    /** 召回结果 → sources 事件；返回 false 表示客户端已断开（disconnected 已落 STOPPED） */
+    private boolean pushSources(SseEmitter emitter, List<SearchItemResponse> hits, RoundStream stream) {
+        List<QaSourceResponse> sources = hits.isEmpty() ? List.of() : buildSources(hits);
+        stream.sources(sources);
+        // 来源列表先发；未召回时也发空数组，前端协议保持单一形态
+        return send(emitter, "sources", sources, stream);
+    }
+
+    /** 无召回分支：推送引导文案与 done 后正常结束 */
+    private void emitNoRecall(SseEmitter emitter, RoundStream stream, long t0) {
+        String guidance = "资料库中没有检索到相关内容，请先在上方上传并入库文档。";
+        stream.append(guidance);
+        if (!send(emitter, "delta", guidance, stream)) {
+            return;
+        }
+        if (!send(emitter, "done",
+                new QaDoneResponse(generator.name(), System.currentTimeMillis() - t0, 0), stream)) {
+            return;
+        }
+        stream.done();
+        emitter.complete();
+    }
+
+    /** 熔断打开：推送降级提示后断流，终态 FAILED；发送失败说明客户端已断开，不再重复收尾 */
+    private void handleCircuitOpen(SseEmitter emitter,
+                                   io.github.resilience4j.circuitbreaker.CallNotPermittedException e,
+                                   RoundStream stream) {
+        // 熔断打开：连续失败触发保护，快速失败。降级而非崩溃（手册验收线）——
+        // sources 已经推给前端，检索能力不受模型故障影响。
+        // 记 WARN 不记 ERROR：这是熔断器的正常降级动作，但需有人从日志看到"模型在连续失败"
+        log.warn("问答链路熔断打开，已降级为可读提示: {}", e.getMessage());
+        boolean sent = send(emitter, "error", "模型服务熔断中（连续失败已触发保护），已转人工流程兜底；"
+                + "上方召回来源仍可查看。模型恢复前请使用检索测试区块。", stream);
+        stream.failed("模型服务熔断中");
+        if (sent) {
+            emitter.completeWithError(e);
+        }
+    }
+
+    /** 通用异常收尾：推送 error 事件后断流，保留已生成正文并按 FAILED 落库 */
+    private void handleFailure(SseEmitter emitter, String question, Exception e, RoundStream stream) {
+        // 模型超时/网络异常/DB 异常统一走 error 事件——前端能拿到可读信息而非静默断流。
+        // 必须带堆栈落 ERROR：SSE 已断流，这是排查链路上唯一的完整证据
+        log.error("问答链路故障，已推送 error 事件并断流: question={}", question, e);
+        boolean sent = send(emitter, "error", "问答失败：" + e.getMessage(), stream);
+        stream.failed("问答失败：" + e.getMessage());
+        if (sent) {
             emitter.completeWithError(e);
         }
     }
@@ -298,7 +334,7 @@ public class QaServiceImpl implements QaService {
         }
 
         void done() {
-            persist("DONE", null);
+            persist(MessageConstants.STATUS_DONE, null);
         }
 
         boolean isDisconnected() {
@@ -323,11 +359,11 @@ public class QaServiceImpl implements QaService {
         }
 
         void failed(String error) {
-            persist("FAILED", error);
+            persist(MessageConstants.STATUS_FAILED, error);
         }
 
         void stopped() {
-            persist("STOPPED", null);
+            persist(MessageConstants.STATUS_STOPPED, null);
         }
 
         private void persist(String status, String error) {
