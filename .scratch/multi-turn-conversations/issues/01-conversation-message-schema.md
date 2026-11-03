@@ -76,3 +76,28 @@ SQL
 ```
 
 说明：票 01 阶段还没有会话接口，故此处不列 curl；接口出现后由票 02/03 各自的验收覆盖 HTTP 层。
+
+## Comments
+
+### 2026-11-03 会话列表索引补 `id DESC`（代码审查修复 5.1）
+
+**问题**：`idx_conversation_user_status_update` 原为 `(user_id, status, update_time DESC)`，未覆盖列表排序的第二键 `id DESC`；`update_time` 并列时 `id` 仍需在内存里排序，大表会 filesort。
+
+**改法**：`docs/schema.sql` 改为 `(user_id, status, update_time DESC, id DESC)`。仓库没有独立迁移目录（建表唯一事实源就是 `docs/schema.sql`），故只改该文件；本地开发库用 DROP + CREATE 手工对齐。
+
+**真实库验证**（容器 `lender-pg`，库 `lender_assistant`）：
+
+```text
+# 改前
+CREATE INDEX idx_conversation_user_status_update ON public.conversation USING btree (user_id, status, update_time DESC)
+
+# 执行
+DROP INDEX IF EXISTS idx_conversation_user_status_update;
+CREATE INDEX idx_conversation_user_status_update ON conversation (user_id, status, update_time DESC, id DESC);
+DROP INDEX
+CREATE INDEX
+
+# 改后（pg_indexes.indexdef 等价于 \d conversation 的索引行）
+CREATE INDEX idx_conversation_user_status_update ON public.conversation USING btree (user_id, status, update_time DESC, id DESC)
+```
+

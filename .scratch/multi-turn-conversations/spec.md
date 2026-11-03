@@ -51,7 +51,7 @@ Status: ready-for-agent
 ### 领域与持久化
 
 - 新增 `conversation` 与 `message` 两张表，PostgreSQL 为唯一事实源；建表 SQL 同步写入项目现有的 schema 事实源并保持幂等。
-- `conversation`：`id` 自增主键、`conversation_id` 唯一、`user_id`、`title`、`status`（`ACTIVE` / `DELETED`，仅内部使用）、`create_time`、`update_time`；按 `(user_id, status, update_time DESC)` 建索引。
+- `conversation`：`id` 自增主键、`conversation_id` 唯一、`user_id`、`title`、`status`（`ACTIVE` / `DELETED`，仅内部使用）、`create_time`、`update_time`；按 `(user_id, status, update_time DESC, id DESC)` 建索引。
 - 会话只在首问受理时创建，库中不存在"新会话"空记录；`title` 取首问正文去首尾空白后的前 20 个 Unicode code point。
 - 每次用户消息落库、每轮助手消息落库，都刷新会话 `update_time`。
 - `message`：`id` 自增主键、`conversation_id`、`round_id`、`message_id` 唯一、`role`（`USER` / `ASSISTANT`）、`content`、`status`（`DONE` / `FAILED` / `STOPPED`）、`sources` JSONB、`provider`、`elapsed_ms`、`error_msg`、`create_time`、`update_time`。
@@ -102,7 +102,7 @@ data: {"conversationId":"...","roundId":"...","userMessageId":"...","assistantMe
   - 正常结束 → `DONE`，写入 `sources`、`provider`、`elapsed_ms`。
   - 模型或系统异常 → `FAILED`，保留已生成正文，`error_msg` 非空。
   - 客户端停止或连接断开 → `STOPPED`，保留已生成正文。
-- 会话在流式过程中被删除：当前轮允许跑完，但结束时跳过助手消息落库；后续请求 `404`。
+- 会话在流式过程中被删除：当前轮允许跑完，助手消息**照常落库**（消息与会话无级联关系，会话状态不受影响），但不刷新已删会话的 `update_time`；后续请求 `404`。
 - 历史中 `FAILED` / `STOPPED` 助手消息与其用户消息共享 `roundId`，照常展示，但不进入模型上下文。
 
 ### 历史装配

@@ -10,12 +10,12 @@
 
 **Estimate:** 2 小时
 
-- [ ] `AnswerGeneratorStrategy` 新签名接收有序历史（`role` + `content`）、当前问题与召回结果，两个实现同步适配
-- [ ] OpenAI 兼容实现按顺序把历史映射为对话消息，最后追加当前用户消息；Mock 实现签名一致并忽略历史
-- [ ] 历史按 `roundId` 分组，每组必须同时有一条 USER 和一条 ASSISTANT 且状态均为 `DONE`；缺任一条整轮丢弃
-- [ ] 最多回放最近 6 轮；总字符超 2000 时从最旧一轮开始整轮丢弃
-- [ ] `FAILED` / `STOPPED` 轮次不进入上下文
-- [ ] 新建会话历史为空，首问行为不变
+- [x] `AnswerGeneratorStrategy` 新签名接收有序历史（`role` + `content`）、当前问题与召回结果，两个实现同步适配
+- [x] OpenAI 兼容实现按顺序把历史映射为对话消息，最后追加当前用户消息；Mock 实现签名一致并忽略历史
+- [x] 历史按 `roundId` 分组，每组必须同时有一条 USER 和一条 ASSISTANT 且状态均为 `DONE`；缺任一条整轮丢弃
+- [x] 最多回放最近 6 轮；总字符超 2000 时从最旧一轮开始整轮丢弃
+- [x] `FAILED` / `STOPPED` 轮次不进入上下文
+- [x] 新建会话历史为空，首问行为不变
 - [x] 检索时把「当前问题」与「最近一条历史 USER 正文」**分段**传给 `SearchService`；无可用历史时上一轮为 `null`
 - [x] `rag.qa.history-max-rounds` 与 `rag.qa.history-max-chars` 可配置并生效
 - [x] 单测覆盖 6 轮上限、2000 字符整轮裁剪、非 `DONE` 剔除、缺一条剔除、检索分段传参
