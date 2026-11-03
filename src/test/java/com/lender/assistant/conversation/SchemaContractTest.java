@@ -64,8 +64,8 @@ class SchemaContractTest {
     @DisplayName("会话列表与消息历史所需索引已声明")
     void indexesAreDeclared() {
         assertTrue(SCHEMA.contains(
-                        "idx_conversation_user_status_update ON conversation (user_id, status, update_time DESC)"),
-                "缺少会话列表索引");
+                        "idx_conversation_user_status_update ON conversation (user_id, status, update_time DESC, id DESC)"),
+                "会话列表索引必须覆盖排序第二键 id DESC");
         assertTrue(SCHEMA.contains("idx_message_conversation_id ON message (conversation_id, id)"),
                 "缺少消息历史索引");
     }

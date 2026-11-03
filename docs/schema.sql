@@ -126,9 +126,10 @@ CREATE TABLE IF NOT EXISTS conversation (
     CONSTRAINT uk_conversation_conversation_id UNIQUE (conversation_id)
 );
 
--- 会话列表按"用户 + 状态 + 最近更新"读取（GET /api/conversations）
+-- 会话列表按"用户 + 状态 + 最近更新"读取（GET /api/conversations）；
+-- 末尾带 id DESC 让 update_time 并列时也只靠索引排序，大表不触发 filesort
 CREATE INDEX IF NOT EXISTS idx_conversation_user_status_update
-    ON conversation (user_id, status, update_time DESC);
+    ON conversation (user_id, status, update_time DESC, id DESC);
 
 COMMENT ON TABLE conversation IS '会话：一轮或多轮问答的归属单元，首问受理时懒创建';
 COMMENT ON COLUMN conversation.conversation_id IS '对外会话标识（UUID v4），SSE meta 回传';

@@ -27,7 +27,9 @@ public class UserIdInterceptor implements HandlerInterceptor {
     @Override
     public boolean preHandle(HttpServletRequest request, HttpServletResponse response,
                              Object handler) {
+        // spec：去空白后非空且长度受控；写入的是去空白后的值，业务层不必再处理空白
         String userId = request.getHeader(HEADER);
+        userId = userId == null ? null : userId.trim();
         if (userId == null || !USER_ID_PATTERN.matcher(userId).matches()) {
             throw new BizException(ErrorCode.PARAM_INVALID,
                     "X-User-Id 缺失或格式非法（允许 1-64 位字母、数字、下划线、连字符）");

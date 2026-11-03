@@ -138,7 +138,7 @@ com.lender.assistant
 ## 10. 提交纪律与自检
 
 1. commit 前 `mvn test` 全绿；测试数量下降必须说明原因。
-2. message 沿用 `阶段X(partY): 主题` + 要点列表；一次改动聚焦一个目标。
+2. message 沿用 `type(ticket-xx): 主题`（如 `fix(ticket-06): …`）+ 要点列表；一次改动聚焦一个目标。
 3. 禁止 `git add -A` 夹带无关文件；`app.log` / `target/` 不入库。
 4. 架构级取舍先写 `docs/adr/`。
 

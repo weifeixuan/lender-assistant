@@ -141,7 +141,7 @@ CREATE TABLE IF NOT EXISTS conversation (
 );
 
 CREATE INDEX IF NOT EXISTS idx_conversation_user_status_update
-    ON conversation (user_id, status, update_time DESC);
+    ON conversation (user_id, status, update_time DESC, id DESC);
 ```
 
 约束与要点：

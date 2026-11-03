@@ -32,6 +32,17 @@ class UserIdInterceptorTest {
     }
 
     @Test
+    @DisplayName("带首尾空白的 X-User-Id 去空白后合法，并写入去空白后的值")
+    void paddedHeaderIsTrimmed() throws Exception {
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        request.addHeader("X-User-Id", " dev-user-001 ");
+
+        interceptor.preHandle(request, response, handler);
+
+        assertEquals("dev-user-001", request.getAttribute(UserIdInterceptor.USER_ID_ATTRIBUTE));
+    }
+
+    @Test
     @DisplayName("缺失 X-User-Id 返回 PARAM_INVALID")
     void missingHeaderIsRejected() {
         assertParamInvalid(new MockHttpServletRequest());
