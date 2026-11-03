@@ -24,7 +24,11 @@ import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
+import java.util.HexFormat;
 import java.util.List;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
@@ -80,6 +84,18 @@ public class DocumentServiceImpl implements DocumentService {
         List<Chunk> chunks = splitter.split(parsed);
         long splitMillis = System.currentTimeMillis() - splitStart;
 
+        // 内容判重放在切分之后、向量化之前：切片文本已确定，能判中"同内容不同文件名"；
+        // 且重复上传直接复用既有文档，省掉整轮向量化与写库
+        DocSummary duplicate = chunks.isEmpty() ? null : findDuplicateDocument(chunks);
+        if (duplicate != null) {
+            double avgChunkChars = duplicate.chunkCount() == 0
+                    ? 0
+                    : (double) duplicate.charCountTotal() / duplicate.chunkCount();
+            return new UploadResponse(duplicate.docId(), parsed.blocks().size(), duplicate.chunkCount(),
+                    avgChunkChars, new IngestMillisResponse(parseMillis, splitMillis, 0, 0),
+                    embeddingStrategy.getClass().getSimpleName());
+        }
+
         long embedStart = System.currentTimeMillis();
         List<ChunkRow> rows = new ArrayList<>(chunks.size());
         for (Chunk chunk : chunks) {
@@ -101,6 +117,60 @@ public class DocumentServiceImpl implements DocumentService {
         return new UploadResponse(docId, parsed.blocks().size(), rows.size(), avgChunkChars,
                 new IngestMillisResponse(parseMillis, splitMillis, embedMillis, storeMillis),
                 embeddingStrategy.getClass().getSimpleName());
+    }
+
+    /**
+     * 按内容找重复文档：先用概览里的切片数/总字符数做廉价预筛，避免每次上传都读全库正文；
+     * 预筛命中后再逐文档比对切片正文的 SHA-256。
+     *
+     * 哈希只取「章节 + 正文」的有序序列，不含 docId / 文件名 / doc_title，
+     * 因此同一文件重复上传、内容相同但文件名不同，都能判中。
+     */
+    private DocSummary findDuplicateDocument(List<Chunk> chunks) {
+        String hash = contentHash(chunks);
+        long totalChars = chunks.stream().mapToLong(Chunk::charCount).sum();
+        for (DocSummary doc : mapper.listDocuments()) {
+            if (doc.chunkCount() == null || doc.charCountTotal() == null) {
+                continue;
+            }
+            if (doc.chunkCount() != chunks.size() || doc.charCountTotal() != totalChars) {
+                continue;
+            }
+            if (hash.equals(linesHash(mapper.listChunkLines(doc.docId())))) {
+                return doc;
+            }
+        }
+        return null;
+    }
+
+    private String contentHash(List<Chunk> chunks) {
+        StringBuilder canonical = new StringBuilder();
+        for (Chunk chunk : chunks) {
+            canonical.append(canonicalLine(chunk.sectionPath(), chunk.content()));
+        }
+        return sha256(canonical.toString());
+    }
+
+    private String linesHash(List<DocChunkLine> lines) {
+        StringBuilder canonical = new StringBuilder();
+        for (DocChunkLine line : lines) {
+            canonical.append(canonicalLine(line.sectionPath(), line.content()));
+        }
+        return sha256(canonical.toString());
+    }
+
+    /** 切片规范化文本：章节路径与正文之间保留换行，切片之间用 \\u0000 分隔（避免拼接歧义） */
+    private String canonicalLine(String sectionPath, String content) {
+        return (sectionPath == null ? "" : sectionPath) + "\n" + content + "\u0000";
+    }
+
+    private String sha256(String text) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            return HexFormat.of().formatHex(digest.digest(text.getBytes(StandardCharsets.UTF_8)));
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException("JVM 不支持 SHA-256", e);
+        }
     }
 
     /** 标题去扩展名：frontend 展示用（"xxx.docx" → "xxx"） */

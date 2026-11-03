@@ -63,3 +63,80 @@
 - `docs/阶段1/2/6_*.md`、`docs/adr/0001-*.md` 中的 `static/index.html` 提法是对当时提交的历史记录（时间线事实），
   不是指向现存文件的链接，保留不改。票 11 与本文均不涉及这些历史文档的改写。
 - 保留的验证缺口：契约测试只证明 SQL 文本含约束，不证明真实库拒绝重复写入；该缺口由票 11（Testcontainers）承接。
+
+### 2026-11-03 收尾修复：重复文档清理 + 入库幂等
+
+阶段五诊断「响应字段呢？」多轮指代失败时，发现知识库里存在两份同内容的华信接口文档：本票端到端冒烟
+（`java -jar` + Mock 模型）把样本以 `e2e_huaxin_api` 之名灌入了真实库，而业务原始文档是
+`huaxin_corp_api_v1`。两份各 8 切片、同样占用关键词/向量通道名额，交易查询接口因此多占 2 个候选位。
+
+#### 2a 删除依据（不是凭 docId 名字）
+
+核对 SQL（对 `section_path + '\n' + content` 逐片取 md5）：
+
+| doc_id | 切片数 | 总字符 | 入库时间(UTC) |
+|---|---|---|---|
+| `huaxin_corp_api_v1` | 8 | 1947 | 2026-10-11 07:54:52 / 更新 2026-10-29 14:50:21 |
+| `e2e_huaxin_api` | 8 | 1947 | 2026-11-02 18:07:12 |
+
+- 8 个 `chunk_index` 的 `section_path` 与 `content` md5 **逐条完全相同**（`same = t` × 8）；
+- 8 条 `embedding` 的 md5 也**逐条相同**（同内容 + 确定性 hash embedding）；
+- `doc_title` 与 `source_path` 也一致（均为 `华信银行_对公收付接口文档_v1.0(.docx)`）；
+- 入库时间落在本票冒烟窗口（2026-11-02 18:07 UTC = 2026-11-03 02:07 +08），
+  且本文档「端到端冒烟」章节明确记录了「样本 `e2e_huaxin_api`（8 chunks）已入库」。
+
+结论：`e2e_huaxin_api` 是本票测试灌入的重复副本，内容与 `huaxin_corp_api_v1` 无差异，删除不影响业务数据。
+
+删除前的切片正文留档（万一删错可据此恢复）：
+
+```text
+0 | 华信银行 对公收付接口文档 > 1 接入约定 | 本接口用于合作机构通过 HTTP 通道发起对公账户的代收与代付交易。生产环境网关地址为 https://fake-huaxin.example.com/gateway，联调环境为 https://fake-huaxin-uat.example.com/gateway。请求报文统一使用 UTF-8 编码的 JSON。
+所有接口采用 HTTPS 双向证书认证。合作机构需向我行提供机构证书公钥，我行分配合作机构编号（merNo）与接入密钥（secretKey）。
+1 | 华信银行 对公收付接口文档 > 1 接入约定 > 1.1 通用请求头 | 参数名: Content-Type | 类型: string | 必填: 是 | 说明: 固定值 application/json
+参数名: X-HX-Timestamp | 类型: string | 必填: 是 | 说明: 请求时间戳，格式 yyyyMMddHHmmss，与我行服务器时间偏差不得超过 5 分钟
+参数名: X-HX-Sign | 类型: string | 必填: 是 | 说明: 签名，规则见 1.2 节
+参数名: X-HX-MerNo | 类型: string | 必填: 是 | 说明: 合作机构编号
+2 | 华信银行 对公收付接口文档 > 1 接入约定 > 1.2 签名规则 | 将请求体 JSON 按 key 的字典序升序排列后拼接为 key1=value1&key2=value2 形式，末尾拼接 secretKey，对整个字符串做 SHA-256 摘要，十六进制大写即为 X-HX-Sign。签名失败返回错误码 SIGN_ERROR。
+3 | 华信银行 对公收付接口文档 > 2 单笔代收接口 | 代收指从我行企业客户的对公账户扣划资金至合作机构归集账户。单笔限额 500 万元，日累计限额 5000 万元。接口路径 /v1/collections/single。
+参数名: outBizNo | 类型: string(32) | 必填: 是 | 说明: 合作机构侧业务流水号，需保证唯一
+参数名: payerAccount | 类型: string(32) | 必填: 是 | 说明: 付款方对公账户号
+参数名: payerName | 类型: string(128) | 必填: 是 | 说明: 付款方户名
+参数名: payeeAccount | 类型: string(32) | 必填: 是 | 说明: 收款归集账户号
+参数名: amount | 类型: decimal(16,2) | 必填: 是 | 说明: 交易金额，单位元，保留两位小数
+参数名: remark | 类型: string(200) | 必填: 否 | 说明: 附言
+响应中的核心字段：hxSeqNo 为我行流水号，status 取值 PROCESSING/SUCCESS/FAIL。最终态以对账文件或交易查询接口为准，状
+4 | 华信银行 对公收付接口文档 > 2 单笔代收接口 | (200) | 必填: 否 | 说明: 附言
+响应中的核心字段：hxSeqNo 为我行流水号，status 取值 PROCESSING/SUCCESS/FAIL。最终态以对账文件或交易查询接口为准，状态为 PROCESSING 时不得直接作为失败处理。
+5 | 华信银行 对公收付接口文档 > 3 单笔代付接口 | 代付指从我行归集账户付款至指定对公账户。接口路径 /v1/payments/single。请求字段与代收接口一致，另有 feeFlag 字段：手续费承担方，取值 PAYER/PAYEE，默认 PAYER。
+6 | 华信银行 对公收付接口文档 > 4 交易查询接口 | 接口路径 /v1/transactions/query。支持按 outBizNo 或 hxSeqNo 查询，二者至少传一个。查询仅返回近 90 天内的交易。
+响应字段: hxSeqNo | 类型: string(32) | 说明: 我行流水号
+响应字段: outBizNo | 类型: string(32) | 说明: 机构侧流水号
+响应字段: status | 类型: string | 说明: PROCESSING/SUCCESS/FAIL
+响应字段: failCode | 类型: string | 说明: 失败码，status=FAIL 时返回
+响应字段: failMsg | 类型: string(256) | 说明: 失败原因描述
+响应字段: completeTime | 类型: string(14) | 说明: 完成时间 yyyyMMddHHmmss
+7 | 华信银行 对公收付接口文档 > 5 错误码表 | 错误码: SIGN_ERROR | 含义: 验签失败 | 处理建议: 检查签名规则与 secretKey
+错误码: DUPLICATE_OUTBIZNO | 含义: 机构流水号重复 | 处理建议: 查询原交易状态，勿重复发起
+错误码: AMOUNT_LIMIT | 含义: 超过限额 | 处理建议: 单笔/日累计限额见 2 节
+错误码: ACCOUNT_NOT_EXIST | 含义: 账户不存在 | 处理建议: 核对账户号与户名
+```
+
+删除结果（真实库，`DELETE FROM doc_chunk WHERE doc_id='e2e_huaxin_api'`，返回 `DELETE 8`）：
+
+| 指标 | 删除前 | 删除后 |
+|---|---|---|
+| `doc_chunk` 总行数 | 25 | 17 |
+| 文档数（`COUNT(DISTINCT doc_id)`，本库无独立 doc 表） | 4 | 3 |
+| `huaxin_corp_api_v1` 切片 | 8 / 1947 字 | 8 / 1947 字（未动） |
+
+#### 2b 入库幂等（内容哈希判重）
+
+- 判重发生在**解析 → 切分之后、向量化之前**：此时切片文本已确定，能判中「同内容不同文件名」；
+  命中后直接返回既有文档的 `docId`（`UploadResponse` 结构不变、不新增错误码），并跳过整轮向量化与写库。
+- 哈希口径：切片「章节路径 + 换行 + 正文」的有序序列做 SHA-256，不含 `docId` / 文件名 / `doc_title`。
+- 成本控制：先用 `listDocuments()` 的「切片数 + 总字符数」预筛候选，再读候选文档的切片正文比对哈希，
+  避免每次上传都读全库正文。
+- 已知边界：同一 `docId` 上传同内容也走判重（等价于不重建，`update_time` 不刷新）；同内容不同文件名时
+  不会更新 `doc_title`（因为不重建）。如需强制重建，应先把旧文档删除再上传。
+- 单测：`DocumentServiceTest` 覆盖「同内容不同 docId → 不新增、返回既有 docId、不做向量化」与
+  「切片数/总字符数相同但内容不同 → 正常入库」。

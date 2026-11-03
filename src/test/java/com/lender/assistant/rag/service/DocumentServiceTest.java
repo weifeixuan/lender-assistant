@@ -3,16 +3,21 @@ package com.lender.assistant.rag.service;
 import com.lender.assistant.common.exception.BizException;
 import com.lender.assistant.common.exception.ErrorCode;
 import com.lender.assistant.rag.mapper.DocChunkMapper;
+import com.lender.assistant.rag.model.Chunk;
 import com.lender.assistant.rag.model.ChunkItemRow;
 import com.lender.assistant.rag.model.ChunkRow;
 import com.lender.assistant.rag.model.DocChunkLine;
 import com.lender.assistant.rag.model.DocContent;
+import com.lender.assistant.rag.model.DocSummary;
+import com.lender.assistant.rag.model.ParsedDocument;
 import com.lender.assistant.rag.service.impl.DocumentServiceImpl;
 import com.lender.assistant.rag.strategy.ChunkSplitterStrategy;
+import com.lender.assistant.rag.strategy.DocumentParserStrategy;
 import com.lender.assistant.rag.strategy.EmbeddingStrategy;
 import com.lender.assistant.rag.strategy.factory.DocumentParserStrategyFactory;
 import com.lender.assistant.rag.vo.response.ChunkItemResponse;
 import com.lender.assistant.rag.vo.response.ChunkPageResponse;
+import com.lender.assistant.rag.vo.response.UploadResponse;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -32,13 +37,21 @@ import static org.mockito.Mockito.*;
 class DocumentServiceTest {
 
     private DocChunkMapper mapper;
+    private DocumentParserStrategyFactory parserFactory;
+    private ChunkSplitterStrategy splitter;
+    private EmbeddingStrategy embeddingStrategy;
+    /** 自注入代理（判重/写库的验证点） */
+    private DocumentService self;
     private DocumentService service;
 
     @BeforeEach
     void setUp() {
         mapper = mock(DocChunkMapper.class);
-        service = new DocumentServiceImpl(mapper, mock(DocumentParserStrategyFactory.class),
-                mock(ChunkSplitterStrategy.class), mock(EmbeddingStrategy.class), mock(DocumentService.class));
+        parserFactory = mock(DocumentParserStrategyFactory.class);
+        splitter = mock(ChunkSplitterStrategy.class);
+        embeddingStrategy = mock(EmbeddingStrategy.class);
+        self = mock(DocumentService.class);
+        service = new DocumentServiceImpl(mapper, parserFactory, splitter, embeddingStrategy, self);
     }
 
     @Test
@@ -151,6 +164,55 @@ class DocumentServiceTest {
         assertEquals(88, item.charCount());
         assertEquals("逾期阶段 M1 为 1-30 天", item.content());
         verify(mapper).listChunkPage("doc1", 10, 10);
+    }
+
+    @Test
+    @DisplayName("ingestDocument：同内容不同 docId 不再新增，返回既有文档且不做向量化")
+    void ingestDeduplicatesSameContentUnderDifferentDocId() throws Exception {
+        List<Chunk> chunks = List.of(
+                new Chunk("第1节", 0, "正文A", 3), new Chunk("第2节", 1, "正文B", 3));
+        when(mapper.listDocuments()).thenReturn(List.of(
+                new DocSummary("huaxin_corp_api_v1", "旧标题", "旧路径.docx", 2, 6L, "2026-10-29 22:50:21")));
+        when(mapper.listChunkLines("huaxin_corp_api_v1")).thenReturn(List.of(
+                new DocChunkLine("旧标题", "第1节", "正文A"),
+                new DocChunkLine("旧标题", "第2节", "正文B")));
+
+        UploadResponse response = ingest("new_doc_id", "换了文件名.docx", chunks);
+
+        assertEquals("huaxin_corp_api_v1", response.docId(), "判重时必须返回既有文档的 docId");
+        assertEquals(2, response.chunkCount(), "切片数来自既有文档，不新增");
+        assertEquals(3.0, response.avgChunkChars());
+        verify(embeddingStrategy, never()).embed(any());
+        verify(self, never()).replaceDocument(any(), any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("ingestDocument：切片数/总字符数相同但内容不同，正常向量化并写入")
+    void ingestInsertsWhenContentDiffers() throws Exception {
+        List<Chunk> chunks = List.of(
+                new Chunk("第1节", 0, "正文A", 3), new Chunk("第2节", 1, "正文C", 3));
+        when(mapper.listDocuments()).thenReturn(List.of(
+                new DocSummary("huaxin_corp_api_v1", "旧标题", "旧路径.docx", 2, 6L, "2026-10-29 22:50:21")));
+        when(mapper.listChunkLines("huaxin_corp_api_v1")).thenReturn(List.of(
+                new DocChunkLine("旧标题", "第1节", "正文A"),
+                new DocChunkLine("旧标题", "第2节", "正文B")));
+        when(embeddingStrategy.embed(any())).thenReturn(new float[]{0.5f, 0.5f});
+
+        UploadResponse response = ingest("new_doc_id", "新文档.docx", chunks);
+
+        assertEquals("new_doc_id", response.docId(), "内容不同则按新文档正常入库");
+        assertEquals(2, response.chunkCount());
+        verify(self).replaceDocument(eq("new_doc_id"), any(), eq("新文档.docx"), any());
+    }
+
+    /** 走完 解析 → 切分 → 判重 的前半段，parser/splitter 用 mock 喂固定切片 */
+    private UploadResponse ingest(String docId, String fileName, List<Chunk> chunks) throws Exception {
+        ParsedDocument parsed = new ParsedDocument(fileName, List.of(ParsedDocument.Block.paragraph("正文")));
+        DocumentParserStrategy parser = mock(DocumentParserStrategy.class);
+        when(parserFactory.resolve(fileName)).thenReturn(parser);
+        when(parser.parse(eq(fileName), any())).thenReturn(parsed);
+        when(splitter.split(parsed)).thenReturn(chunks);
+        return service.ingestDocument(docId, fileName, new byte[]{1});
     }
 
     @Test
