@@ -39,8 +39,13 @@ public interface DocChunkMapper {
     List<ChunkItemRow> listChunkPage(@Param("docId") String docId,
                                      @Param("limit") int limit, @Param("offset") int offset);
 
-    List<VectorHit> searchByVector(@Param("vec") String vec, @Param("topK") int topK);
+    /** candidateLimit 是候选池大小（SearchConstants.candidateLimit），不是对外返回条数 */
+    List<VectorHit> searchByVector(@Param("vec") String vec, @Param("candidateLimit") int candidateLimit);
 
-    /** 调用方保证 tokens 非空（<foreach> 空集合会生成非法 SQL） */
-    List<KeywordHit> searchByKeyword(@Param("tokens") List<String> tokens, @Param("topK") int topK);
+    /**
+     * 调用方保证 tokens 非空（<foreach> 空集合会生成非法 SQL）。
+     * candidateLimit 语义同上：候选池大小，最终对外条数由 Service 截断。
+     */
+    List<KeywordHit> searchByKeyword(@Param("tokens") List<String> tokens,
+                                     @Param("candidateLimit") int candidateLimit);
 }

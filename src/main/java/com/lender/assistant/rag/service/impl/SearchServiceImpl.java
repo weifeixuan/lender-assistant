@@ -1,5 +1,6 @@
 package com.lender.assistant.rag.service.impl;
 
+import com.lender.assistant.common.constant.SearchConstants;
 import com.lender.assistant.common.constant.SearchMode;
 import com.lender.assistant.common.util.PgVectorUtils;
 import com.lender.assistant.rag.mapper.DocChunkMapper;
@@ -13,6 +14,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -24,9 +26,12 @@ import java.util.Map;
  * - 向量通道管"语义相近"：「还款计划文件里逾期的部分」能召回没出现"逾期"原词的段落；
  * - 关键词通道管"字面必须命中"：「逾期文件第3列」这种精确列号问题，
  *   Mock/真向量都可能把"3 列"和语义无关的文本算出噪声相似度，字面匹配最可靠；
- * - 合并策略 v1 很朴素：向量按距离排序、关键词按相似度排序，
- *   同一 chunk 以"两通道都命中"优先（说明强相关）。
- *   权重融合（RRF 等）是阶段 3 调优的内容。
+ * - 合并策略：RRF 按两通道名次融合（score = Σ 1/(K + rank)），不偏袒任何单通道。
+ *
+ * 召回口径（票 09 诊断的现场）：两通道先各召回 max(2*topK, 12) 条候选，
+ * 融合 + 同 section 相邻切片合并后再截断到 topK。
+ * 若直接用 topK 做 LIMIT，完整承载字段清单的切片（如 chunk 4）会因排名差一两位被切掉，
+ * 只剩它的尾巴（chunk 5）进入答案上下文。
  */
 @Service
 public class SearchServiceImpl implements SearchService {
@@ -41,6 +46,10 @@ public class SearchServiceImpl implements SearchService {
     private static final int RANK_FALLBACK = 99;
     /** 向量通道排序的缺省距离：仅关键词命中（无 vectorDistance）时排到末尾 */
     private static final double DISTANCE_FALLBACK = 2;
+    /** 相邻切片合并时认定的最小重叠字符数：低于此长度的"巧合"首尾相同不去重，避免误删正文 */
+    private static final int MIN_MERGED_OVERLAP_CHARS = 4;
+    /** 分组 key 内部分隔符：docId 与 sectionPath 拼接，用 NUL 防止两者内容互相粘出歧义 key */
+    private static final String SECTION_KEY_SEPARATOR = "\u0000";
 
     private final EmbeddingStrategy embeddingStrategy;
     private final DocChunkMapper docChunkMapper;
@@ -79,28 +88,31 @@ public class SearchServiceImpl implements SearchService {
     /** 检索核心：向量通道沿用「上一轮问题 + 换行 + 当前问题」的整体文本，关键词通道按段取词 */
     private List<SearchItemResponse> search(String question, String previousQuestion, int topK, SearchMode mode) {
         String vectorQuery = previousQuestion == null ? question : previousQuestion + "\n" + question;
-        List<SearchItemResponse> vectorHits =
-                mode == SearchMode.KEYWORD ? List.of() : vectorChannel(vectorQuery, topK);
-        List<SearchItemResponse> keywordHits =
-                mode == SearchMode.VECTOR ? List.of() : keywordChannel(question, previousQuestion, topK);
+        int candidateLimit = SearchConstants.candidateLimit(topK);
+        List<ChannelHit> vectorHits =
+                mode == SearchMode.KEYWORD ? List.of() : vectorChannel(vectorQuery, candidateLimit);
+        List<ChannelHit> keywordHits =
+                mode == SearchMode.VECTOR ? List.of() : keywordChannel(question, previousQuestion, candidateLimit);
 
-        List<SearchItemResponse> merged = mergeChannels(vectorHits, keywordHits);
-        List<SearchItemResponse> ranked = rank(mode, merged, vectorHits, keywordHits);
+        List<Candidate> candidates = mergeChannels(vectorHits, keywordHits);
+        List<Candidate> grouped = mergeAdjacentChunks(candidates);
+        List<SearchItemResponse> ranked = rank(mode, grouped);
         return truncate(ranked, topK);
     }
 
     /** 通道 1：向量召回（按余弦距离），超出 maxDistance 阈值的命中直接丢弃 */
-    private List<SearchItemResponse> vectorChannel(String query, int topK) {
+    private List<ChannelHit> vectorChannel(String query, int candidateLimit) {
         float[] queryVector = embeddingStrategy.embed(query);
-        List<VectorHit> hits = docChunkMapper.searchByVector(PgVectorUtils.toLiteral(queryVector), topK);
-        List<SearchItemResponse> results = new ArrayList<>();
+        List<VectorHit> hits = docChunkMapper.searchByVector(PgVectorUtils.toLiteral(queryVector), candidateLimit);
+        List<ChannelHit> results = new ArrayList<>();
         for (VectorHit hit : hits) {
             if (maxDistance >= 0 && hit.distance() > maxDistance) {
                 continue;   // 超出阈值的召回丢弃（maxDistance<0 时该开关关闭）
             }
             SearchItemResponse item = new SearchItemResponse(hit.id(), hit.docId(), hit.docTitle(),
                     hit.sectionPath(), hit.content(), hit.distance(), null, false, null);
-            results.add(item);
+            // 名次按"过滤后"的位置计（与旧实现 accumulateRrfScores 的口径一致）
+            results.add(new ChannelHit(item, results.size() + 1, hit.chunkIndex()));
         }
         return results;
     }
@@ -109,16 +121,16 @@ public class SearchServiceImpl implements SearchService {
      * 通道 2：关键词召回——分词后多词 OR 匹配（整句算相似度会被长句稀释基本不命中，拆词才有效）。
      * 过滤：单字 token 命中面太宽，只留 2 字以上；去重后限量防 SQL 过长。
      */
-    private List<SearchItemResponse> keywordChannel(String question, String previousQuestion, int topK) {
+    private List<ChannelHit> keywordChannel(String question, String previousQuestion, int candidateLimit) {
         List<String> tokens = keywordTokens(question, previousQuestion);
         // 空 token 守卫下沉到 Service：MyBatis <foreach> 空集合会生成非法 SQL
         //（旧 DocumentStore 在方法内部处理 tokens.isEmpty()）
-        List<KeywordHit> hits = tokens.isEmpty() ? List.of() : docChunkMapper.searchByKeyword(tokens, topK);
-        List<SearchItemResponse> results = new ArrayList<>();
+        List<KeywordHit> hits = tokens.isEmpty() ? List.of() : docChunkMapper.searchByKeyword(tokens, candidateLimit);
+        List<ChannelHit> results = new ArrayList<>();
         for (KeywordHit hit : hits) {
             SearchItemResponse item = new SearchItemResponse(hit.id(), hit.docId(), hit.docTitle(),
                     hit.sectionPath(), hit.content(), null, hit.hits(), false, null);
-            results.add(item);
+            results.add(new ChannelHit(item, results.size() + 1, hit.chunkIndex()));
         }
         return results;
     }
@@ -159,92 +171,171 @@ public class SearchServiceImpl implements SearchService {
 
     /**
      * 合并两通道：保留向量通道顺序，关键词通道只补缺席的 chunk。
-     * 同一 chunk 双通道命中时保留向量侧信息，补齐关键词命中数并置 bothChannels=true。
+     * 同一 chunk 双通道命中时保留向量侧内容，补齐关键词命中数并置 bothChannels=true。
      */
-    private List<SearchItemResponse> mergeChannels(List<SearchItemResponse> vectorHits,
-                                                   List<SearchItemResponse> keywordHits) {
-        Map<Long, SearchItemResponse> mergedById = new LinkedHashMap<>();
-        for (SearchItemResponse hit : vectorHits) {
-            mergedById.put(hit.chunkId(), hit);
+    private List<Candidate> mergeChannels(List<ChannelHit> vectorHits, List<ChannelHit> keywordHits) {
+        Map<Long, Candidate> mergedById = new LinkedHashMap<>();
+        for (ChannelHit hit : vectorHits) {
+            mergedById.put(hit.item().chunkId(), fromVector(hit));
         }
-        for (SearchItemResponse hit : keywordHits) {
-            SearchItemResponse existing = mergedById.get(hit.chunkId());
+        for (ChannelHit hit : keywordHits) {
+            Candidate existing = mergedById.get(hit.item().chunkId());
             if (existing == null) {
-                mergedById.put(hit.chunkId(), hit);
+                mergedById.put(hit.item().chunkId(), fromKeyword(hit));
                 continue;
             }
-            SearchItemResponse both = new SearchItemResponse(existing.chunkId(), existing.docId(),
-                    existing.docTitle(), existing.sectionPath(), existing.content(),
-                    existing.vectorDistance(), hit.keywordHits(), true, existing.rrfScore());
-            mergedById.put(hit.chunkId(), both);
+            mergedById.put(hit.item().chunkId(), new Candidate(
+                    existing.chunkId(), existing.docId(), existing.docTitle(), existing.sectionPath(),
+                    existing.content(), existing.chunkIndex(),
+                    existing.vectorDistance(), hit.item().keywordHits(), true,
+                    existing.rrfScore() + rrfOf(hit.rank()),
+                    Math.min(existing.keywordRank(), hit.rank()),
+                    existing.distance()));
         }
         return new ArrayList<>(mergedById.values());
     }
 
-    /** 排序：hybrid 用 RRF 按两路排名融合，keyword 按关键词排名，vector 按向量距离 */
-    private List<SearchItemResponse> rank(SearchMode mode, List<SearchItemResponse> merged,
-                                          List<SearchItemResponse> vectorHits,
-                                          List<SearchItemResponse> keywordHits) {
-        if (mode == SearchMode.HYBRID) {
-            return rankByRrf(merged, vectorHits, keywordHits);
-        }
-        if (mode == SearchMode.KEYWORD) {
-            return rankByKeyword(merged, keywordHits);
-        }
-        return rankByDistance(merged);
+    private Candidate fromVector(ChannelHit hit) {
+        SearchItemResponse item = hit.item();
+        return new Candidate(item.chunkId(), item.docId(), item.docTitle(), item.sectionPath(), item.content(),
+                hit.chunkIndex(), item.vectorDistance(), null, false,
+                rrfOf(hit.rank()), RANK_FALLBACK, distanceOf(item));
+    }
+
+    private Candidate fromKeyword(ChannelHit hit) {
+        SearchItemResponse item = hit.item();
+        return new Candidate(item.chunkId(), item.docId(), item.docTitle(), item.sectionPath(), item.content(),
+                hit.chunkIndex(), null, item.keywordHits(), false,
+                rrfOf(hit.rank()), hit.rank(), DISTANCE_FALLBACK);
+    }
+
+    private double rrfOf(int rank) {
+        return 1.0 / (RRF_SMOOTHING_K + rank);
     }
 
     /**
-     * RRF 融合排序：score = Σ 1/(K + rank)。v1 硬排序（双通道优先）是评估用例 8 暴露的缺陷——
-     * 关键词通道的宽泛命中会把向量通道第 1 名挤出 top4；RRF 按排名融合，不偏袒任何通道。
+     * 同 section 相邻切片合并：同一 docId + sectionPath 下 chunkIndex 连续（next == prev + 1）的候选，
+     * 按序号拼成一个来源。例如完整字段清单被切成 4（正文）与 5（表格尾巴）时，
+     * 两片一起进入上下文，而不是只剩尾巴。
+     *
+     * 为什么放在召回之后而不是 SQL 聚合：是否相邻取决于本次召回的候选集合，
+     * 在 SQL 层按 section 互斥聚合会改变召回语义（§0 ADR 约束禁止 SQL 层互斥过滤）。
+     *
+     * 合并片的语义口径：
+     * - chunkId / docId / docTitle / sectionPath 取 chunkIndex 最小（首片）的那条，
+     *   id 仍指向库里真实存在的切片（前端按 id 溯源不会指向不存在的记录）；
+     * - content 按 chunkIndex 升序拼接，并去掉切片 overlap 的重复文本；
+     * - rrfScore 取成员最大值，keywordRank / distance 取成员最小值，bothChannels 取或；
+     * - vectorDistance / keywordHits 取成员中"有值且最相关"的那个（距离最小 / 命中数最多）；
+     * - 对外 topK 与 sources 条数按"合并后条目"计数：一个合并片算 1 条（sourceCount 会因此变小，
+     *   这是预期行为，因为多条切片本来描述的就是同一小节连续内容）。
      */
-    private List<SearchItemResponse> rankByRrf(List<SearchItemResponse> merged,
-                                               List<SearchItemResponse> vectorHits,
-                                               List<SearchItemResponse> keywordHits) {
-        Map<Long, Double> rrfScores = new LinkedHashMap<>();
-        accumulateRrfScores(rrfScores, vectorHits);
-        accumulateRrfScores(rrfScores, keywordHits);
-
-        List<SearchItemResponse> ranked = new ArrayList<>(merged);
-        ranked.sort((a, b) -> Double.compare(
-                rrfScores.getOrDefault(b.chunkId(), 0.0), rrfScores.getOrDefault(a.chunkId(), 0.0)));
-
-        // record 不可变：排序后重建一份带 rrfScore 的结果
-        List<SearchItemResponse> scored = new ArrayList<>(ranked.size());
-        for (SearchItemResponse hit : ranked) {
-            SearchItemResponse item = new SearchItemResponse(hit.chunkId(), hit.docId(), hit.docTitle(),
-                    hit.sectionPath(), hit.content(), hit.vectorDistance(), hit.keywordHits(),
-                    hit.bothChannels(), String.format("%.5f", rrfScores.getOrDefault(hit.chunkId(), 0.0)));
-            scored.add(item);
+    private List<Candidate> mergeAdjacentChunks(List<Candidate> candidates) {
+        Map<String, List<Candidate>> groups = new LinkedHashMap<>();
+        List<Candidate> ungrouped = new ArrayList<>();
+        for (Candidate candidate : candidates) {
+            if (candidate.chunkIndex() == null) {
+                // 缺 chunkIndex 无法判断相邻关系，原样保留（不合并）
+                ungrouped.add(candidate);
+                continue;
+            }
+            String key = candidate.docId() + SECTION_KEY_SEPARATOR + candidate.sectionPath();
+            groups.computeIfAbsent(key, k -> new ArrayList<>()).add(candidate);
         }
-        return scored;
+
+        List<Candidate> merged = new ArrayList<>(candidates.size());
+        for (List<Candidate> group : groups.values()) {
+            group.sort(Comparator.comparingInt(Candidate::chunkIndex));
+            List<Candidate> run = new ArrayList<>();
+            for (Candidate candidate : group) {
+                if (!run.isEmpty()
+                        && candidate.chunkIndex() != run.get(run.size() - 1).chunkIndex() + 1) {
+                    merged.add(combine(run));
+                    run.clear();
+                }
+                run.add(candidate);
+            }
+            if (!run.isEmpty()) {
+                merged.add(combine(run));
+            }
+        }
+        merged.addAll(ungrouped);
+        return merged;
     }
 
-    /** 按通道内名次（1-based）累计 RRF 分数：同一 chunk 出现在两路时分数相加 */
-    private void accumulateRrfScores(Map<Long, Double> rrfScores, List<SearchItemResponse> channelHits) {
-        for (int i = 0; i < channelHits.size(); i++) {
-            long chunkId = channelHits.get(i).chunkId();
-            rrfScores.merge(chunkId, 1.0 / (RRF_SMOOTHING_K + i + 1), Double::sum);
+    /** 把一组相邻切片（已按 chunkIndex 升序）拼成一个候选 */
+    private Candidate combine(List<Candidate> run) {
+        Candidate first = run.get(0);
+        String content = first.content();
+        double rrfScore = first.rrfScore();
+        int keywordRank = first.keywordRank();
+        double distance = first.distance();
+        Double vectorDistance = first.vectorDistance();
+        Integer keywordHits = first.keywordHits();
+        boolean bothChannels = first.bothChannels();
+
+        for (int i = 1; i < run.size(); i++) {
+            Candidate next = run.get(i);
+            content = joinWithOverlap(content, next.content());
+            rrfScore = Math.max(rrfScore, next.rrfScore());
+            keywordRank = Math.min(keywordRank, next.keywordRank());
+            distance = Math.min(distance, next.distance());
+            if (next.vectorDistance() != null
+                    && (vectorDistance == null || next.vectorDistance() < vectorDistance)) {
+                vectorDistance = next.vectorDistance();
+            }
+            if (next.keywordHits() != null
+                    && (keywordHits == null || next.keywordHits() > keywordHits)) {
+                keywordHits = next.keywordHits();
+            }
+            bothChannels = bothChannels || next.bothChannels();
         }
+
+        return new Candidate(first.chunkId(), first.docId(), first.docTitle(), first.sectionPath(), content,
+                first.chunkIndex(), vectorDistance, keywordHits, bothChannels,
+                rrfScore, keywordRank, distance);
     }
 
-    private List<SearchItemResponse> rankByKeyword(List<SearchItemResponse> merged,
-                                                   List<SearchItemResponse> keywordHits) {
-        Map<Long, Integer> keywordRanks = new LinkedHashMap<>();
-        for (int i = 0; i < keywordHits.size(); i++) {
-            keywordRanks.put(keywordHits.get(i).chunkId(), i + 1);
+    /**
+     * 拼接两片：切片器按 chunkSize - overlap 步长切分，相邻切片首尾有 overlap 个字符重复。
+     * 取"前一片的后缀 == 后一片的前缀"的最长重叠并跳过，避免同一段文字出现两次；
+     * 未找到足够长重叠时直接首尾相接（两片本来就是原文的连续子串）。
+     */
+    private String joinWithOverlap(String head, String tail) {
+        String next = tail.stripLeading();
+        int max = Math.min(head.length(), next.length());
+        for (int overlap = max; overlap >= MIN_MERGED_OVERLAP_CHARS; overlap--) {
+            if (head.endsWith(next.substring(0, overlap))) {
+                return head + next.substring(overlap);
+            }
         }
-        List<SearchItemResponse> ranked = new ArrayList<>(merged);
-        ranked.sort((a, b) -> Integer.compare(
-                keywordRanks.getOrDefault(a.chunkId(), RANK_FALLBACK),
-                keywordRanks.getOrDefault(b.chunkId(), RANK_FALLBACK)));
-        return ranked;
+        return head + tail;
     }
 
-    private List<SearchItemResponse> rankByDistance(List<SearchItemResponse> merged) {
-        List<SearchItemResponse> ranked = new ArrayList<>(merged);
-        ranked.sort((a, b) -> Double.compare(distanceOf(a), distanceOf(b)));
-        return ranked;
+    /** 排序：hybrid 用 RRF 分数降序，keyword 按关键词名次，vector 按向量距离 */
+    private List<SearchItemResponse> rank(SearchMode mode, List<Candidate> candidates) {
+        if (mode == SearchMode.HYBRID) {
+            candidates.sort(Comparator.comparingDouble(Candidate::rrfScore).reversed());
+        } else if (mode == SearchMode.KEYWORD) {
+            candidates.sort(Comparator.comparingInt(Candidate::keywordRank));
+        } else {
+            candidates.sort(Comparator.comparingDouble(Candidate::distance));
+        }
+        List<SearchItemResponse> results = new ArrayList<>(candidates.size());
+        for (Candidate candidate : candidates) {
+            results.add(toResponse(candidate, mode));
+        }
+        return results;
+    }
+
+    /** 对外契约不变：rrfScore 仅在 hybrid 模式输出，其它模式缺该字段 */
+    private SearchItemResponse toResponse(Candidate candidate, SearchMode mode) {
+        String rrfScore = mode == SearchMode.HYBRID
+                ? String.format("%.5f", candidate.rrfScore())
+                : null;
+        return new SearchItemResponse(candidate.chunkId(), candidate.docId(), candidate.docTitle(),
+                candidate.sectionPath(), candidate.content(), candidate.vectorDistance(),
+                candidate.keywordHits(), candidate.bothChannels(), rrfScore);
     }
 
     private double distanceOf(SearchItemResponse hit) {
@@ -254,5 +345,18 @@ public class SearchServiceImpl implements SearchService {
     /** 只取前 topK 条；结果少于 topK 时原样返回 */
     private List<SearchItemResponse> truncate(List<SearchItemResponse> ranked, int topK) {
         return ranked.subList(0, Math.min(topK, ranked.size()));
+    }
+
+    /** 单通道命中：rank 为通道内 1-based 名次（RRF 用），chunkIndex 供相邻切片合并判断 */
+    private record ChannelHit(SearchItemResponse item, int rank, Integer chunkIndex) {
+    }
+
+    /**
+     * 融合与合并阶段使用的候选：把两通道的分数/名次/距离收敛到一条记录，
+     * 便于排序（rrfScore/keywordRank/distance）与相邻切片合并（chunkIndex）。
+     */
+    private record Candidate(long chunkId, String docId, String docTitle, String sectionPath, String content,
+                             Integer chunkIndex, Double vectorDistance, Integer keywordHits,
+                             boolean bothChannels, double rrfScore, int keywordRank, double distance) {
     }
 }

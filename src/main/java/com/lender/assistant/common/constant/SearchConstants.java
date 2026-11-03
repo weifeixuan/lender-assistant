@@ -15,6 +15,22 @@ public final class SearchConstants {
     /** 检索测试入口缺省召回条数（DocumentAdminController.search，比问答多留 1 条便于人工观察） */
     public static final int ADMIN_SEARCH_DEFAULT_TOP_K = 5;
 
+    /** 候选池放大倍数：两通道各召回 multiplier*topK 条，RRF 融合后再截断到 topK */
+    public static final int CANDIDATE_MULTIPLIER = 2;
+
+    /** 候选池下限：topK 很小时仍保留足够候选，让同 section 相邻切片有机会一起进入融合 */
+    public static final int MIN_CANDIDATE_LIMIT = 12;
+
+    /**
+     * 候选池大小 = max(2*topK, 12)。
+     *
+     * 为什么不在 Service 内做魔数：Mapper 的 LIMIT 与服务侧期望的候选数量必须同源，
+     * 跨类共用故收敛到本常量类（§3.3）。
+     */
+    public static int candidateLimit(int topK) {
+        return Math.max(CANDIDATE_MULTIPLIER * topK, MIN_CANDIDATE_LIMIT);
+    }
+
     private SearchConstants() {
     }
 }

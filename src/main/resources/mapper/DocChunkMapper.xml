@@ -49,6 +49,7 @@
             <arg column="section_path" javaType="java.lang.String"/>
             <arg column="content" javaType="java.lang.String"/>
             <arg column="distance" javaType="java.lang.Double"/>
+            <arg column="chunk_index" javaType="java.lang.Integer"/>
         </constructor>
     </resultMap>
 
@@ -60,6 +61,7 @@
             <arg column="section_path" javaType="java.lang.String"/>
             <arg column="content" javaType="java.lang.String"/>
             <arg column="hits" javaType="java.lang.Integer"/>
+            <arg column="chunk_index" javaType="java.lang.Integer"/>
         </constructor>
     </resultMap>
 
@@ -111,12 +113,14 @@
         LIMIT #{limit} OFFSET #{offset}
     </select>
 
+    <!-- LIMIT 取候选池大小（SearchConstants.candidateLimit = max(2*topK, 12)），
+         不再是对外 topK：融合与相邻切片合并后会再截断到 topK（对外契约不变） -->
     <select id="searchByVector" resultMap="vectorHitMap">
-        SELECT id, doc_id, doc_title, section_path, content,
+        SELECT id, doc_id, doc_title, section_path, content, chunk_index,
                embedding &lt;=&gt; CAST(#{vec} AS vector) AS distance
         FROM doc_chunk
         ORDER BY embedding &lt;=&gt; CAST(#{vec} AS vector)
-        LIMIT #{topK}
+        LIMIT #{candidateLimit}
     </select>
 
     <!-- 分词后多词 OR 匹配，按命中词数 hits 降序；同分短 chunk 优先（char_count 升序）。
@@ -124,12 +128,12 @@
          低越不命中（"华信银行的逾期文件第3列是什么"整句几乎和任何 chunk 都不相似），只有拆成多词分别匹配才有效。
          词值一律 #{} 参数化，无注入面 -->
     <select id="searchByKeyword" resultMap="keywordHitMap">
-        SELECT id, doc_id, doc_title, section_path, content,
+        SELECT id, doc_id, doc_title, section_path, content, chunk_index,
                (<foreach collection="tokens" item="t" separator=" + ">(CASE WHEN content LIKE CONCAT('%', #{t}, '%') THEN 1 ELSE 0 END)</foreach>) AS hits
         FROM doc_chunk
         WHERE <foreach collection="tokens" item="t" separator=" OR ">content LIKE CONCAT('%', #{t}, '%')</foreach>
         ORDER BY hits DESC, char_count ASC
-        LIMIT #{topK}
+        LIMIT #{candidateLimit}
     </select>
 
 </mapper>

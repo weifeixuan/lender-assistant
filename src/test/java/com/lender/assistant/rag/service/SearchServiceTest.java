@@ -44,12 +44,21 @@ class SearchServiceTest {
         service = new SearchServiceImpl(embeddingStrategy, mapper, -1);   // -1 = 相似度阈值关闭，保持本测试锁定的原有 RRF 行为
     }
 
+    /** 缺省切片序号按 id 放大，避免既有用例里的条目被"相邻切片合并"误伤 */
     private VectorHit vec(long id, String content, double dist) {
-        return new VectorHit(id, "doc1", "测试文档", "第1节", content, dist);
+        return vec(id, (int) (id * 10), "第1节", content, dist);
     }
 
     private KeywordHit kw(long id, String content, int hits) {
-        return new KeywordHit(id, "doc1", "测试文档", "第1节", content, hits);
+        return kw(id, (int) (id * 10), "第1节", content, hits);
+    }
+
+    private VectorHit vec(long id, int chunkIndex, String section, String content, double dist) {
+        return new VectorHit(id, "doc1", "测试文档", section, content, dist, chunkIndex);
+    }
+
+    private KeywordHit kw(long id, int chunkIndex, String section, String content, int hits) {
+        return new KeywordHit(id, "doc1", "测试文档", section, content, hits, chunkIndex);
     }
 
     @Test
@@ -176,5 +185,104 @@ class SearchServiceTest {
         assertEquals(List.of(1L),
                 result.stream().map(SearchItemResponse::chunkId).toList(),
                 "关键词通道为空不影响向量通道召回");
+    }
+
+    @Test
+    @DisplayName("候选池放大：两通道按 max(2*topK, 12) 召回，对外仍只返回 topK 条")
+    void candidatePoolIsExpanded() {
+        when(embeddingStrategy.embed(any())).thenReturn(new float[4]);
+        when(mapper.searchByVector(any(), anyInt())).thenReturn(List.of());
+        when(mapper.searchByKeyword(anyList(), anyInt())).thenReturn(List.of());
+
+        service.search("测试查询", 4, SearchMode.HYBRID);
+        verify(mapper).searchByVector(any(), eq(12));
+        verify(mapper).searchByKeyword(anyList(), eq(12));
+
+        service.search("测试查询", 8, SearchMode.HYBRID);
+        verify(mapper).searchByVector(any(), eq(16));
+        verify(mapper).searchByKeyword(anyList(), eq(16));
+    }
+
+    @Test
+    @DisplayName("候选池放大后，对外仍严格截断到 topK 条")
+    void expandedPoolStillTruncatesToTopK() {
+        when(embeddingStrategy.embed(any())).thenReturn(new float[4]);
+        when(mapper.searchByVector(any(), anyInt())).thenReturn(List.of(
+                vec(1, 10, "第1节", "甲", 0.10), vec(2, 20, "第2节", "乙", 0.20),
+                vec(3, 30, "第3节", "丙", 0.30), vec(4, 40, "第4节", "丁", 0.40),
+                vec(5, 50, "第5节", "戊", 0.50), vec(6, 60, "第6节", "己", 0.60)));
+        when(mapper.searchByKeyword(anyList(), anyInt())).thenReturn(List.of());
+
+        List<SearchItemResponse> result = service.search("测试查询", 4, SearchMode.HYBRID);
+
+        assertEquals(4, result.size(), "放大候选池只影响召回阶段，对外条数仍由 topK 截断");
+    }
+
+    @Test
+    @DisplayName("同 section 相邻 chunkIndex 合并为一个来源，id 取首片")
+    void adjacentChunksAreMerged() {
+        when(embeddingStrategy.embed(any())).thenReturn(new float[4]);
+        when(mapper.searchByVector(any(), anyInt())).thenReturn(List.of(
+                vec(6, 5, "单笔代付", "代付请求字段与代收接口一致", 0.10),
+                vec(4, 3, "单笔代收", "单笔代收请求字段：outBizNo/payerAccount/payeeAccount/amount", 0.30),
+                vec(5, 4, "单笔代收", "响应核心字段：hxSeqNo/status", 0.20)));
+        when(mapper.searchByKeyword(anyList(), anyInt())).thenReturn(List.of());
+
+        List<SearchItemResponse> result = service.search("测试查询", 4, SearchMode.HYBRID);
+
+        assertEquals(2, result.size(), "同 section 的 3、4 两片应合并，代付切片独立");
+        SearchItemResponse merged = result.stream()
+                .filter(item -> item.chunkId() == 4L).findFirst().orElseThrow();
+        assertEquals("单笔代收", merged.sectionPath());
+        assertTrue(merged.content().contains("outBizNo"), "合并片必须包含字段清单");
+        assertTrue(merged.content().contains("hxSeqNo"), "合并片必须包含后续切片的响应字段");
+        assertFalse(merged.content().contains("代付请求字段"), "不同 section 的代付切片不得并入");
+    }
+
+    @Test
+    @DisplayName("同 section 但 chunkIndex 不相邻的切片不合并")
+    void nonAdjacentChunksAreNotMerged() {
+        when(embeddingStrategy.embed(any())).thenReturn(new float[4]);
+        when(mapper.searchByVector(any(), anyInt())).thenReturn(List.of(
+                vec(4, 3, "单笔代收", "字段清单", 0.10),
+                vec(5, 5, "单笔代收", "间隔一片的其它内容", 0.20)));
+        when(mapper.searchByKeyword(anyList(), anyInt())).thenReturn(List.of());
+
+        List<SearchItemResponse> result = service.search("测试查询", 4, SearchMode.HYBRID);
+
+        assertEquals(2, result.size(), "chunkIndex 3 与 5 之间缺 4，不得拼成一片");
+    }
+
+    @Test
+    @DisplayName("合并时去掉切片重叠文本，避免整段被拼接两次")
+    void mergedContentDeduplicatesOverlap() {
+        when(embeddingStrategy.embed(any())).thenReturn(new float[4]);
+        when(mapper.searchByVector(any(), anyInt())).thenReturn(List.of(
+                vec(4, 3, "单笔代收", "字段清单：outBizNo 说明：附言", 0.10),
+                vec(5, 4, "单笔代收", "说明：附言 响应字段：hxSeqNo", 0.20)));
+        when(mapper.searchByKeyword(anyList(), anyInt())).thenReturn(List.of());
+
+        List<SearchItemResponse> result = service.search("测试查询", 4, SearchMode.HYBRID);
+
+        assertEquals(1, result.size());
+        assertEquals("字段清单：outBizNo 说明：附言 响应字段：hxSeqNo", result.get(0).content(),
+                "重叠的「说明：附言」只应出现一次");
+    }
+
+    @Test
+    @DisplayName("合并片保留成员中最高的 RRF 分数与双通道标记")
+    void mergedSourceKeepsBestScore() {
+        when(embeddingStrategy.embed(any())).thenReturn(new float[4]);
+        when(mapper.searchByVector(any(), anyInt())).thenReturn(List.of(
+                vec(4, 3, "单笔代收", "字段清单", 0.01)));
+        when(mapper.searchByKeyword(anyList(), anyInt())).thenReturn(List.of(
+                kw(5, 4, "单笔代收", "响应字段", 2)));
+
+        List<SearchItemResponse> result = service.search("测试查询", 4, SearchMode.HYBRID);
+
+        assertEquals(1, result.size());
+        // 4 在向量通道第 1 名（1/61），5 只命中关键词第 1 名（1/61），合并后取两者较高者
+        assertEquals("0.01639", result.get(0).rrfScore());
+        assertFalse(result.get(0).bothChannels(), "合并片不因两个单通道成员而变成双通道命中");
     }
 }
