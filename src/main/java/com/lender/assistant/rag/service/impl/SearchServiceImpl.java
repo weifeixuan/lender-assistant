@@ -60,8 +60,8 @@ public class SearchServiceImpl implements SearchService {
     }
 
     @Override
-    public List<SearchItemResponse> hybridSearch(String query, int topK) {
-        return search(query, topK, SearchMode.HYBRID);
+    public List<SearchItemResponse> hybridSearch(String question, String previousQuestion, int topK) {
+        return search(question, previousQuestion, topK, SearchMode.HYBRID);
     }
 
     /**
@@ -73,10 +73,16 @@ public class SearchServiceImpl implements SearchService {
      */
     @Override
     public List<SearchItemResponse> search(String query, int topK, SearchMode mode) {
+        return search(query, null, topK, mode);
+    }
+
+    /** 检索核心：向量通道沿用「上一轮问题 + 换行 + 当前问题」的整体文本，关键词通道按段取词 */
+    private List<SearchItemResponse> search(String question, String previousQuestion, int topK, SearchMode mode) {
+        String vectorQuery = previousQuestion == null ? question : previousQuestion + "\n" + question;
         List<SearchItemResponse> vectorHits =
-                mode == SearchMode.KEYWORD ? List.of() : vectorChannel(query, topK);
+                mode == SearchMode.KEYWORD ? List.of() : vectorChannel(vectorQuery, topK);
         List<SearchItemResponse> keywordHits =
-                mode == SearchMode.VECTOR ? List.of() : keywordChannel(query, topK);
+                mode == SearchMode.VECTOR ? List.of() : keywordChannel(question, previousQuestion, topK);
 
         List<SearchItemResponse> merged = mergeChannels(vectorHits, keywordHits);
         List<SearchItemResponse> ranked = rank(mode, merged, vectorHits, keywordHits);
@@ -103,12 +109,8 @@ public class SearchServiceImpl implements SearchService {
      * 通道 2：关键词召回——分词后多词 OR 匹配（整句算相似度会被长句稀释基本不命中，拆词才有效）。
      * 过滤：单字 token 命中面太宽，只留 2 字以上；去重后限量防 SQL 过长。
      */
-    private List<SearchItemResponse> keywordChannel(String query, int topK) {
-        List<String> tokens = HashEmbeddingStrategy.tokenize(query).stream()
-                .filter(token -> token.length() >= KEYWORD_TOKEN_MIN_CHARS)
-                .distinct()
-                .limit(KEYWORD_TOKEN_MAX_COUNT)
-                .toList();
+    private List<SearchItemResponse> keywordChannel(String question, String previousQuestion, int topK) {
+        List<String> tokens = keywordTokens(question, previousQuestion);
         // 空 token 守卫下沉到 Service：MyBatis <foreach> 空集合会生成非法 SQL
         //（旧 DocumentStore 在方法内部处理 tokens.isEmpty()）
         List<KeywordHit> hits = tokens.isEmpty() ? List.of() : docChunkMapper.searchByKeyword(tokens, topK);
@@ -119,6 +121,40 @@ public class SearchServiceImpl implements SearchService {
             results.add(item);
         }
         return results;
+    }
+
+    /**
+     * 按段分配关键词 token 配额：当前问题保底一半（总配额 8 → 当前 ≥4），其余给上一轮问题；
+     * 一段不足时余额让给另一段。
+     *
+     * 为什么不能对拼接串直接 limit：追问的拼接顺序是「上一轮 + 换行 + 当前问题」，
+     * 上一轮长问题本身就吃满 8 个 token，当前追问（如"响应字段呢？"）的词会全部被截掉，
+     * 两轮的召回结果完全相同（票 05 诊断的真实现场）。
+     */
+    private List<String> keywordTokens(String question, String previousQuestion) {
+        List<String> current = distinctKeywordTokens(question);
+        // 跨段去重：当前问题的词优先保留，上一轮只补当前问题没覆盖的词
+        List<String> previous = previousQuestion == null
+                ? List.of()
+                : distinctKeywordTokens(previousQuestion).stream()
+                        .filter(token -> !current.contains(token))
+                        .toList();
+
+        int half = KEYWORD_TOKEN_MAX_COUNT / 2;
+        int currentTake = Math.min(current.size(), Math.max(half, KEYWORD_TOKEN_MAX_COUNT - previous.size()));
+        int previousTake = Math.min(previous.size(), KEYWORD_TOKEN_MAX_COUNT - currentTake);
+        // 上一轮不足时，剩余配额回补给当前问题（当前问题优先）
+        currentTake = Math.min(current.size(), KEYWORD_TOKEN_MAX_COUNT - previousTake);
+        List<String> tokens = new ArrayList<>(current.subList(0, currentTake));
+        tokens.addAll(previous.subList(0, previousTake));
+        return tokens;
+    }
+
+    private List<String> distinctKeywordTokens(String text) {
+        return HashEmbeddingStrategy.tokenize(text).stream()
+                .filter(token -> token.length() >= KEYWORD_TOKEN_MIN_CHARS)
+                .distinct()
+                .toList();
     }
 
     /**

@@ -118,6 +118,51 @@ class SearchServiceTest {
                 result.stream().map(SearchItemResponse::chunkId).toList());
     }
 
+    /** 捕获关键词通道收到的 token 列表（追问检索的分段配额断言都看它） */
+    @SuppressWarnings("unchecked")
+    private List<String> captureKeywordTokens(Runnable call) {
+        when(embeddingStrategy.embed(any())).thenReturn(new float[4]);
+        when(mapper.searchByVector(any(), anyInt())).thenReturn(List.of());
+        when(mapper.searchByKeyword(anyList(), anyInt())).thenReturn(List.of());
+        call.run();
+        ArgumentCaptor<List<String>> captor = ArgumentCaptor.forClass((Class) List.class);
+        verify(mapper).searchByKeyword(captor.capture(), anyInt());
+        return captor.getValue();
+    }
+
+    @Test
+    @DisplayName("追问关键词配额：上一轮长问题不得挤掉当前问题的 token")
+    void keywordQuotaReservesCurrentQuestionTokens() {
+        // 上一轮 12 个可用 token 足以吃满 8 个配额；当前追问只有 [响应, 应字, 字段, 段呢]
+        List<String> tokens = captureKeywordTokens(() ->
+                service.hybridSearch("响应字段呢？", "单笔代收字段请求接口有哪些", 4));
+
+        assertEquals(List.of("响应", "应字", "字段", "段呢", "单笔", "笔代", "代收", "收字"), tokens,
+                "当前问题保底 4 个 token 且排在最前，剩余配额才给上一轮");
+    }
+
+    @Test
+    @DisplayName("追问关键词配额：两段都溢出时当前问题 token 优先")
+    void keywordQuotaPrioritizesCurrentWhenBothOverflow() {
+        List<String> tokens = captureKeywordTokens(() ->
+                service.hybridSearch("响应字段呢请详细说明所有字段含义", "单笔代收字段请求接口有哪些", 4));
+
+        assertEquals(8, tokens.size(), "两段都超配额时总 token 数仍受上限约束");
+        assertEquals(List.of("响应", "应字", "字段", "段呢"), tokens.subList(0, 4),
+                "配额不足覆盖两段时，当前问题的 token 必须优先进入候选");
+    }
+
+    @Test
+    @DisplayName("追问关键词配额：当前问题不足 4 个 token 时，余额让给上一轮")
+    void keywordQuotaGivesSpareToPreviousWhenCurrentIsShort() {
+        // "响应呢？" 只有 [响应, 应呢] 两个可用 token
+        List<String> tokens = captureKeywordTokens(() ->
+                service.hybridSearch("响应呢？", "单笔代收字段请求接口有哪些", 4));
+
+        assertEquals(8, tokens.size(), "当前问题不足保底值时，余额应补给上一轮而不是空转");
+        assertEquals(List.of("响应", "应呢"), tokens.subList(0, 2));
+    }
+
     @Test
     @DisplayName("空 token 查询：关键词通道不做查询（MyBatis <foreach> 空集合守卫），结果仍来自向量通道")
     void emptyTokensSkipKeywordChannel() {

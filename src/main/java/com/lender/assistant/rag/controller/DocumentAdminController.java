@@ -80,7 +80,7 @@ public class DocumentAdminController {
     /** 检索测试入口（阶段 2 会挪到面向问答的接口上） */
     @PostMapping("/search")
     public List<SearchItemResponse> search(@RequestBody SearchRequest request) {
-        return searchService.hybridSearch(request.query(),
+        return searchService.hybridSearch(request.query(), null,
                 TopKUtils.resolve(request.topK(), SearchConstants.ADMIN_SEARCH_DEFAULT_TOP_K));
     }
 }

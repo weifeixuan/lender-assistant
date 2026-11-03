@@ -129,7 +129,7 @@ class QaServiceTest {
     @Test
     @DisplayName("systemPrompt 包含三条铁律的核心约束")
     void systemPromptContainsThreeRules() {
-        when(searchService.hybridSearch(any(), anyInt()))
+        when(searchService.hybridSearch(any(), any(), anyInt()))
                 .thenReturn(List.of(hit(1, "华信银行_日末文件格式说明", "3 逾期文件", "逾期阶段 M1/M2/M3")));
 
         qaService.answer("逾期阶段怎么划分", 4, null, USER_ID);
@@ -144,7 +144,7 @@ class QaServiceTest {
     @Test
     @DisplayName("问题与召回结果按原顺序结构化传给生成器（【来源N】编号由实现方按顺序拼）")
     void passesQuestionAndContextHitsInRecallOrder() {
-        when(searchService.hybridSearch(any(), anyInt())).thenReturn(List.of(
+        when(searchService.hybridSearch(any(), any(), anyInt())).thenReturn(List.of(
                 hit(1, "华信银行_日末文件格式说明", "3 逾期文件", "逾期阶段 M1 为 1-30 天"),
                 hit(2, "华信银行_对公收付接口文档", "2 单笔代收接口", "单笔限额 500 万元")));
 
@@ -162,12 +162,12 @@ class QaServiceTest {
     @Test
     @DisplayName("检索无结果：不调用生成器，直接给出引导文案")
     void emptyHitsSkipsGenerator() {
-        when(searchService.hybridSearch(any(), anyInt())).thenReturn(List.of());
+        when(searchService.hybridSearch(any(), any(), anyInt())).thenReturn(List.of());
 
         qaService.answer("随便问", 4, null, USER_ID);
         // 等异步流程确认 hybridSearch 确实被调用过，再断言生成器全程未被调用
         awaitAsyncDone(() -> {
-            try { verify(searchService).hybridSearch("随便问", 4); return true; }
+            try { verify(searchService).hybridSearch("随便问", null, 4); return true; }
             catch (AssertionError notYet) { return false; }
         });
 
@@ -177,7 +177,7 @@ class QaServiceTest {
     @Test
     @DisplayName("生成器抛异常：QaService 不外泄异常（error 事件在 emitter 内处理）")
     void generatorExceptionDoesNotPropagate() {
-        when(searchService.hybridSearch(any(), anyInt()))
+        when(searchService.hybridSearch(any(), any(), anyInt()))
                 .thenReturn(List.of(hit(1, "某文档", "某节", "内容")));
         AnswerGeneratorStrategy broken = new AnswerGeneratorStrategy() {
             @Override
@@ -202,7 +202,7 @@ class QaServiceTest {
                 "阶段4韧性改造的契约底线：模型故障不允许把异常抛出 answer() 之外");
         // 生成器异常发生在工作线程内：等异步流程跑到检索这一步即证明异常未外泄
         awaitAsyncDone(() -> {
-            try { verify(searchService).hybridSearch(any(), anyInt()); return true; }
+            try { verify(searchService).hybridSearch(any(), any(), anyInt()); return true; }
             catch (AssertionError notYet) { return false; }
         });
     }
@@ -261,7 +261,7 @@ class QaServiceTest {
     @Test
     @DisplayName("meta 是流的第一个事件，之后才推送 sources/delta/done")
     void metaIsFirstEvent() {
-        when(searchService.hybridSearch(any(), anyInt()))
+        when(searchService.hybridSearch(any(), any(), anyInt()))
                 .thenReturn(List.of(hit(1, "某文档", "某节", "内容")));
         RecordingEmitter emitter = new RecordingEmitter();
 
@@ -277,7 +277,7 @@ class QaServiceTest {
     @Test
     @DisplayName("正常结束把完整回答、来源与模型名落库")
     void persistsAssistantOnSuccess() {
-        when(searchService.hybridSearch(any(), anyInt()))
+        when(searchService.hybridSearch(any(), any(), anyInt()))
                 .thenReturn(List.of(hit(1, "某文档", "某节", "内容")));
 
         qaService.streamAnswer(new RecordingEmitter(), "问题", 4, USER_ID, round,
@@ -297,7 +297,7 @@ class QaServiceTest {
     @Test
     @DisplayName("检索无结果时把引导文案以空来源落库")
     void persistsGuidanceWhenNoHits() {
-        when(searchService.hybridSearch(any(), anyInt())).thenReturn(List.of());
+        when(searchService.hybridSearch(any(), any(), anyInt())).thenReturn(List.of());
 
         qaService.streamAnswer(new RecordingEmitter(), "问题", 4, USER_ID, round,
                 System.currentTimeMillis());
@@ -312,7 +312,7 @@ class QaServiceTest {
     @Test
     @DisplayName("未召回时 sources 事件是空数组，delta 与 done 照常推送")
     void emptyHitsStillSendSourcesDeltaAndDone() {
-        when(searchService.hybridSearch(any(), anyInt())).thenReturn(List.of());
+        when(searchService.hybridSearch(any(), any(), anyInt())).thenReturn(List.of());
         RecordingEmitter emitter = new RecordingEmitter();
 
         qaService.streamAnswer(emitter, "问题", 4, USER_ID, round, System.currentTimeMillis());
@@ -324,7 +324,7 @@ class QaServiceTest {
     @Test
     @DisplayName("模型异常：保留已生成正文，按 FAILED 落库且 error 非空")
     void persistsFailedRoundOnModelException() {
-        when(searchService.hybridSearch(any(), anyInt()))
+        when(searchService.hybridSearch(any(), any(), anyInt()))
                 .thenReturn(List.of(hit(1, "某文档", "某节", "内容")));
         AnswerGeneratorStrategy broken = new AnswerGeneratorStrategy() {
             @Override
@@ -359,7 +359,7 @@ class QaServiceTest {
     @Test
     @DisplayName("客户端断开：保留已生成正文，按 STOPPED 落库且不推 error")
     void persistsStoppedRoundWhenClientDisconnects() {
-        when(searchService.hybridSearch(any(), anyInt()))
+        when(searchService.hybridSearch(any(), any(), anyInt()))
                 .thenReturn(List.of(hit(1, "某文档", "某节", "内容")));
 
         qaService.streamAnswer(new FailAfterEmitter(2), "问题", 4, USER_ID, round,
@@ -374,7 +374,7 @@ class QaServiceTest {
     @Test
     @DisplayName("客户端断开：立即取消上游生成，不再消费剩余 token（而不是等自然结束）")
     void clientDisconnectCancelsUpstreamGeneration() {
-        when(searchService.hybridSearch(any(), anyInt()))
+        when(searchService.hybridSearch(any(), any(), anyInt()))
                 .thenReturn(List.of(hit(1, "某文档", "某节", "内容")));
         java.util.concurrent.atomic.AtomicInteger emitted = new java.util.concurrent.atomic.AtomicInteger();
         AnswerGeneratorStrategy longRunning = new AnswerGeneratorStrategy() {
@@ -427,7 +427,7 @@ class QaServiceTest {
         when(conversationService.startFollowUpRound(eq("conv-1"), eq(USER_ID), any())).thenReturn(round);
         CountDownLatch searching = new CountDownLatch(1);
         CountDownLatch resume = new CountDownLatch(1);
-        when(searchService.hybridSearch(any(), anyInt())).thenAnswer(invocation -> {
+        when(searchService.hybridSearch(any(), any(), anyInt())).thenAnswer(invocation -> {
             searching.countDown();
             assertTrue(resume.await(5, TimeUnit.SECONDS), "测试等待超时");
             return List.of();
@@ -450,7 +450,7 @@ class QaServiceTest {
         when(conversationService.startFollowUpRound(anyString(), eq(USER_ID), any())).thenReturn(round);
         CountDownLatch searching = new CountDownLatch(1);
         CountDownLatch resume = new CountDownLatch(1);
-        when(searchService.hybridSearch(any(), anyInt())).thenAnswer(invocation -> {
+        when(searchService.hybridSearch(any(), any(), anyInt())).thenAnswer(invocation -> {
             searching.countDown();
             assertTrue(resume.await(5, TimeUnit.SECONDS), "测试等待超时");
             return List.of();
@@ -463,7 +463,7 @@ class QaServiceTest {
         resume.countDown();
         awaitAsyncDone(() -> !lockRegistry.isBusy("conv-1"));
 
-        when(searchService.hybridSearch(any(), anyInt())).thenReturn(List.of());
+        when(searchService.hybridSearch(any(), any(), anyInt())).thenReturn(List.of());
         assertDoesNotThrow(() -> qaService.answer("第二问", 4, "conv-1", USER_ID),
                 "上一轮结束后锁必须已释放");
     }
@@ -484,7 +484,7 @@ class QaServiceTest {
     @Test
     @DisplayName("首问不占用会话锁")
     void firstQuestionDoesNotLockAnyConversation() {
-        when(searchService.hybridSearch(any(), anyInt())).thenReturn(List.of());
+        when(searchService.hybridSearch(any(), any(), anyInt())).thenReturn(List.of());
 
         qaService.answer("首问", 4, null, USER_ID);
 
@@ -497,7 +497,7 @@ class QaServiceTest {
     void passesHistoryAndPrependsLastUserQuestionToRetrieval() {
         when(historyAssembler.assemble("conv-1", "round-1")).thenReturn(List.of(
                 new ChatTurn("USER", "首轮问题"), new ChatTurn("ASSISTANT", "首轮回答")));
-        when(searchService.hybridSearch("首轮问题\n追问", 4))
+        when(searchService.hybridSearch("追问", "首轮问题", 4))
                 .thenReturn(List.of(hit(1, "某文档", "某节", "内容")));
 
         qaService.streamAnswer(new RecordingEmitter(), "追问", 4, USER_ID, round,
@@ -506,19 +506,19 @@ class QaServiceTest {
         assertEquals(List.of(new ChatTurn("USER", "首轮问题"), new ChatTurn("ASSISTANT", "首轮回答")),
                 generator.history);
         assertEquals("追问", generator.question, "传给模型的是当前问题，历史单独成列");
-        verify(searchService).hybridSearch("首轮问题\n追问", 4);
+        verify(searchService).hybridSearch("追问", "首轮问题", 4);
     }
 
     @Test
     @DisplayName("首问：无历史时不拼接检索 query，生成器收到空历史")
     void firstQuestionSendsEmptyHistory() {
-        when(searchService.hybridSearch("首问", 4))
+        when(searchService.hybridSearch("首问", null, 4))
                 .thenReturn(List.of(hit(1, "某文档", "某节", "内容")));
 
         qaService.streamAnswer(new RecordingEmitter(), "首问", 4, USER_ID, round,
                 System.currentTimeMillis());
 
-        verify(searchService).hybridSearch("首问", 4);
+        verify(searchService).hybridSearch("首问", null, 4);
         assertEquals(List.of(), generator.history);
     }
 
@@ -526,7 +526,7 @@ class QaServiceTest {
     @DisplayName("不同会话互不阻塞")
     void differentConversationsAreIndependent() {
         when(conversationService.startFollowUpRound(anyString(), eq(USER_ID), any())).thenReturn(round);
-        when(searchService.hybridSearch(any(), anyInt())).thenReturn(List.of());
+        when(searchService.hybridSearch(any(), any(), anyInt())).thenReturn(List.of());
 
         assertDoesNotThrow(() -> qaService.answer("A", 4, "conv-a", USER_ID));
         assertDoesNotThrow(() -> qaService.answer("B", 4, "conv-b", USER_ID));
@@ -564,7 +564,7 @@ class QaServiceTest {
     @Test
     @DisplayName("SSE 超时按客户端断开处理：落 STOPPED 并停止后续推送")
     void timeoutPersistsStoppedAndStopsPushing() {
-        when(searchService.hybridSearch(any(), anyInt()))
+        when(searchService.hybridSearch(any(), any(), anyInt()))
                 .thenReturn(List.of(hit(1, "某文档", "某节", "内容")));
         CallbackEmitter emitter = new CallbackEmitter();
         AnswerGeneratorStrategy slow = new AnswerGeneratorStrategy() {

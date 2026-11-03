@@ -171,7 +171,10 @@ public class QaServiceImpl implements QaService {
 
             // 历史只在追问时非空；检索 query 带最近一条历史用户提问，让"那二套呢"这类指代能召回正确资料
             List<ChatTurn> history = historyAssembler.assemble(round.conversationId(), round.roundId());
-            List<SearchItemResponse> hits = searchService.hybridSearch(retrievalQuery(history, question), topK);
+            // 追问时把「当前问题」与「上一轮问题」分段传给检索：关键词 token 配额按段分配，
+            // 避免上一轮长问题按顺序把当前追问的关键词挤出配额（票 08）
+            String lastUser = ConversationHistoryAssembler.lastUserContent(history);
+            List<SearchItemResponse> hits = searchService.hybridSearch(question, lastUser, topK);
             List<QaSourceResponse> sources = hits.isEmpty() ? List.of() : buildSources(hits);
             stream.sources(sources);
             // 来源列表先发；未召回时也发空数组，前端协议保持单一形态
@@ -246,12 +249,6 @@ public class QaServiceImpl implements QaService {
                     }, stream.cancellation());
                     return true;
                 }, false);
-    }
-
-    /** 检索 query：最近一条历史用户正文 + 换行 + 当前问题；无历史只用当前问题（不做 LLM 改写） */
-    private static String retrievalQuery(List<ChatTurn> history, String question) {
-        String lastUser = ConversationHistoryAssembler.lastUserContent(history);
-        return lastUser == null ? question : lastUser + "\n" + question;
     }
 
     /** 单轮流式状态：累积正文与来源快照，并保证终态只落库一次 */
