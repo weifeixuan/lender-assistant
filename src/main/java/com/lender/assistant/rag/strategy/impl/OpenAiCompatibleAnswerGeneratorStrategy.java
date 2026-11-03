@@ -2,7 +2,7 @@ package com.lender.assistant.rag.strategy.impl;
 
 import com.lender.assistant.rag.strategy.AnswerGenerationRequest;
 import com.lender.assistant.rag.strategy.AnswerGeneratorStrategy;
-import com.lender.assistant.rag.vo.ChatTurn;
+import com.lender.assistant.rag.model.ChatTurn;
 import com.lender.assistant.rag.vo.response.SearchItemResponse;
 import com.lender.assistant.tools.LenderQueryTools;
 import org.springframework.ai.chat.client.ChatClient;

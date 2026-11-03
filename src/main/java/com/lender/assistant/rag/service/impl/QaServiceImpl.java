@@ -7,6 +7,7 @@ import com.lender.assistant.common.exception.ErrorCode;
 import com.lender.assistant.common.util.ThreadPoolFactory;
 import com.lender.assistant.conversation.model.AssistantMessageCompletion;
 import com.lender.assistant.conversation.model.ConversationRound;
+import com.lender.assistant.conversation.model.QaSourceSnapshot;
 import com.lender.assistant.conversation.service.ConversationHistoryAssembler;
 import com.lender.assistant.conversation.service.ConversationLockRegistry;
 import com.lender.assistant.conversation.service.ConversationService;
@@ -15,7 +16,7 @@ import com.lender.assistant.rag.service.SearchService;
 import com.lender.assistant.rag.strategy.AnswerCancellation;
 import com.lender.assistant.rag.strategy.AnswerGenerationRequest;
 import com.lender.assistant.rag.strategy.AnswerGeneratorStrategy;
-import com.lender.assistant.rag.vo.ChatTurn;
+import com.lender.assistant.rag.model.ChatTurn;
 import com.lender.assistant.rag.vo.response.QaDoneResponse;
 import com.lender.assistant.rag.vo.response.QaMetaResponse;
 import com.lender.assistant.rag.vo.response.QaSourceResponse;
@@ -222,9 +223,17 @@ public class QaServiceImpl implements QaService {
     /** 召回结果 → sources 事件；返回 false 表示客户端已断开（disconnected 已落 STOPPED） */
     private boolean pushSources(SseEmitter emitter, List<SearchItemResponse> hits, RoundStream stream) {
         List<QaSourceResponse> sources = hits.isEmpty() ? List.of() : buildSources(hits);
-        stream.sources(sources);
+        // 落库用 conversation 包内的快照类型（JSON 同构），避免 conversation 反向依赖 rag 的响应 VO
+        stream.sources(sources.stream().map(QaServiceImpl::toSnapshot).toList());
         // 来源列表先发；未召回时也发空数组，前端协议保持单一形态
         return send(emitter, "sources", sources, stream);
+    }
+
+    /** SSE 响应元素 → 落库快照，字段逐项对应（QaSourceSnapshot 与 QaSourceResponse 同构） */
+    private static QaSourceSnapshot toSnapshot(QaSourceResponse source) {
+        return new QaSourceSnapshot(source.idx(), source.docTitle(), source.sectionPath(),
+                source.chunkId(), source.content(), source.vectorDistance(),
+                source.keywordHits(), source.bothChannels(), source.rrfScore());
     }
 
     /** 无召回分支：推送引导文案与 done 后正常结束 */
@@ -318,7 +327,7 @@ public class QaServiceImpl implements QaService {
          * 而不是等 generate 自然结束（否则白烧 token，且会话锁要多占一整段生成时间）。
          */
         private final AnswerCancellation cancellation = new AnswerCancellation();
-        private List<QaSourceResponse> sources = List.of();
+        private List<QaSourceSnapshot> sources = List.of();
 
         private RoundStream(ConversationRound round, long startedAt) {
             this.round = round;
@@ -331,7 +340,7 @@ public class QaServiceImpl implements QaService {
             }
         }
 
-        synchronized void sources(List<QaSourceResponse> value) {
+        synchronized void sources(List<QaSourceSnapshot> value) {
             this.sources = value;
         }
 
@@ -373,7 +382,7 @@ public class QaServiceImpl implements QaService {
                 return;
             }
             String text;
-            List<QaSourceResponse> snapshot;
+            List<QaSourceSnapshot> snapshot;
             synchronized (this) {
                 text = content.toString();
                 snapshot = sources;

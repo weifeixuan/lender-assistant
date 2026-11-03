@@ -42,8 +42,10 @@ public class DocumentAdminController {
     }
 
     /**
-     * 上传并入库。docId 由调用方指定（如 huaxin_corp_api_v1），
-     * 重复上传同一 docId = 覆盖重建，方便反复实验。
+     * 上传并入库。docId 由调用方指定（如 huaxin_corp_api_v1）；同一 docId 内容有变化 = 覆盖重建。
+     *
+     * 内容判重：以 docId=X 上传内容 C、而 C 已在库中时，返回的是**既有内容的 docId**（可能不等于 X）；
+     * 该 docId 既不会被本调用创建、也不会被覆盖。
      */
     @PostMapping
     public UploadResponse upload(@RequestParam("file") MultipartFile file,
@@ -77,7 +79,10 @@ public class DocumentAdminController {
         return new DeleteResponse(docId, before);
     }
 
-    /** 检索测试入口（阶段 2 会挪到面向问答的接口上） */
+    /**
+     * 检索测试入口（阶段 2 会挪到面向问答的接口上）。
+     * previousQuestion 传 null 表示"没有上一轮问题"，只按本次 query 检索；不另加重载。
+     */
     @PostMapping("/search")
     public List<SearchItemResponse> search(@RequestBody SearchRequest request) {
         return searchService.hybridSearch(request.query(), null,

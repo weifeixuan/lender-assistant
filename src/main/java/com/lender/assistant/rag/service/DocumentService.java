@@ -18,8 +18,11 @@ import java.util.List;
 public interface DocumentService {
 
     /**
-     * 上传入库流水线：解析 → 切分 → 向量化 → 原子替换写入。
+     * 上传入库流水线：解析 → 切分 → 按内容判重 → 向量化 → 原子替换写入。
      * 解析/切分/向量化是长耗时操作，不放在事务里；只有最后一步写入经 {@link #replaceDocument} 走事务。
+     *
+     * 判重语义：以 docId=X 上传内容 C、而 C 已在库中时，返回的是**既有内容的 docId**（可能不等于 X）；
+     * 该 docId 对应的既有文档既不会被本调用创建、也不会被覆盖（向量化与写库都跳过）。
      */
     UploadResponse ingestDocument(String docId, String fileName, byte[] fileBytes) throws Exception;
 

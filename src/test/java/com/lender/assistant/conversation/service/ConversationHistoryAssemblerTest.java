@@ -2,7 +2,7 @@ package com.lender.assistant.conversation.service;
 
 import com.lender.assistant.conversation.mapper.MessageMapper;
 import com.lender.assistant.conversation.model.MessageRow;
-import com.lender.assistant.rag.vo.ChatTurn;
+import com.lender.assistant.rag.model.ChatTurn;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;

@@ -13,12 +13,12 @@ import com.lender.assistant.conversation.model.ConversationRound;
 import com.lender.assistant.conversation.model.ConversationRow;
 import com.lender.assistant.conversation.model.MessageInsert;
 import com.lender.assistant.conversation.model.MessageRow;
+import com.lender.assistant.conversation.model.QaSourceSnapshot;
 import com.lender.assistant.conversation.service.ConversationService;
 import com.lender.assistant.conversation.vo.response.ConversationMessagesResponse;
 import com.lender.assistant.conversation.vo.response.ConversationSummaryResponse;
 import com.lender.assistant.conversation.vo.response.DeleteConversationResponse;
 import com.lender.assistant.conversation.vo.response.MessageResponse;
-import com.lender.assistant.rag.vo.response.QaSourceResponse;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -30,7 +30,7 @@ import java.util.List;
 @Service
 public class ConversationServiceImpl implements ConversationService {
 
-    private static final TypeReference<List<QaSourceResponse>> SOURCES_TYPE =
+    private static final TypeReference<List<QaSourceSnapshot>> SOURCES_TYPE =
             new TypeReference<>() {
             };
 
@@ -124,7 +124,7 @@ public class ConversationServiceImpl implements ConversationService {
         return trimmed.substring(0, trimmed.offsetByCodePoints(0, 20));
     }
 
-    private String writeSources(List<QaSourceResponse> sources) {
+    private String writeSources(List<QaSourceSnapshot> sources) {
         try {
             return objectMapper.writeValueAsString(sources);
         } catch (JsonProcessingException e) {
@@ -139,7 +139,7 @@ public class ConversationServiceImpl implements ConversationService {
     }
 
     /** USER 消息的 sourcesJson 为 null，对外同样为 null；助手未召回时是空数组 */
-    private List<QaSourceResponse> parseSources(String sourcesJson) {
+    private List<QaSourceSnapshot> parseSources(String sourcesJson) {
         if (sourcesJson == null) {
             return null;
         }

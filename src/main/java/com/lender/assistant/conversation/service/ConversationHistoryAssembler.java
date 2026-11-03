@@ -3,7 +3,7 @@ package com.lender.assistant.conversation.service;
 import com.lender.assistant.common.constant.MessageConstants;
 import com.lender.assistant.conversation.mapper.MessageMapper;
 import com.lender.assistant.conversation.model.MessageRow;
-import com.lender.assistant.rag.vo.ChatTurn;
+import com.lender.assistant.rag.model.ChatTurn;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 

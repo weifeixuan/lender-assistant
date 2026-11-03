@@ -14,7 +14,7 @@ import com.lender.assistant.conversation.vo.response.ConversationMessagesRespons
 import com.lender.assistant.conversation.vo.response.ConversationSummaryResponse;
 import com.lender.assistant.conversation.vo.response.DeleteConversationResponse;
 import com.lender.assistant.conversation.vo.response.MessageResponse;
-import com.lender.assistant.rag.vo.response.QaSourceResponse;
+import com.lender.assistant.conversation.model.QaSourceSnapshot;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -288,8 +288,8 @@ class ConversationServiceTest {
         verify(messageMapper, org.mockito.Mockito.never()).insert(any());
     }
 
-    private static QaSourceResponse source() {
-        return new QaSourceResponse(1, "资方接口文档", "3 日末文件", 123L,
+    private static QaSourceSnapshot source() {
+        return new QaSourceSnapshot(1, "资方接口文档", "3 日末文件", 123L,
                 "切片正文", null, null, false, null);
     }
 

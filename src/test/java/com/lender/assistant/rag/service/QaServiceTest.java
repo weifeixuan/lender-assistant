@@ -6,7 +6,7 @@ import com.lender.assistant.conversation.service.ConversationHistoryAssembler;
 import com.lender.assistant.conversation.service.ConversationLockRegistry;
 import com.lender.assistant.conversation.service.ConversationService;
 import com.lender.assistant.conversation.model.ConversationRound;
-import com.lender.assistant.rag.vo.ChatTurn;
+import com.lender.assistant.rag.model.ChatTurn;
 import com.lender.assistant.rag.vo.response.SearchItemResponse;
 import com.lender.assistant.rag.service.SearchService;
 import com.lender.assistant.rag.service.impl.QaServiceImpl;

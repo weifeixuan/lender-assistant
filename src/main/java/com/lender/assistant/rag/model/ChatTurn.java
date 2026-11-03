@@ -1,4 +1,4 @@
-package com.lender.assistant.rag.vo;
+package com.lender.assistant.rag.model;
 
 /**
  * 回放给模型的一条历史消息：role 取 USER / ASSISTANT，content 为落库正文。

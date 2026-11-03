@@ -5,6 +5,9 @@ package com.lender.assistant.rag.vo.response;
  *
  * 组件名与旧 Map 手拼的键名逐字一致（前端按名取值）：
  * 解析出的 block 数、切分后的 chunk 数、平均 chunk 字符数、各阶段耗时、向量化 provider。
+ *
+ * docId：判重命中时返回既有内容的 docId，可能不等于请求参数里的 docId；
+ * 该 docId 对应的既有文档不会被本次调用创建或覆盖。
  */
 public record UploadResponse(
         String docId,

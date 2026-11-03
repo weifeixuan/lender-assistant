@@ -1,6 +1,6 @@
 package com.lender.assistant.rag.strategy;
 
-import com.lender.assistant.rag.vo.ChatTurn;
+import com.lender.assistant.rag.model.ChatTurn;
 import com.lender.assistant.rag.vo.response.SearchItemResponse;
 
 import java.util.List;

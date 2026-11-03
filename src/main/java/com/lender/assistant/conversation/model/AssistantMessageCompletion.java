@@ -1,7 +1,5 @@
 package com.lender.assistant.conversation.model;
 
-import com.lender.assistant.rag.vo.response.QaSourceResponse;
-
 import java.util.List;
 
 /**
@@ -11,7 +9,7 @@ import java.util.List;
  * error 仅在 FAILED 时非空；sources 是生成时的快照（未召回时为空数组）。
  */
 public record AssistantMessageCompletion(String conversationId, String roundId, String messageId,
-                                         String content, List<QaSourceResponse> sources,
+                                         String content, List<QaSourceSnapshot> sources,
                                          String provider, long elapsedMillis,
                                          String status, String error) {
 }
