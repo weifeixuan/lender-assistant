@@ -22,8 +22,6 @@ import org.mockito.ArgumentCaptor;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotEquals;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -141,28 +139,21 @@ class ConversationServiceTest {
     }
 
     @Test
-    @DisplayName("首问创建会话与用户消息，四项 id 均由后端生成")
+    @DisplayName("首问创建会话与用户消息，四项 id 使用调用方（QaService）生成的值")
     void startsNewRound() {
         when(conversationMapper.insert(anyString(), eq(USER_ID), anyString())).thenReturn(1);
         when(messageMapper.insert(any())).thenReturn(1);
 
-        ConversationRound round = service.startNewRound(USER_ID, "首套贷款成数上限是多少");
+        ConversationRound round = new ConversationRound("conv-new", "round-new",
+                "msg-user-new", "msg-assistant-new");
+        service.startNewRound(round, USER_ID, "首套贷款成数上限是多少");
 
-        assertNotNull(round.conversationId());
-        assertNotNull(round.roundId());
-        assertNotNull(round.userMessageId());
-        assertNotNull(round.assistantMessageId());
-        assertNotEquals(round.userMessageId(), round.assistantMessageId());
-
-        ArgumentCaptor<String> conversationId = ArgumentCaptor.forClass(String.class);
-        verify(conversationMapper).insert(conversationId.capture(), eq(USER_ID),
-                eq("首套贷款成数上限是多少"));
-        assertEquals(round.conversationId(), conversationId.getValue());
+        verify(conversationMapper).insert("conv-new", USER_ID, "首套贷款成数上限是多少");
 
         verify(messageMapper).insert(argThat(message ->
-                message.conversationId().equals(round.conversationId())
-                        && message.roundId().equals(round.roundId())
-                        && message.messageId().equals(round.userMessageId())
+                message.conversationId().equals("conv-new")
+                        && message.roundId().equals("round-new")
+                        && message.messageId().equals("msg-user-new")
                         && message.role().equals("USER")
                         && message.status().equals("DONE")
                         && message.sourcesJson() == null));
@@ -175,7 +166,8 @@ class ConversationServiceTest {
         when(conversationMapper.insert(anyString(), eq(USER_ID), anyString())).thenReturn(1);
         when(messageMapper.insert(any())).thenReturn(1);
 
-        service.startNewRound(USER_ID, question);
+        service.startNewRound(new ConversationRound("conv-new", "round-new",
+                "msg-user-new", "msg-assistant-new"), USER_ID, question);
 
         verify(conversationMapper).insert(anyString(), eq(USER_ID), eq("一".repeat(20)));
     }
@@ -266,16 +258,14 @@ class ConversationServiceTest {
         when(messageMapper.insert(any())).thenReturn(1);
         when(conversationMapper.touch(CONVERSATION_ID)).thenReturn(1);
 
-        ConversationRound round = service.startFollowUpRound(CONVERSATION_ID, USER_ID, "那二套呢");
+        ConversationRound round = new ConversationRound(CONVERSATION_ID, "round-2",
+                "msg-user-2", "msg-assistant-2");
+        service.startFollowUpRound(round, USER_ID, "那二套呢");
 
-        assertEquals(CONVERSATION_ID, round.conversationId());
-        assertNotNull(round.roundId());
-        assertNotNull(round.userMessageId());
-        assertNotNull(round.assistantMessageId());
         verify(messageMapper).insert(argThat(message ->
                 message.conversationId().equals(CONVERSATION_ID)
-                        && message.roundId().equals(round.roundId())
-                        && message.messageId().equals(round.userMessageId())
+                        && message.roundId().equals("round-2")
+                        && message.messageId().equals("msg-user-2")
                         && message.role().equals("USER")
                         && message.status().equals("DONE")));
         verify(conversationMapper).touch(CONVERSATION_ID);
@@ -287,8 +277,10 @@ class ConversationServiceTest {
         when(conversationMapper.findActiveByConversationIdAndUser(CONVERSATION_ID, USER_ID))
                 .thenReturn(null);
 
+        ConversationRound round = new ConversationRound(CONVERSATION_ID, "round-2",
+                "msg-user-2", "msg-assistant-2");
         BizException exception = assertThrows(BizException.class,
-                () -> service.startFollowUpRound(CONVERSATION_ID, USER_ID, "问题"));
+                () -> service.startFollowUpRound(round, USER_ID, "问题"));
 
         assertEquals(ErrorCode.CONVERSATION_NOT_FOUND, exception.errorCode());
         verify(messageMapper, org.mockito.Mockito.never()).insert(any());

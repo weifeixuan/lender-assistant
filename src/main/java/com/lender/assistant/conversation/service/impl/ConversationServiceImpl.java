@@ -22,7 +22,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
-import java.util.UUID;
 
 /**
  * 会话查询实现：归属过滤与排序交给 SQL（带索引），本层只做行到响应的映射。
@@ -76,37 +75,29 @@ public class ConversationServiceImpl implements ConversationService {
     }
 
     @Override
-    @Transactional
-    public ConversationRound startNewRound(String userId, String question) {
-        ConversationRound round = new ConversationRound(
-                UUID.randomUUID().toString(),
-                UUID.randomUUID().toString(),
-                UUID.randomUUID().toString(),
-                UUID.randomUUID().toString());
-        conversationMapper.insert(round.conversationId(), userId, titleOf(question));
-        messageMapper.insert(new MessageInsert(round.conversationId(), round.roundId(),
-                round.userMessageId(), "USER", question, "DONE",
-                null, null, null, null));
-        return round;
+    public void validateOwnership(String conversationId, String userId) {
+        if (conversationMapper.findActiveByConversationIdAndUser(conversationId, userId) == null) {
+            throw new BizException(ErrorCode.CONVERSATION_NOT_FOUND);
+        }
     }
 
     @Override
     @Transactional
-    public ConversationRound startFollowUpRound(String conversationId, String userId, String question) {
-        ConversationRow conversation =
-                conversationMapper.findActiveByConversationIdAndUser(conversationId, userId);
-        if (conversation == null) {
-            throw new BizException(ErrorCode.CONVERSATION_NOT_FOUND);
-        }
-        ConversationRound round = new ConversationRound(conversationId,
-                UUID.randomUUID().toString(),
-                UUID.randomUUID().toString(),
-                UUID.randomUUID().toString());
-        messageMapper.insert(new MessageInsert(conversationId, round.roundId(),
+    public void startNewRound(ConversationRound round, String userId, String question) {
+        conversationMapper.insert(round.conversationId(), userId, titleOf(question));
+        messageMapper.insert(new MessageInsert(round.conversationId(), round.roundId(),
                 round.userMessageId(), "USER", question, "DONE",
                 null, null, null, null));
-        conversationMapper.touch(conversationId);
-        return round;
+    }
+
+    @Override
+    @Transactional
+    public void startFollowUpRound(ConversationRound round, String userId, String question) {
+        validateOwnership(round.conversationId(), userId);
+        messageMapper.insert(new MessageInsert(round.conversationId(), round.roundId(),
+                round.userMessageId(), "USER", question, "DONE",
+                null, null, null, null));
+        conversationMapper.touch(round.conversationId());
     }
 
     @Override

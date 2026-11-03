@@ -27,6 +27,7 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -107,10 +108,8 @@ public class QaServiceImpl implements QaService {
         long t0 = System.currentTimeMillis();
 
         // 首问懒创建 / 既有会话追问：都在请求线程内先落用户消息（DB 失败直接以普通 JSON 报错，不必开 SSE）。
-        // 追问路径先取进程内会话锁，避免同一会话并发把历史写乱；锁由工作线程 finally 释放。
-        ConversationRound round = conversationId == null
-                ? conversationService.startNewRound(userId, question)
-                : startFollowUpRound(conversationId, userId, question);
+        // 两条路径都先占同一把会话锁：首问的 conversationId 已随 meta 回传，必须从第一轮起就挡住并发追问。
+        ConversationRound round = beginRound(conversationId, userId, question);
 
         // 关键：立即返回 emitter，把检索+生成+send 放到独立线程。
         // 旧写法在请求线程内 send，Spring 的 ResponseBodyEmitter 会把数据先堆进
@@ -121,17 +120,13 @@ public class QaServiceImpl implements QaService {
                 try {
                     streamAnswer(emitter, question, topK, userId, round, t0);
                 } finally {
-                    if (conversationId != null) {
-                        lockRegistry.release(conversationId);
-                    }
+                    lockRegistry.release(round.conversationId());
                 }
             });
         } catch (RuntimeException e) {
             // 线程池饱和/已关闭：不留半开 SSE，落一条 FAILED 兜底后按 500 普通 JSON 返回
             log.error("SSE 任务提交失败，已落 FAILED 兜底: conversationId={}", round.conversationId(), e);
-            if (conversationId != null) {
-                lockRegistry.release(conversationId);
-            }
+            lockRegistry.release(round.conversationId());
             conversationService.completeRound(new AssistantMessageCompletion(
                     round.conversationId(), round.roundId(), round.assistantMessageId(),
                     "", List.of(), generator.name(), 0, "FAILED",
@@ -141,15 +136,34 @@ public class QaServiceImpl implements QaService {
         return emitter;
     }
 
-    /** 追问受理：先占会话锁（失败 409、不写任何消息），再归属校验并落用户消息；失败路径必须释放锁 */
-    private ConversationRound startFollowUpRound(String conversationId, String userId, String question) {
-        if (!lockRegistry.tryAcquire(conversationId)) {
+    /**
+     * 受理一轮：生成四项标识（PRD §5.4 归 QaService）→ 占锁 → 落用户消息。
+     *
+     * 归属校验必须先于占锁：他人会话/已删除会话返回 404，不能被误报成 409，也不能触碰他人的锁。
+     * 占锁后落库失败要立刻释放，避免这一轮把会话永久锁死。
+     */
+    private ConversationRound beginRound(String conversationId, String userId, String question) {
+        boolean firstQuestion = conversationId == null;
+        if (!firstQuestion) {
+            conversationService.validateOwnership(conversationId, userId);
+        }
+        ConversationRound round = new ConversationRound(
+                firstQuestion ? UUID.randomUUID().toString() : conversationId,
+                UUID.randomUUID().toString(),
+                UUID.randomUUID().toString(),
+                UUID.randomUUID().toString());
+        if (!lockRegistry.tryAcquire(round.conversationId())) {
             throw new BizException(ErrorCode.CONVERSATION_BUSY);
         }
         try {
-            return conversationService.startFollowUpRound(conversationId, userId, question);
+            if (firstQuestion) {
+                conversationService.startNewRound(round, userId, question);
+            } else {
+                conversationService.startFollowUpRound(round, userId, question);
+            }
+            return round;
         } catch (RuntimeException e) {
-            lockRegistry.release(conversationId);
+            lockRegistry.release(round.conversationId());
             throw e;
         }
     }

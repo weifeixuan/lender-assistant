@@ -14,6 +14,7 @@ import com.lender.assistant.rag.strategy.AnswerGeneratorStrategy;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.io.IOException;
@@ -32,6 +33,7 @@ import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -102,7 +104,6 @@ class QaServiceTest {
         qaService = new QaServiceImpl(searchService, generator, resilientExecutor, conversationService,
                 lockRegistry, historyAssembler);
         round = new ConversationRound("conv-1", "round-1", "msg-user", "msg-assistant");
-        when(conversationService.startNewRound(eq(USER_ID), any())).thenReturn(round);
         when(historyAssembler.assemble(anyString(), anyString())).thenReturn(List.of());
     }
 
@@ -424,7 +425,6 @@ class QaServiceTest {
     @Test
     @DisplayName("追问：取锁后追加一轮；流进行中再问同一会话返回 409，且不写消息")
     void followUpLocksConversationWhileStreaming() throws Exception {
-        when(conversationService.startFollowUpRound(eq("conv-1"), eq(USER_ID), any())).thenReturn(round);
         CountDownLatch searching = new CountDownLatch(1);
         CountDownLatch resume = new CountDownLatch(1);
         when(searchService.hybridSearch(any(), any(), anyInt())).thenAnswer(invocation -> {
@@ -439,7 +439,7 @@ class QaServiceTest {
         BizException busy = assertThrows(BizException.class,
                 () -> qaService.answer("再问一次", 4, "conv-1", USER_ID));
         assertEquals(ErrorCode.CONVERSATION_BUSY, busy.errorCode());
-        verify(conversationService, times(1)).startFollowUpRound(anyString(), anyString(), any());
+        verify(conversationService, times(1)).startFollowUpRound(any(), eq(USER_ID), any());
 
         resume.countDown();
     }
@@ -447,7 +447,6 @@ class QaServiceTest {
     @Test
     @DisplayName("流结束后释放会话锁，同一会话可以再次提问")
     void releasesLockAfterStream() throws Exception {
-        when(conversationService.startFollowUpRound(anyString(), eq(USER_ID), any())).thenReturn(round);
         CountDownLatch searching = new CountDownLatch(1);
         CountDownLatch resume = new CountDownLatch(1);
         when(searchService.hybridSearch(any(), any(), anyInt())).thenAnswer(invocation -> {
@@ -469,27 +468,58 @@ class QaServiceTest {
     }
 
     @Test
-    @DisplayName("追问的会话不存在/非本人：404 向外抛出，且锁已释放")
+    @DisplayName("追问的会话不存在/非本人：归属校验返回 404 且不占锁")
     void followUpOnInvisibleConversationReleasesLock() {
-        when(conversationService.startFollowUpRound(eq("conv-1"), eq(USER_ID), any()))
-                .thenThrow(new BizException(ErrorCode.CONVERSATION_NOT_FOUND));
+        doThrow(new BizException(ErrorCode.CONVERSATION_NOT_FOUND))
+                .when(conversationService).validateOwnership("conv-1", USER_ID);
 
         BizException exception = assertThrows(BizException.class,
                 () -> qaService.answer("问题", 4, "conv-1", USER_ID));
 
         assertEquals(ErrorCode.CONVERSATION_NOT_FOUND, exception.errorCode());
         assertFalse(lockRegistry.isBusy("conv-1"));
+        verify(conversationService, never()).startFollowUpRound(any(), any(), any());
     }
 
     @Test
-    @DisplayName("首问不占用会话锁")
-    void firstQuestionDoesNotLockAnyConversation() {
-        when(searchService.hybridSearch(any(), any(), anyInt())).thenReturn(List.of());
+    @DisplayName("首问生成中同一会话追问 → 409（首问同样占锁）")
+    void followUpDuringFirstAnswerReturnsBusy() throws Exception {
+        CountDownLatch searching = new CountDownLatch(1);
+        CountDownLatch resume = new CountDownLatch(1);
+        when(searchService.hybridSearch(any(), any(), anyInt())).thenAnswer(invocation -> {
+            searching.countDown();
+            assertTrue(resume.await(5, TimeUnit.SECONDS), "测试等待超时");
+            return List.of();
+        });
 
         qaService.answer("首问", 4, null, USER_ID);
+        awaitAsyncDone(() -> searching.getCount() == 0);
 
-        verify(conversationService).startNewRound(eq(USER_ID), eq("首问"));
-        assertFalse(lockRegistry.isBusy("conv-1"));
+        ArgumentCaptor<ConversationRound> captor = ArgumentCaptor.forClass(ConversationRound.class);
+        verify(conversationService).startNewRound(captor.capture(), eq(USER_ID), eq("首问"));
+        String conversationId = captor.getValue().conversationId();
+        assertTrue(lockRegistry.isBusy(conversationId), "首问生成中也必须占锁");
+
+        BizException busy = assertThrows(BizException.class,
+                () -> qaService.answer("追问", 4, conversationId, USER_ID));
+        assertEquals(ErrorCode.CONVERSATION_BUSY, busy.errorCode());
+
+        resume.countDown();
+    }
+
+    @Test
+    @DisplayName("他人会话：404 优先于 409，且不占用/释放他人的锁")
+    void foreignConversationReturns404WithoutTouchingLock() {
+        lockRegistry.tryAcquire("conv-other");
+        doThrow(new BizException(ErrorCode.CONVERSATION_NOT_FOUND))
+                .when(conversationService).validateOwnership("conv-other", "user-2");
+
+        BizException exception = assertThrows(BizException.class,
+                () -> qaService.answer("问题", 4, "conv-other", "user-2"));
+
+        assertEquals(ErrorCode.CONVERSATION_NOT_FOUND, exception.errorCode());
+        assertTrue(lockRegistry.isBusy("conv-other"), "校验失败不得触碰他人持有的锁");
+        verify(conversationService, never()).startFollowUpRound(any(), any(), any());
     }
 
     @Test
@@ -525,7 +555,6 @@ class QaServiceTest {
     @Test
     @DisplayName("不同会话互不阻塞")
     void differentConversationsAreIndependent() {
-        when(conversationService.startFollowUpRound(anyString(), eq(USER_ID), any())).thenReturn(round);
         when(searchService.hybridSearch(any(), any(), anyInt())).thenReturn(List.of());
 
         assertDoesNotThrow(() -> qaService.answer("A", 4, "conv-a", USER_ID));
@@ -540,9 +569,13 @@ class QaServiceTest {
         BizException exception = assertThrows(BizException.class,
                 () -> svc.answer("问题", 4, null, USER_ID));
 
+        ArgumentCaptor<ConversationRound> captor = ArgumentCaptor.forClass(ConversationRound.class);
+        verify(conversationService).startNewRound(captor.capture(), eq(USER_ID), eq("问题"));
+        String roundId = captor.getValue().roundId();
+
         assertEquals(ErrorCode.INTERNAL_ERROR, exception.errorCode());
         verify(conversationService).completeRound(argThat(completion ->
-                completion.roundId().equals("round-1")
+                completion.roundId().equals(roundId)
                         && completion.content().isEmpty()
                         && completion.status().equals("FAILED")
                         && completion.error() != null));
@@ -551,7 +584,6 @@ class QaServiceTest {
     @Test
     @DisplayName("追问提交失败：释放会话锁，同一会话可立即再次提问")
     void rejectedFollowUpReleasesLock() {
-        when(conversationService.startFollowUpRound(eq("conv-1"), eq(USER_ID), any())).thenReturn(round);
         QaServiceImpl svc = serviceWithRejectingExecutor();
 
         assertThrows(BizException.class, () -> svc.answer("追问", 4, "conv-1", USER_ID));

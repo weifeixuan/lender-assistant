@@ -22,11 +22,17 @@ public interface ConversationService {
     /** 软删会话；不存在、已删除或非本人时抛 CONVERSATION_NOT_FOUND */
     DeleteConversationResponse deleteConversation(String conversationId, String userId);
 
-    /** 首问懒创建：同一事务内创建会话与用户消息，返回本轮四项标识 */
-    ConversationRound startNewRound(String userId, String question);
+    /** 归属校验：不存在、已删除或非本人时抛 CONVERSATION_NOT_FOUND（必须在占会话锁之前调用） */
+    void validateOwnership(String conversationId, String userId);
+
+    /**
+     * 首问懒创建：同一事务内创建会话与用户消息。
+     * 本轮的 conversationId / roundId / 两条 messageId 均由调用方（QaService）生成，本 Service 不自行生成。
+     */
+    void startNewRound(ConversationRound round, String userId, String question);
 
     /** 既有会话追问：归属校验后追加用户消息并刷新会话更新时间；不存在/已删除/非本人抛 404 */
-    ConversationRound startFollowUpRound(String conversationId, String userId, String question);
+    void startFollowUpRound(ConversationRound round, String userId, String question);
 
     /**
      * 助手消息终态落库（DONE / FAILED / STOPPED）。
