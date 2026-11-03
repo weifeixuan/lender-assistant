@@ -73,14 +73,12 @@ class QaServiceTest {
         final List<String> deltas = new java.util.ArrayList<>();
 
         @Override
-        public void generate(String systemPrompt, List<ChatTurn> history, String question,
-                             List<SearchItemResponse> contextHits, Consumer<String> onDelta,
-                             com.lender.assistant.rag.strategy.AnswerCancellation cancellation) {
-            this.system = systemPrompt;
-            this.history = history;
-            this.question = question;
-            this.contextHits = contextHits;
-            onDelta.accept("测试答案片段");
+        public void generate(com.lender.assistant.rag.strategy.AnswerGenerationRequest request) {
+            this.system = request.systemPrompt();
+            this.history = request.history();
+            this.question = request.question();
+            this.contextHits = request.contextHits();
+            request.onDelta().accept("测试答案片段");
         }
 
         @Override
@@ -182,9 +180,7 @@ class QaServiceTest {
                 .thenReturn(List.of(hit(1, "某文档", "某节", "内容")));
         AnswerGeneratorStrategy broken = new AnswerGeneratorStrategy() {
             @Override
-            public void generate(String systemPrompt, List<ChatTurn> history, String question,
-                                 List<SearchItemResponse> contextHits, Consumer<String> onDelta,
-                                 com.lender.assistant.rag.strategy.AnswerCancellation cancellation) {
+            public void generate(com.lender.assistant.rag.strategy.AnswerGenerationRequest request) {
                 throw new RuntimeException("模拟模型超时");
             }
 
@@ -342,10 +338,8 @@ class QaServiceTest {
                 .thenReturn(List.of(hit(1, "某文档", "某节", "内容")));
         AnswerGeneratorStrategy broken = new AnswerGeneratorStrategy() {
             @Override
-            public void generate(String systemPrompt, List<ChatTurn> history, String question,
-                                 List<SearchItemResponse> contextHits, Consumer<String> onDelta,
-                                 com.lender.assistant.rag.strategy.AnswerCancellation cancellation) {
-                onDelta.accept("已生成的一半");
+            public void generate(com.lender.assistant.rag.strategy.AnswerGenerationRequest request) {
+                request.onDelta().accept("已生成的一半");
                 throw new RuntimeException("模拟模型超时");
             }
 
@@ -393,15 +387,13 @@ class QaServiceTest {
         java.util.concurrent.atomic.AtomicInteger emitted = new java.util.concurrent.atomic.AtomicInteger();
         AnswerGeneratorStrategy longRunning = new AnswerGeneratorStrategy() {
             @Override
-            public void generate(String systemPrompt, List<ChatTurn> history, String question,
-                                 List<SearchItemResponse> contextHits, Consumer<String> onDelta,
-                                 com.lender.assistant.rag.strategy.AnswerCancellation cancellation) {
+            public void generate(com.lender.assistant.rag.strategy.AnswerGenerationRequest request) {
                 // 150 片 × 20ms ≈ 3s：这是"不取消就会一直烧 token 到自然结束"的基线
                 for (int i = 0; i < 150; i++) {
-                    if (cancellation.isCancelled()) {
+                    if (request.cancellation().isCancelled()) {
                         return;
                     }
-                    onDelta.accept("片段" + i);
+                    request.onDelta().accept("片段" + i);
                     emitted.incrementAndGet();
                     try {
                         Thread.sleep(20);
@@ -615,12 +607,10 @@ class QaServiceTest {
         CallbackEmitter emitter = new CallbackEmitter();
         AnswerGeneratorStrategy slow = new AnswerGeneratorStrategy() {
             @Override
-            public void generate(String systemPrompt, List<ChatTurn> history, String question,
-                                 List<SearchItemResponse> contextHits, Consumer<String> onDelta,
-                                 com.lender.assistant.rag.strategy.AnswerCancellation cancellation) {
-                onDelta.accept("前半段");
+            public void generate(com.lender.assistant.rag.strategy.AnswerGenerationRequest request) {
+                request.onDelta().accept("前半段");
                 emitter.timeoutAction.run();
-                onDelta.accept("后半段不应写入");
+                request.onDelta().accept("后半段不应写入");
             }
 
             @Override

@@ -13,6 +13,7 @@ import com.lender.assistant.conversation.service.ConversationService;
 import com.lender.assistant.rag.service.QaService;
 import com.lender.assistant.rag.service.SearchService;
 import com.lender.assistant.rag.strategy.AnswerCancellation;
+import com.lender.assistant.rag.strategy.AnswerGenerationRequest;
 import com.lender.assistant.rag.strategy.AnswerGeneratorStrategy;
 import com.lender.assistant.rag.vo.ChatTurn;
 import com.lender.assistant.rag.vo.response.QaDoneResponse;
@@ -290,14 +291,15 @@ public class QaServiceImpl implements QaService {
                                    List<SearchItemResponse> hits, RoundStream stream) {
         executor.execute(LlmScene.QA, generator.name(),
                 () -> {
-                    generator.generate(systemPrompt(), history, question, hits, token -> {
-                        // 已断开（超时/客户端取消）时不再累积，也不再尝试推送
-                        if (stream.isDisconnected()) {
-                            return;
-                        }
-                        stream.append(token);
-                        send(emitter, "delta", token, stream);
-                    }, stream.cancellation());
+                    generator.generate(new AnswerGenerationRequest(systemPrompt(), history, question, hits,
+                            token -> {
+                                // 已断开（超时/客户端取消）时不再累积，也不再尝试推送
+                                if (stream.isDisconnected()) {
+                                    return;
+                                }
+                                stream.append(token);
+                                send(emitter, "delta", token, stream);
+                            }, stream.cancellation()));
                     return true;
                 }, false);
     }

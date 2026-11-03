@@ -1,11 +1,5 @@
 package com.lender.assistant.rag.strategy;
 
-import com.lender.assistant.rag.vo.ChatTurn;
-import com.lender.assistant.rag.vo.response.SearchItemResponse;
-
-import java.util.List;
-import java.util.function.Consumer;
-
 /**
  * 对话模型的策略接口（六边形架构里的"输出端口"）。
  *
@@ -31,16 +25,9 @@ import java.util.function.Consumer;
 public interface AnswerGeneratorStrategy {
 
     /**
-     * @param systemPrompt 系统提示词（角色与三条铁律）
-     * @param history      有序历史（USER/ASSISTANT 正文），已按完整轮次过滤与裁剪
-     * @param question     当前问题
-     * @param contextHits  本次召回结果（按召回顺序对应【来源1】、【来源2】…）
-     * @param onDelta      每收到一段 token 文本回调一次
-     * @param cancellation 取消句柄；实现方据此停止消费上游
+     * @param request 本次生成的完整入参（系统提示、历史、当前问题、召回、回调与取消句柄）
      */
-    void generate(String systemPrompt, List<ChatTurn> history, String question,
-                  List<SearchItemResponse> contextHits, Consumer<String> onDelta,
-                  AnswerCancellation cancellation);
+    void generate(AnswerGenerationRequest request);
 
     /** 实现标识，用于前端展示与日志（如 "Mock" / 实际模型名） */
     String name();

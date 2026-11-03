@@ -1,6 +1,6 @@
 package com.lender.assistant.rag.strategy.impl;
 
-import com.lender.assistant.rag.strategy.AnswerCancellation;
+import com.lender.assistant.rag.strategy.AnswerGenerationRequest;
 import com.lender.assistant.rag.strategy.AnswerGeneratorStrategy;
 import com.lender.assistant.rag.vo.ChatTurn;
 import com.lender.assistant.rag.vo.response.SearchItemResponse;
@@ -18,7 +18,6 @@ import reactor.core.publisher.Sinks;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.function.Consumer;
 
 /**
  * 真实模型问答：走 OpenAI 兼容协议（Spring AI ChatClient 流式接口）。
@@ -53,25 +52,23 @@ public class OpenAiCompatibleAnswerGeneratorStrategy implements AnswerGeneratorS
     }
 
     @Override
-    public void generate(String systemPrompt, List<ChatTurn> history, String question,
-                         List<SearchItemResponse> contextHits, Consumer<String> onDelta,
-                         AnswerCancellation cancellation) {
+    public void generate(AnswerGenerationRequest request) {
         List<Message> messages = new ArrayList<>();
-        for (ChatTurn turn : history) {
+        for (ChatTurn turn : request.history()) {
             messages.add("ASSISTANT".equals(turn.role())
                     ? new AssistantMessage(turn.content())
                     : new UserMessage(turn.content()));
         }
         // 当前问题（含召回资料）永远最后追加，历史只作为前序对话
-        messages.add(new UserMessage(buildUserPrompt(question, contextHits)));
+        messages.add(new UserMessage(buildUserPrompt(request.question(), request.contextHits())));
 
         // 取消信号：SSE 断开时 takeUntilOther 立即 dispose 上游订阅，blockLast 立刻返回，
         // 不再继续消费 token（Flux 可能正卡在等下一个 token 的网络等待里，光靠标记位停不下来）
         Sinks.One<Boolean> cancelled = Sinks.one();
-        cancellation.onCancel(() -> cancelled.tryEmitValue(Boolean.TRUE));
+        request.cancellation().onCancel(() -> cancelled.tryEmitValue(Boolean.TRUE));
 
         Flux<String> flux = chatClient.prompt()
-                .system(systemPrompt)
+                .system(request.systemPrompt())
                 .messages(messages)
                 // Function Calling：把业务查询工具挂给模型，由模型按工具 description
                 // 自主决定是否调用（真 Function Calling）。Mock 版的规则模拟见 ToolIntentRouter。
@@ -80,7 +77,7 @@ public class OpenAiCompatibleAnswerGeneratorStrategy implements AnswerGeneratorS
                 .content()
                 .timeout(STREAM_TIMEOUT);
         // 同步流式：token 依次回调，流结束（或取消）才返回（QaService 依赖这个契约收尾 SSE）
-        flux.takeUntilOther(cancelled.asMono()).doOnNext(onDelta::accept).blockLast();
+        flux.takeUntilOther(cancelled.asMono()).doOnNext(request.onDelta()::accept).blockLast();
     }
 
     /** 把结构化召回结果按【来源N】拼成用户提示词，问题放在末尾 */

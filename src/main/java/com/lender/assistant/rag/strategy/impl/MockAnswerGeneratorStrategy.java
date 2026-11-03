@@ -1,8 +1,8 @@
 package com.lender.assistant.rag.strategy.impl;
 
 import com.lender.assistant.rag.strategy.AnswerCancellation;
+import com.lender.assistant.rag.strategy.AnswerGenerationRequest;
 import com.lender.assistant.rag.strategy.AnswerGeneratorStrategy;
-import com.lender.assistant.rag.vo.ChatTurn;
 import com.lender.assistant.rag.vo.response.SearchItemResponse;
 import com.lender.assistant.tools.ToolIntentRouter.ToolIntent;
 import org.slf4j.Logger;
@@ -53,11 +53,10 @@ public class MockAnswerGeneratorStrategy implements AnswerGeneratorStrategy {
     }
 
     @Override
-    public void generate(String systemPrompt, List<ChatTurn> history, String question,
-                         List<SearchItemResponse> contextHits, Consumer<String> onDelta,
-                         AnswerCancellation cancellation) {
+    public void generate(AnswerGenerationRequest request) {
         // Mock 不模拟多轮语义：签名与真实实现保持一致，历史直接忽略
-        streamAnswer(buildAnswer(question, contextHits), onDelta, cancellation);
+        streamAnswer(buildAnswer(request.question(), request.contextHits()), request.onDelta(),
+                request.cancellation());
     }
 
     private String buildAnswer(String question, List<SearchItemResponse> contextHits) {
