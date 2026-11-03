@@ -140,3 +140,15 @@
   不会更新 `doc_title`（因为不重建）。如需强制重建，应先把旧文档删除再上传。
 - 单测：`DocumentServiceTest` 覆盖「同内容不同 docId → 不新增、返回既有 docId、不做向量化」与
   「切片数/总字符数相同但内容不同 → 正常入库」。
+
+真实接口验证（重启后的实例，`POST /api/admin/documents`，同一份 `华信银行_对公收付接口文档_v1.0.docx`
+以新 docId `verify_duplicate_check` 上传）：
+
+```json
+{"code":200,"msg":"ok","data":{"docId":"huaxin_corp_api_v1","blocks":19,"chunkCount":8,
+ "avgChunkChars":243.375,"millis":{"parse":1617,"split":2,"embed":0,"store":0},
+ "embeddingProvider":"HashEmbeddingStrategy"}}
+```
+
+返回的是既有文档 `huaxin_corp_api_v1`，`millis.embed=0 / store=0`；删除前后 `doc_chunk` 行数仍为 17、
+文档数仍为 3，未新增任何切片。
