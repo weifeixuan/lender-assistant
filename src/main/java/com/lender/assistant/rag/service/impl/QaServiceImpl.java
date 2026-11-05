@@ -17,6 +17,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lender.assistant.rag.plan.PlanAndExecuteService;
 import com.lender.assistant.rag.plan.PlanBudget;
 import com.lender.assistant.rag.plan.PlanSourceAggregator;
+import com.lender.assistant.rag.plan.SynthesisPromptBuilder;
 import com.lender.assistant.rag.plan.model.ExecutionPlan;
 import com.lender.assistant.rag.plan.model.ExecutionPlanSnapshot;
 import com.lender.assistant.rag.plan.model.PlanExecutionResult;
@@ -49,7 +50,11 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
@@ -80,6 +85,16 @@ public class QaServiceImpl implements QaService {
     private static final int STREAM_QUEUE_CAPACITY = 100;
     private static final long STREAM_THREAD_KEEP_ALIVE_SECONDS = 60L;
     private static final String STREAM_THREAD_NAME_PREFIX = "qa-sse-worker";
+    /** 合成上限：实际取 min(60s, 剩余预算)（票 09） */
+    private static final long SYNTHESIS_MAX_MILLIS = 60_000L;
+    private static final String SYNTHESIS_SYSTEM_PROMPT = """
+            你是融资租赁资金方对接场景的资料问答助手。请基于「本轮目标」和「步骤产物」给出最终回答。
+            铁律：
+            1. 只依据步骤产物与召回资料回答，不得使用资料之外的任何知识；
+            2. 资料不足以回答时，必须明确回答"资料中未提及"，禁止推测或编造；
+            3. 引用资料时标注来源编号，格式如【来源1】，编号与 sources 一致。
+            用简体中文回答，简洁直接。
+            """;
 
     private final SearchService searchService;
     private final AnswerGeneratorStrategy generator;
@@ -95,6 +110,14 @@ public class QaServiceImpl implements QaService {
      * 生命周期（应用关停时关闭）不交给工厂，留在本类 @PreDestroy。
      */
     private final ThreadPoolExecutor streamExecutor;
+
+    /** 合成超时计时器：只做一次定时取消，单线程守护线程，不参与业务执行 */
+    private final ScheduledExecutorService timeoutScheduler =
+            Executors.newSingleThreadScheduledExecutor(runnable -> {
+                Thread thread = new Thread(runnable, "qa-synthesis-timer");
+                thread.setDaemon(true);
+                return thread;
+            });
 
     /** 当前生成 provider；mock 模式跳过路由与计划，事件序列保持现状（票 03） */
     @Value("${rag.chat.provider:mock}")
@@ -238,7 +261,7 @@ public class QaServiceImpl implements QaService {
             // 避免上一轮长问题按顺序把当前追问的关键词挤出配额（票 08）
             String lastUser = ConversationHistoryAssembler.lastUserContent(history);
             RoundRequest request = new RoundRequest(question, lastUser, topK, round, stream);
-            List<SearchItemResponse> planHits = null;
+            PlanRoundOutcome planOutcome = null;
             if (!isMockMode()) {
                 RoutingDecision decision = routeRound(emitter, request);
                 if (decision == null) {
@@ -249,25 +272,29 @@ public class QaServiceImpl implements QaService {
                     return;
                 }
                 if (decision.route() == QuestionRoute.PLAN) {
-                    planHits = runPlanRound(emitter, request);
+                    planOutcome = runPlanRound(emitter, request);
                     if (stream.isDisconnected()) {
                         return;
                     }
                 }
             }
             // PLAN 轮用多步并集命中；计划弃用或无计划服务时退回单次检索（KNOWLEDGE 兜底）
-            List<SearchItemResponse> hits = planHits != null ? planHits
+            List<SearchItemResponse> hits = planOutcome != null ? planOutcome.hits()
                     : searchService.hybridSearch(question, lastUser, topK);
             if (!pushSources(emitter, hits, stream)) {
                 return;
             }
 
-            if (hits.isEmpty()) {
-                emitNoRecall(emitter, stream, t0);
+            if (planOutcome != null) {
+                if (!synthesizePlan(emitter, request, planOutcome, hits)) {
+                    return;
+                }
+            } else if (hits.isEmpty()) {
+                emitNoRecall(emitter, stream);
                 return;
+            } else {
+                streamModelAnswer(emitter, question, history, hits, stream);
             }
-
-            streamModelAnswer(emitter, question, history, hits, stream);
 
             long elapsedMillis = System.currentTimeMillis() - t0;
             stream.done();
@@ -307,9 +334,9 @@ public class QaServiceImpl implements QaService {
     /**
      * PLAN 轮：计划只发一次；校验通过后串行执行并逐步推 step 事件。
      *
-     * @return 多步并集命中；null 表示计划弃用/无计划服务，调用方退回 KNOWLEDGE 单次检索
+     * @return 多步并集命中与执行快照；null 表示计划弃用/无计划服务，调用方退回 KNOWLEDGE 单次检索
      */
-    private List<SearchItemResponse> runPlanRound(SseEmitter emitter, RoundRequest request) {
+    private PlanRoundOutcome runPlanRound(SseEmitter emitter, RoundRequest request) {
         if (planningService == null) {
             return null;
         }
@@ -321,12 +348,60 @@ public class QaServiceImpl implements QaService {
             log.info("计划弃用，按 KNOWLEDGE 链路执行: question={}", request.question());
             return null;
         }
-        PlanExecutionResult result = planningService.execute(plan, request.topK(),
-                new PlanBudget(totalBudgetMillis, System::currentTimeMillis),
+        PlanBudget budget = new PlanBudget(totalBudgetMillis, System::currentTimeMillis);
+        PlanExecutionResult result = planningService.execute(plan, request.topK(), budget,
                 event -> send(emitter, "step", QaStepResponse.of(event), request.stream()));
         request.stream().executionPlan(plan, result);
         // 所有步骤结束后一次性并集，按 chunkId 去重；全局 idx 由 pushSources 连续分配
-        return PlanSourceAggregator.union(result.steps());
+        return new PlanRoundOutcome(PlanSourceAggregator.union(result.steps()), plan, result,
+                budget.remainingMillis());
+    }
+
+    /**
+     * PLAN 轮唯一一次生成：用「目标 + 步骤产物」合成，不重放完整历史。
+     *
+     * @return false 表示已推送无召回提示（无需再做合成）
+     */
+    private boolean synthesizePlan(SseEmitter emitter, RoundRequest request,
+                                   PlanRoundOutcome outcome, List<SearchItemResponse> hits) {
+        SynthesisPromptBuilder.Context context = SynthesisPromptBuilder.build(
+                request.question(), outcome.plan().goal(), outcome.result().steps());
+        request.stream().contextTruncated(context.truncated());
+        if (hits.isEmpty() && !context.businessOutput()) {
+            emitNoRecall(emitter, request.stream());
+            return false;
+        }
+        long limit = Math.max(1, Math.min(SYNTHESIS_MAX_MILLIS, outcome.remainingBudgetMillis()));
+        ScheduledFuture<?> timeoutTask = timeoutScheduler.schedule(
+                request.stream().cancellation()::cancel, limit, TimeUnit.MILLISECONDS);
+        try {
+            streamSynthesis(emitter, request.stream(), context.prompt(), hits);
+        } finally {
+            timeoutTask.cancel(false);
+        }
+        return true;
+    }
+
+    /** 合成复用现有生成器，但只传合成上下文、空历史，scene 走 SYNTHESIS */
+    private void streamSynthesis(SseEmitter emitter, RoundStream stream, String prompt,
+                                 List<SearchItemResponse> hits) {
+        executor.execute(LlmScene.SYNTHESIS, generator.name(),
+                () -> {
+                    generator.generate(new AnswerGenerationRequest(SYNTHESIS_SYSTEM_PROMPT, List.of(),
+                            prompt, hits, token -> {
+                                if (stream.isDisconnected()) {
+                                    return;
+                                }
+                                stream.append(token);
+                                send(emitter, "delta", token, stream);
+                            }, stream.cancellation()));
+                    return true;
+                }, false);
+    }
+
+    /** PLAN 轮的检索并集与预算余量；用于合成阶段判断是否还有时间 */
+    private record PlanRoundOutcome(List<SearchItemResponse> hits, ExecutionPlan plan,
+                                    PlanExecutionResult result, long remainingBudgetMillis) {
     }
 
     /** 单轮请求参数：收敛参数个数，避免编排方法超过 4 个入参 */
@@ -375,14 +450,14 @@ public class QaServiceImpl implements QaService {
     }
 
     /** 无召回分支：推送引导文案与 done 后正常结束 */
-    private void emitNoRecall(SseEmitter emitter, RoundStream stream, long t0) {
+    private void emitNoRecall(SseEmitter emitter, RoundStream stream) {
         String guidance = "资料库中没有检索到相关内容，请先在上方上传并入库文档。";
         stream.append(guidance);
         if (!send(emitter, "delta", guidance, stream)) {
             return;
         }
         if (!send(emitter, "done",
-                new QaDoneResponse(generator.name(), System.currentTimeMillis() - t0, 0), stream)) {
+                new QaDoneResponse(generator.name(), stream.elapsedMillis(), 0), stream)) {
             return;
         }
         stream.done();
@@ -624,6 +699,7 @@ public class QaServiceImpl implements QaService {
 
     @PreDestroy
     void shutdownExecutor() {
+        timeoutScheduler.shutdownNow();
         streamExecutor.shutdownNow();
     }
 }
