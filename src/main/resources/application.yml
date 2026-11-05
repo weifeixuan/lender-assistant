@@ -49,6 +49,11 @@ rag:
     # 追问回放给模型的历史上限：最近 6 个完整轮次、总字符 2000（超限从最旧一轮整轮丢弃）
     history-max-rounds: ${RAG_QA_HISTORY_MAX_ROUNDS:6}
     history-max-chars: ${RAG_QA_HISTORY_MAX_CHARS:2000}
+  routing:
+    # 路由置信度阈值：低于该值一律降级 KNOWLEDGE（fail-open）
+    confidence-threshold: ${RAG_ROUTING_CONFIDENCE_THRESHOLD:0.6}
+    # 无关问题的固定提示（非模型生成，done.provider=rule）
+    irrelevant-reply: ${RAG_ROUTING_IRRELEVANT_REPLY:我只回答资方接入相关的资料问题，可以换个问法再试试。}
   search:
     # 向量通道余弦距离阈值：> 该值的召回丢弃；-1 表示关闭（默认）。是否开启由阶段3评估数据决定
     max-distance: -1

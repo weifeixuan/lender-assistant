@@ -15,7 +15,16 @@ public enum LlmScene {
     EXTRACT("extract", "结构化抽取（非流式）"),
 
     /** 代码草稿生成链路（非流式，allowRetry=true） */
-    DRAFT("draft", "代码草稿生成（非流式）");
+    DRAFT("draft", "代码草稿生成（非流式）"),
+
+    /** 问题路由判定（非流式，allowRetry=true） */
+    ROUTE("route", "问题路由（非流式）"),
+
+    /** 计划生成（非流式，allowRetry=true） */
+    PLAN("plan", "计划生成（非流式）"),
+
+    /** 计划末尾的汇总合成（流式，allowRetry=false） */
+    SYNTHESIS("synthesis", "汇总合成（SSE 流式）");
 
     private final String code;
     private final String desc;
