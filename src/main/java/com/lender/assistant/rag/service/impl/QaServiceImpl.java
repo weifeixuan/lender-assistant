@@ -12,12 +12,18 @@ import com.lender.assistant.conversation.service.ConversationHistoryAssembler;
 import com.lender.assistant.conversation.service.ConversationLockRegistry;
 import com.lender.assistant.conversation.service.ConversationService;
 import com.lender.assistant.conversation.model.MessageRow;
+import com.lender.assistant.rag.plan.PlanAndExecuteService;
+import com.lender.assistant.rag.plan.PlanBudget;
+import com.lender.assistant.rag.plan.model.ExecutionPlan;
+import com.lender.assistant.rag.plan.model.PlanExecutionResult;
 import com.lender.assistant.rag.routing.PreviousRouteResolver;
 import com.lender.assistant.rag.routing.QuestionRoutingService;
 import com.lender.assistant.rag.routing.model.QuestionRoute;
 import com.lender.assistant.rag.routing.model.RoutingDecision;
 import com.lender.assistant.rag.routing.model.RoutingRequest;
+import com.lender.assistant.rag.vo.response.QaPlanResponse;
 import com.lender.assistant.rag.vo.response.QaRouteResponse;
+import com.lender.assistant.rag.vo.response.QaStepResponse;
 import com.lender.assistant.rag.service.QaService;
 import com.lender.assistant.rag.service.SearchService;
 import com.lender.assistant.rag.strategy.AnswerCancellation;
@@ -94,11 +100,18 @@ public class QaServiceImpl implements QaService {
     @Value("${rag.routing.irrelevant-reply:我只回答资方接入相关的资料问题，可以换个问法再试试。}")
     private String irrelevantReply;
 
+    /** 整轮预算：从路由开始计时到合成结束，唯一超时配置（票 10） */
+    @Value("${rag.plan.total-budget-ms:90000}")
+    private long totalBudgetMillis;
+
     @Autowired(required = false)
     private QuestionRoutingService routingService;
 
     @Autowired(required = false)
     private PreviousRouteResolver previousRouteResolver;
+
+    @Autowired(required = false)
+    private PlanAndExecuteService planningService;
 
     @Autowired
     public QaServiceImpl(SearchService searchService, AnswerGeneratorStrategy generator,
@@ -216,7 +229,7 @@ public class QaServiceImpl implements QaService {
             // 追问时把「当前问题」与「上一轮问题」分段传给检索：关键词 token 配额按段分配，
             // 避免上一轮长问题按顺序把当前追问的关键词挤出配额（票 08）
             String lastUser = ConversationHistoryAssembler.lastUserContent(history);
-            if (!isMockMode() && !routeRound(emitter, question, lastUser, round, stream)) {
+            if (!isMockMode() && !routeAndPlan(emitter, question, lastUser, topK, round, stream)) {
                 return;
             }
             List<SearchItemResponse> hits = searchService.hybridSearch(question, lastUser, topK);
@@ -246,14 +259,33 @@ public class QaServiceImpl implements QaService {
     }
 
     /**
-     * 路由并推送 route 事件。
+     * 路由 → 无关直接收尾 → PLAN 走计划链路。
      *
-     * @return true 继续知识库链路；false 表示本轮已结束（无关问题）或客户端已断开
+     * @return true 继续后续链路；false 表示本轮已结束或客户端已断开
      */
-    private boolean routeRound(SseEmitter emitter, String question, String lastUser,
-                               ConversationRound round, RoundStream stream) {
+    private boolean routeAndPlan(SseEmitter emitter, String question, String lastUser, int topK,
+                                 ConversationRound round, RoundStream stream) {
+        RoutingDecision decision = routeRound(emitter, question, lastUser, round, stream);
+        if (decision == null) {
+            return false;
+        }
+        if (decision.route() == QuestionRoute.IRRELEVANT) {
+            emitIrrelevant(emitter, stream);
+            return false;
+        }
+        return decision.route() != QuestionRoute.PLAN
+                || runPlanRound(emitter, question, lastUser, topK, stream);
+    }
+
+    /**
+     * 推送 route 事件。
+     *
+     * @return 路由结果；null 表示客户端已断开
+     */
+    private RoutingDecision routeRound(SseEmitter emitter, String question, String lastUser,
+                                       ConversationRound round, RoundStream stream) {
         if (routingService == null) {
-            return true;
+            return new RoutingDecision(QuestionRoute.KNOWLEDGE, 0.0, "无路由服务", "NONE");
         }
         List<MessageRow> rows = historyAssembler.listRows(round.conversationId());
         QuestionRoute previous = previousRouteResolver == null ? null : previousRouteResolver.resolve(rows);
@@ -261,13 +293,35 @@ public class QaServiceImpl implements QaService {
                 new RoutingRequest(question, lastUser, previous, ""));
         if (!send(emitter, "route",
                 new QaRouteResponse(decision.route().name(), decision.confidence()), stream)) {
+            return null;
+        }
+        return decision;
+    }
+
+    /**
+     * PLAN 轮：计划只发一次；校验通过后串行执行并逐步推 step 事件。
+     * 计划弃用时不执行，直接返回 true 交给 KNOWLEDGE 链路兜底。
+     *
+     * @return false 表示客户端已断开
+     */
+    private boolean runPlanRound(SseEmitter emitter, String question, String lastUser, int topK,
+                                 RoundStream stream) {
+        if (planningService == null) {
+            return true;
+        }
+        ExecutionPlan plan = planningService.plan(question, lastUser);
+        if (!send(emitter, "plan", QaPlanResponse.of(plan), stream)) {
             return false;
         }
-        if (decision.route() == QuestionRoute.IRRELEVANT) {
-            emitIrrelevant(emitter, stream);
-            return false;
+        if (plan.degraded()) {
+            log.info("计划弃用，按 KNOWLEDGE 链路执行: question={}", question);
+            return true;
         }
-        return true;
+        PlanExecutionResult result = planningService.execute(plan, topK,
+                new PlanBudget(totalBudgetMillis, System::currentTimeMillis),
+                event -> send(emitter, "step", QaStepResponse.of(event), stream));
+        stream.executionPlan(plan, result);
+        return !stream.isDisconnected();
     }
 
     /** 无关问题：固定提示不检索不生成，sources 为空，provider=rule */
@@ -403,6 +457,9 @@ public class QaServiceImpl implements QaService {
         private final AnswerCancellation cancellation = new AnswerCancellation();
         private List<QaSourceSnapshot> sources = List.of();
         private String providerName = QaServiceImpl.this.generator.name();
+        /** PLAN 轮的计划与执行快照；KNOWLEDGE / IRRELEVANT 轮为 null */
+        private ExecutionPlan executionPlan;
+        private PlanExecutionResult executionResult;
 
         private RoundStream(ConversationRound round, long startedAt) {
             this.round = round;
@@ -425,6 +482,11 @@ public class QaServiceImpl implements QaService {
 
         synchronized void sources(List<QaSourceSnapshot> value) {
             this.sources = value;
+        }
+
+        synchronized void executionPlan(ExecutionPlan plan, PlanExecutionResult result) {
+            this.executionPlan = plan;
+            this.executionResult = result;
         }
 
         void done() {

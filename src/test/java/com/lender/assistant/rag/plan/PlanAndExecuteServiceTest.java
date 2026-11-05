@@ -140,7 +140,8 @@ class PlanAndExecuteServiceTest {
     private PlanAndExecuteService service(com.lender.assistant.rag.plan.PlannerModelClient client) {
         PlanToolRegistry registry = new PlanToolRegistry(List.<AgentTool>of(
                 fakeTool("kb.search"), fakeTool("customer.profile"), fakeTool("lender.product")));
-        return new PlanAndExecuteService(client, new ObjectMapper(), registry, 2, 5);
+        return new PlanAndExecuteService(client, new ObjectMapper(), registry,
+                new PlanSettings(2, 5, PlanSettings.TOOL_TIMEOUT_MILLIS));
     }
 
     private static AgentTool fakeTool(String name) {

@@ -2,16 +2,32 @@ package com.lender.assistant.rag.plan;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.lender.assistant.common.util.ThreadPoolFactory;
 import com.lender.assistant.rag.plan.model.ExecutionPlan;
+import com.lender.assistant.rag.plan.model.PlanExecutionResult;
 import com.lender.assistant.rag.plan.model.PlanStep;
+import com.lender.assistant.rag.plan.model.StepEvent;
+import com.lender.assistant.rag.plan.model.StepOutcome;
+import com.lender.assistant.rag.plan.model.StepStatus;
+import com.lender.assistant.rag.tool.AgentTool;
 import com.lender.assistant.rag.tool.PlanToolRegistry;
-import org.springframework.beans.factory.annotation.Value;
+import com.lender.assistant.rag.tool.ToolContext;
+import com.lender.assistant.rag.tool.ToolErrorCode;
+import com.lender.assistant.rag.tool.ToolResult;
+import jakarta.annotation.PreDestroy;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Future;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 /**
  * 计划生成与整单校验。
@@ -28,22 +44,31 @@ public class PlanAndExecuteService {
     private static final String MARKDOWN_FENCE = "```";
     private static final String STEP_ID_PREFIX = "s";
     private static final int MAX_ATTEMPTS = 2;
+    private static final int OUTPUT_SUMMARY_MAX_CHARS = 500;
+    private static final int TOOL_POOL_SIZE = 8;
+    private static final int TOOL_QUEUE_CAPACITY = 100;
+    private static final long TOOL_THREAD_KEEP_ALIVE_SECONDS = 60L;
+    private static final String TOOL_THREAD_NAME_PREFIX = "plan-tool-worker";
 
     private final PlannerModelClient client;
     private final ObjectMapper objectMapper;
     private final PlanToolRegistry registry;
-    private final int minSteps;
-    private final int maxSteps;
+    private final PlanSettings settings;
+
+    /**
+     * 工具执行池只用于给同步工具加超时（Future.get）：工具本身不感知线程，
+     * 池大小与 SSE 工作线程一致，避免「流线程等工具线程」被自己的池饿死。
+     */
+    private final ThreadPoolExecutor toolExecutor;
 
     public PlanAndExecuteService(PlannerModelClient client, ObjectMapper objectMapper,
-                                 PlanToolRegistry registry,
-                                 @Value("${rag.plan.min-steps:2}") int minSteps,
-                                 @Value("${rag.plan.max-steps:5}") int maxSteps) {
+                                 PlanToolRegistry registry, PlanSettings settings) {
         this.client = client;
         this.objectMapper = objectMapper;
         this.registry = registry;
-        this.minSteps = minSteps;
-        this.maxSteps = maxSteps;
+        this.settings = settings;
+        this.toolExecutor = ThreadPoolFactory.create(TOOL_POOL_SIZE, TOOL_POOL_SIZE,
+                TOOL_QUEUE_CAPACITY, TOOL_THREAD_KEEP_ALIVE_SECONDS, TOOL_THREAD_NAME_PREFIX);
     }
 
     /** 无知识库目录时的入口（目录只影响提案质量，不参与校验） */
@@ -80,7 +105,7 @@ public class PlanAndExecuteService {
             return ExecutionPlan.invalid();
         }
         int count = payload.steps().size();
-        if (count < minSteps || count > maxSteps) {
+        if (count < settings.minSteps() || count > settings.maxSteps()) {
             return ExecutionPlan.invalid();
         }
         List<PlanStep> steps = new ArrayList<>(count);
@@ -140,6 +165,103 @@ public class PlanAndExecuteService {
         return false;
     }
 
+    /**
+     * 串行执行计划步骤：每步先发 RUNNING，再发终态；单步失败/降级只记录结果，继续后续步骤。
+     * 执行阶段不产生 delta——正文只由最后的合成阶段输出。
+     *
+     * @param plan     已通过整单校验的计划
+     * @param topK     kb.search 的默认 topK
+     * @param budget   整轮预算；剩余不足合成预留时，剩余步骤直接 SKIPPED
+     * @param listener 步骤事件回调（编排层转成 SSE）
+     */
+    public PlanExecutionResult execute(ExecutionPlan plan, int topK, PlanBudget budget,
+                                       StepListener listener) {
+        List<StepOutcome> outcomes = new ArrayList<>();
+        boolean budgetExhausted = false;
+        for (PlanStep step : plan.steps()) {
+            if (!budget.canStartStep(PlanSettings.SYNTHESIS_RESERVE_MILLIS)) {
+                budgetExhausted = true;
+                outcomes.add(skipped(step));
+                listener.onStep(new StepEvent(step.stepId(), StepStatus.SKIPPED, 0));
+                continue;
+            }
+            outcomes.add(runStep(step, topK, listener));
+        }
+        return new PlanExecutionResult(outcomes, budgetExhausted, budget.remainingMillis());
+    }
+
+    private StepOutcome runStep(PlanStep step, int topK, StepListener listener) {
+        listener.onStep(new StepEvent(step.stepId(), StepStatus.RUNNING, 0));
+        long startedAt = System.currentTimeMillis();
+        ToolResult result = invoke(step, topK);
+        long elapsedMillis = System.currentTimeMillis() - startedAt;
+        StepStatus status = statusOf(step, result);
+        listener.onStep(new StepEvent(step.stepId(), status, elapsedMillis));
+        return new StepOutcome(step.stepId(), step.order(), step.title(), step.tool(), step.args(),
+                status, elapsedMillis, result.chunkIds(), summaryOf(result.content()),
+                errorCodeOf(status, result));
+    }
+
+    /** 工具调用：白名单取缺失 → TOOL_NOT_FOUND；同步工具用 Future.get 施加 TOOL_TIMEOUT */
+    private ToolResult invoke(PlanStep step, int topK) {
+        Optional<AgentTool> tool = registry.get(step.tool());
+        if (tool.isEmpty()) {
+            return ToolResult.failure(ToolErrorCode.TOOL_NOT_FOUND, "工具不存在：" + step.tool());
+        }
+        Future<ToolResult> future = null;
+        try {
+            future = toolExecutor.submit(() -> tool.get().call(step.args(), new ToolContext(topK)));
+            return future.get(settings.toolTimeoutMillis(), TimeUnit.MILLISECONDS);
+        } catch (TimeoutException ex) {
+            future.cancel(true);
+            return ToolResult.failure(ToolErrorCode.TOOL_TIMEOUT, "工具执行超时");
+        } catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
+            return ToolResult.failure(ToolErrorCode.TOOL_FAILED, "工具执行被中断");
+        } catch (ExecutionException ex) {
+            return ToolResult.failure(ToolErrorCode.TOOL_FAILED, messageOf(ex.getCause()));
+        } catch (RejectedExecutionException ex) {
+            return ToolResult.failure(ToolErrorCode.TOOL_FAILED, "工具执行队列已满");
+        }
+    }
+
+    /** kb.search 零命中是"降级"而非失败：仍算正常结束，只是回答要说明资料缺口 */
+    private static StepStatus statusOf(PlanStep step, ToolResult result) {
+        if (!result.ok()) {
+            return ToolErrorCode.TOOL_DEGRADED.name().equals(result.errorCode())
+                    ? StepStatus.DEGRADED : StepStatus.FAILED;
+        }
+        return KB_SEARCH.equals(step.tool()) && result.chunkIds().isEmpty()
+                ? StepStatus.DEGRADED : StepStatus.DONE;
+    }
+
+    private static String errorCodeOf(StepStatus status, ToolResult result) {
+        if (status == StepStatus.DEGRADED && result.ok()) {
+            return ToolErrorCode.TOOL_DEGRADED.name();
+        }
+        return result.errorCode();
+    }
+
+    private static StepOutcome skipped(PlanStep step) {
+        return new StepOutcome(step.stepId(), step.order(), step.title(), step.tool(), step.args(),
+                StepStatus.SKIPPED, 0, List.of(), "预算不足，已跳过", null);
+    }
+
+    private static String messageOf(Throwable cause) {
+        return cause == null || cause.getMessage() == null ? "工具执行失败" : cause.getMessage();
+    }
+
+    private static String summaryOf(String content) {
+        String text = Objects.toString(content, "");
+        return text.length() <= OUTPUT_SUMMARY_MAX_CHARS ? text
+                : text.substring(0, OUTPUT_SUMMARY_MAX_CHARS) + "…";
+    }
+
+    @PreDestroy
+    void shutdownToolExecutor() {
+        toolExecutor.shutdownNow();
+    }
+
     private String buildPrompt(String question, String previousQuestion, String knowledgeCatalog) {
         return """
                你是任务计划器。把「当前问题」拆成 %d–%d 个确定性工具步骤。
@@ -158,9 +280,10 @@ public class PlanAndExecuteService {
                5. 不做 DAG，不设 dependsOn，步骤按顺序线性执行。
 
                只输出 JSON：{"goal":"...","steps":[{"stepId":"s1","order":1,"title":"...","tool":"...","args":{}}]}
-               """.formatted(minSteps, maxSteps, nullToEmpty(previousQuestion), question,
-                nullToEmpty(knowledgeCatalog), String.join(", ", registry.names().stream().sorted().toList()),
-                minSteps, maxSteps);
+               """.formatted(settings.minSteps(), settings.maxSteps(), nullToEmpty(previousQuestion),
+                question, nullToEmpty(knowledgeCatalog),
+                String.join(", ", registry.names().stream().sorted().toList()),
+                settings.minSteps(), settings.maxSteps());
     }
 
     private static String nullToEmpty(String value) {
