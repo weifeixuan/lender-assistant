@@ -198,8 +198,8 @@ public class PlanAndExecuteService {
         StepStatus status = statusOf(step, result);
         listener.onStep(new StepEvent(step.stepId(), status, elapsedMillis));
         return new StepOutcome(step.stepId(), step.order(), step.title(), step.tool(), step.args(),
-                status, elapsedMillis, result.chunkIds(), summaryOf(result.content()),
-                errorCodeOf(status, result));
+                status, elapsedMillis, result.chunkIds(), result.sources(),
+                summaryOf(result.content()), errorCodeOf(status, result));
     }
 
     /** 工具调用：白名单取缺失 → TOOL_NOT_FOUND；同步工具用 Future.get 施加 TOOL_TIMEOUT */
@@ -244,7 +244,7 @@ public class PlanAndExecuteService {
 
     private static StepOutcome skipped(PlanStep step) {
         return new StepOutcome(step.stepId(), step.order(), step.title(), step.tool(), step.args(),
-                StepStatus.SKIPPED, 0, List.of(), "预算不足，已跳过", null);
+                StepStatus.SKIPPED, 0, List.of(), List.of(), "预算不足，已跳过", null);
     }
 
     private static String messageOf(Throwable cause) {

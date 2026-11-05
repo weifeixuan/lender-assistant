@@ -179,7 +179,8 @@ class ConversationServiceTest {
         when(conversationMapper.touch(CONVERSATION_ID)).thenReturn(1);
 
         service.completeRound(new AssistantMessageCompletion(CONVERSATION_ID, "round-1",
-                "msg-assistant", "回答正文", List.of(source()), "Mock", 1234, "DONE", null));
+                "msg-assistant", "回答正文", List.of(source()), "Mock", 1234, "DONE", null,
+                null, null));
 
         ArgumentCaptor<com.lender.assistant.conversation.model.MessageInsert> insert =
                 ArgumentCaptor.forClass(com.lender.assistant.conversation.model.MessageInsert.class);
@@ -198,7 +199,8 @@ class ConversationServiceTest {
         when(conversationMapper.touch(CONVERSATION_ID)).thenReturn(1);
 
         service.completeRound(new AssistantMessageCompletion(CONVERSATION_ID, "round-1",
-                "msg-assistant", "未检索到", List.of(), "Mock", 10, "DONE", null));
+                "msg-assistant", "未检索到", List.of(), "Mock", 10, "DONE", null,
+                null, null));
 
         verify(messageMapper).insert(argThat(message ->
                 message.sourcesJson().equals("[]")));
@@ -211,7 +213,8 @@ class ConversationServiceTest {
         when(conversationMapper.touch(CONVERSATION_ID)).thenReturn(1);
 
         service.completeRound(new AssistantMessageCompletion(CONVERSATION_ID, "round-1",
-                "msg-assistant", "已生成的部分", List.of(), "Mock", 5, "FAILED", "模型超时"));
+                "msg-assistant", "已生成的部分", List.of(), "Mock", 5, "FAILED", "模型超时",
+                null, null));
 
         verify(messageMapper).insert(argThat(message ->
                 message.status().equals("FAILED")
@@ -226,7 +229,8 @@ class ConversationServiceTest {
         when(conversationMapper.touch(CONVERSATION_ID)).thenReturn(1);
 
         service.completeRound(new AssistantMessageCompletion(CONVERSATION_ID, "round-1",
-                "msg-assistant", "半截回答", List.of(source()), "Mock", 5, "STOPPED", null));
+                "msg-assistant", "半截回答", List.of(source()), "Mock", 5, "STOPPED", null,
+                null, null));
 
         verify(messageMapper).insert(argThat(message ->
                 message.status().equals("STOPPED")
@@ -241,7 +245,8 @@ class ConversationServiceTest {
         when(conversationMapper.touch(CONVERSATION_ID)).thenReturn(0);
 
         service.completeRound(new AssistantMessageCompletion(CONVERSATION_ID, "round-1",
-                "msg-assistant", "回答", List.of(), "Mock", 10, "DONE", null));
+                "msg-assistant", "回答", List.of(), "Mock", 10, "DONE", null,
+                null, null));
 
         verify(messageMapper).insert(argThat(message ->
                 message.conversationId().equals(CONVERSATION_ID)

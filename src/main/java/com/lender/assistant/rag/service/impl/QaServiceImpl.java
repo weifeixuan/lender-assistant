@@ -12,9 +12,13 @@ import com.lender.assistant.conversation.service.ConversationHistoryAssembler;
 import com.lender.assistant.conversation.service.ConversationLockRegistry;
 import com.lender.assistant.conversation.service.ConversationService;
 import com.lender.assistant.conversation.model.MessageRow;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lender.assistant.rag.plan.PlanAndExecuteService;
 import com.lender.assistant.rag.plan.PlanBudget;
+import com.lender.assistant.rag.plan.PlanSourceAggregator;
 import com.lender.assistant.rag.plan.model.ExecutionPlan;
+import com.lender.assistant.rag.plan.model.ExecutionPlanSnapshot;
 import com.lender.assistant.rag.plan.model.PlanExecutionResult;
 import com.lender.assistant.rag.routing.PreviousRouteResolver;
 import com.lender.assistant.rag.routing.QuestionRoutingService;
@@ -113,6 +117,10 @@ public class QaServiceImpl implements QaService {
     @Autowired(required = false)
     private PlanAndExecuteService planningService;
 
+    /** 仅用于落库 route / execution_plan 两个 JSONB 字段 */
+    @Autowired(required = false)
+    private ObjectMapper objectMapper = new ObjectMapper();
+
     @Autowired
     public QaServiceImpl(SearchService searchService, AnswerGeneratorStrategy generator,
                          com.lender.assistant.resilience.ResilientLlmExecutor executor,
@@ -169,7 +177,7 @@ public class QaServiceImpl implements QaService {
             conversationService.completeRound(new AssistantMessageCompletion(
                     round.conversationId(), round.roundId(), round.assistantMessageId(),
                     "", List.of(), null, 0, MessageConstants.STATUS_FAILED,
-                    "服务繁忙，请重试"));
+                    "服务繁忙，请重试", null, null));
             throw new BizException(ErrorCode.INTERNAL_ERROR, "服务繁忙，请重试");
         }
         return emitter;
@@ -229,10 +237,27 @@ public class QaServiceImpl implements QaService {
             // 追问时把「当前问题」与「上一轮问题」分段传给检索：关键词 token 配额按段分配，
             // 避免上一轮长问题按顺序把当前追问的关键词挤出配额（票 08）
             String lastUser = ConversationHistoryAssembler.lastUserContent(history);
-            if (!isMockMode() && !routeAndPlan(emitter, question, lastUser, topK, round, stream)) {
-                return;
+            RoundRequest request = new RoundRequest(question, lastUser, topK, round, stream);
+            List<SearchItemResponse> planHits = null;
+            if (!isMockMode()) {
+                RoutingDecision decision = routeRound(emitter, request);
+                if (decision == null) {
+                    return;
+                }
+                if (decision.route() == QuestionRoute.IRRELEVANT) {
+                    emitIrrelevant(emitter, stream);
+                    return;
+                }
+                if (decision.route() == QuestionRoute.PLAN) {
+                    planHits = runPlanRound(emitter, request);
+                    if (stream.isDisconnected()) {
+                        return;
+                    }
+                }
             }
-            List<SearchItemResponse> hits = searchService.hybridSearch(question, lastUser, topK);
+            // PLAN 轮用多步并集命中；计划弃用或无计划服务时退回单次检索（KNOWLEDGE 兜底）
+            List<SearchItemResponse> hits = planHits != null ? planHits
+                    : searchService.hybridSearch(question, lastUser, topK);
             if (!pushSources(emitter, hits, stream)) {
                 return;
             }
@@ -259,69 +284,54 @@ public class QaServiceImpl implements QaService {
     }
 
     /**
-     * 路由 → 无关直接收尾 → PLAN 走计划链路。
-     *
-     * @return true 继续后续链路；false 表示本轮已结束或客户端已断开
-     */
-    private boolean routeAndPlan(SseEmitter emitter, String question, String lastUser, int topK,
-                                 ConversationRound round, RoundStream stream) {
-        RoutingDecision decision = routeRound(emitter, question, lastUser, round, stream);
-        if (decision == null) {
-            return false;
-        }
-        if (decision.route() == QuestionRoute.IRRELEVANT) {
-            emitIrrelevant(emitter, stream);
-            return false;
-        }
-        return decision.route() != QuestionRoute.PLAN
-                || runPlanRound(emitter, question, lastUser, topK, stream);
-    }
-
-    /**
-     * 推送 route 事件。
+     * 推送 route 事件并记录本轮路由快照。
      *
      * @return 路由结果；null 表示客户端已断开
      */
-    private RoutingDecision routeRound(SseEmitter emitter, String question, String lastUser,
-                                       ConversationRound round, RoundStream stream) {
+    private RoutingDecision routeRound(SseEmitter emitter, RoundRequest request) {
         if (routingService == null) {
             return new RoutingDecision(QuestionRoute.KNOWLEDGE, 0.0, "无路由服务", "NONE");
         }
-        List<MessageRow> rows = historyAssembler.listRows(round.conversationId());
+        List<MessageRow> rows = historyAssembler.listRows(request.round().conversationId());
         QuestionRoute previous = previousRouteResolver == null ? null : previousRouteResolver.resolve(rows);
         RoutingDecision decision = routingService.route(
-                new RoutingRequest(question, lastUser, previous, ""));
+                new RoutingRequest(request.question(), request.lastUser(), previous, ""));
         if (!send(emitter, "route",
-                new QaRouteResponse(decision.route().name(), decision.confidence()), stream)) {
+                new QaRouteResponse(decision.route().name(), decision.confidence()), request.stream())) {
             return null;
         }
+        request.stream().route(decision);
         return decision;
     }
 
     /**
      * PLAN 轮：计划只发一次；校验通过后串行执行并逐步推 step 事件。
-     * 计划弃用时不执行，直接返回 true 交给 KNOWLEDGE 链路兜底。
      *
-     * @return false 表示客户端已断开
+     * @return 多步并集命中；null 表示计划弃用/无计划服务，调用方退回 KNOWLEDGE 单次检索
      */
-    private boolean runPlanRound(SseEmitter emitter, String question, String lastUser, int topK,
-                                 RoundStream stream) {
+    private List<SearchItemResponse> runPlanRound(SseEmitter emitter, RoundRequest request) {
         if (planningService == null) {
-            return true;
+            return null;
         }
-        ExecutionPlan plan = planningService.plan(question, lastUser);
-        if (!send(emitter, "plan", QaPlanResponse.of(plan), stream)) {
-            return false;
+        ExecutionPlan plan = planningService.plan(request.question(), request.lastUser());
+        if (!send(emitter, "plan", QaPlanResponse.of(plan), request.stream())) {
+            return null;
         }
         if (plan.degraded()) {
-            log.info("计划弃用，按 KNOWLEDGE 链路执行: question={}", question);
-            return true;
+            log.info("计划弃用，按 KNOWLEDGE 链路执行: question={}", request.question());
+            return null;
         }
-        PlanExecutionResult result = planningService.execute(plan, topK,
+        PlanExecutionResult result = planningService.execute(plan, request.topK(),
                 new PlanBudget(totalBudgetMillis, System::currentTimeMillis),
-                event -> send(emitter, "step", QaStepResponse.of(event), stream));
-        stream.executionPlan(plan, result);
-        return !stream.isDisconnected();
+                event -> send(emitter, "step", QaStepResponse.of(event), request.stream()));
+        request.stream().executionPlan(plan, result);
+        // 所有步骤结束后一次性并集，按 chunkId 去重；全局 idx 由 pushSources 连续分配
+        return PlanSourceAggregator.union(result.steps());
+    }
+
+    /** 单轮请求参数：收敛参数个数，避免编排方法超过 4 个入参 */
+    private record RoundRequest(String question, String lastUser, int topK,
+                                ConversationRound round, RoundStream stream) {
     }
 
     /** 无关问题：固定提示不检索不生成，sources 为空，provider=rule */
@@ -457,9 +467,13 @@ public class QaServiceImpl implements QaService {
         private final AnswerCancellation cancellation = new AnswerCancellation();
         private List<QaSourceSnapshot> sources = List.of();
         private String providerName = QaServiceImpl.this.generator.name();
+        /** 本轮路由结果；mock 模式为 null */
+        private RoutingDecision routeDecision;
         /** PLAN 轮的计划与执行快照；KNOWLEDGE / IRRELEVANT 轮为 null */
         private ExecutionPlan executionPlan;
         private PlanExecutionResult executionResult;
+        /** 合成上下文是否被 6000 字符截断（票 09） */
+        private boolean contextTruncated;
 
         private RoundStream(ConversationRound round, long startedAt) {
             this.round = round;
@@ -484,9 +498,17 @@ public class QaServiceImpl implements QaService {
             this.sources = value;
         }
 
+        synchronized void route(RoutingDecision decision) {
+            this.routeDecision = decision;
+        }
+
         synchronized void executionPlan(ExecutionPlan plan, PlanExecutionResult result) {
             this.executionPlan = plan;
             this.executionResult = result;
+        }
+
+        synchronized void contextTruncated(boolean value) {
+            this.contextTruncated = value;
         }
 
         void done() {
@@ -528,14 +550,48 @@ public class QaServiceImpl implements QaService {
             }
             String text;
             List<QaSourceSnapshot> snapshot;
+            String routeJson;
+            String executionPlanJson;
             synchronized (this) {
                 text = content.toString();
                 snapshot = sources;
+                routeJson = writeJson(routeDecision);
+                executionPlanJson = writeExecutionPlanJson();
             }
             conversationService.completeRound(new AssistantMessageCompletion(
                     round.conversationId(), round.roundId(), round.assistantMessageId(),
                     text, snapshot, providerName, System.currentTimeMillis() - startedAt,
-                    status, error));
+                    status, error, routeJson, executionPlanJson));
+        }
+
+        /** execution_plan 快照：弃用计划只有头信息，执行过的计划带逐步结果 */
+        private String writeExecutionPlanJson() {
+            if (executionPlan == null) {
+                return null;
+            }
+            return writeJson(ExecutionPlanSnapshot.of(executionPlan, executionResult,
+                    new ExecutionPlanSnapshot.SnapshotContext(providerName, elapsedMillis(),
+                            contextTruncated, degradedReason())));
+        }
+
+        private String degradedReason() {
+            if (executionPlan.degraded()) {
+                return executionPlan.degradedReason();
+            }
+            return executionResult != null && executionResult.budgetExhausted()
+                    ? "BUDGET_EXHAUSTED" : null;
+        }
+
+        private String writeJson(Object value) {
+            if (value == null) {
+                return null;
+            }
+            try {
+                return objectMapper.writeValueAsString(value);
+            } catch (JsonProcessingException ex) {
+                log.warn("快照序列化失败，落库置空", ex);
+                return null;
+            }
         }
     }
 

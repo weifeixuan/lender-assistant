@@ -1,5 +1,7 @@
 package com.lender.assistant.rag.tool;
 
+import com.lender.assistant.rag.vo.response.SearchItemResponse;
+
 import java.util.List;
 
 /**
@@ -8,15 +10,22 @@ import java.util.List;
  * @param ok       调用是否成功（零命中仍算成功）
  * @param content  给汇总合成用的文本产物
  * @param chunkIds 命中的知识库块 id；mock 工具恒为空
+ * @param sources  命中的完整来源条目；只有 kb.search 会填充，mock 工具恒为空
  * @param errorCode 失败时的固定错误码；成功为 null
  */
-public record ToolResult(boolean ok, String content, List<Long> chunkIds, String errorCode) {
+public record ToolResult(boolean ok, String content, List<Long> chunkIds,
+                         List<SearchItemResponse> sources, String errorCode) {
 
     public static ToolResult success(String content, List<Long> chunkIds) {
-        return new ToolResult(true, content, chunkIds, null);
+        return success(content, chunkIds, List.of());
+    }
+
+    public static ToolResult success(String content, List<Long> chunkIds,
+                                     List<SearchItemResponse> sources) {
+        return new ToolResult(true, content, chunkIds, sources, null);
     }
 
     public static ToolResult failure(ToolErrorCode code, String content) {
-        return new ToolResult(false, content, List.of(), code.name());
+        return new ToolResult(false, content, List.of(), List.of(), code.name());
     }
 }

@@ -48,7 +48,7 @@ public class KbSearchPlanTool implements AgentTool {
             return ToolResult.failure(ToolErrorCode.ARGS_INVALID, "topK 必须在 1–20");
         }
         List<SearchItemResponse> hits = searchService.hybridSearch(query, null, topK);
-        return ToolResult.success(summarize(hits), chunkIdsOf(hits));
+        return ToolResult.success(summarize(hits), chunkIdsOf(hits), hits);
     }
 
     private static int topKOf(Object raw, int fallback) {

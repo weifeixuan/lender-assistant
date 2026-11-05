@@ -111,6 +111,9 @@ public class ConversationServiceImpl implements ConversationService {
                 completion.messageId(), MessageConstants.ROLE_ASSISTANT, completion.content(),
                 completion.status(), writeSources(completion.sources()), completion.provider(),
                 elapsedMs, completion.error()));
+        // route / execution_plan 是插件的可空 JSONB：插完再回填，保持 insert 的既有形状不变
+        messageMapper.updateRouteAndPlan(completion.conversationId(), completion.roundId(),
+                completion.routeJson(), completion.executionPlanJson());
         conversationMapper.touch(completion.conversationId());
     }
 
