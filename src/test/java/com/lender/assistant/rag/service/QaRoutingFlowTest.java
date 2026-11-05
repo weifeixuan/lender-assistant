@@ -111,6 +111,19 @@ class QaRoutingFlowTest {
     }
 
     @Test
+    @DisplayName("路由抛异常：降级 KNOWLEDGE，不发 error，消息 DONE")
+    void routeFailureFallsBackToKnowledge() {
+        when(routing.route(any())).thenThrow(new IllegalStateException("路由模型超时"));
+
+        qaService.streamAnswer(emitter, "单笔代收限额", 4, USER_ID, round, System.currentTimeMillis());
+
+        assertEquals(List.of("event:meta", "event:route", "event:sources", "event:delta", "event:done"),
+                emitter.eventNames());
+        verify(conversationService).completeRound(argThat(
+                completion -> completion.status().equals("DONE")));
+    }
+
+    @Test
     @DisplayName("mock provider 跳过路由：不发 route/plan/step")
     void mockProviderSkipsRouting() {
         ReflectionTestUtils.setField(qaService, "chatProvider", "mock");

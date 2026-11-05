@@ -31,6 +31,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
@@ -148,6 +149,54 @@ class QaSynthesisFlowTest {
     }
 
     @Test
+    @DisplayName("合成异常：error + FAILED，保留已推正文，不出现 done")
+    void synthesisFailureEmitsErrorAndFailed() {
+        ExecutionPlan plan = twoStepPlan();
+        PlanExecutionResult result = new PlanExecutionResult(List.of(
+                outcome("s1", 1, "kb.search", StepStatus.DONE, List.of(source(1L)), "检索摘要"),
+                outcome("s2", 2, "customer.profile", StepStatus.DONE, List.of(), "客户摘要")),
+                false, 180_000);
+        when(planning.plan(any(), any())).thenReturn(plan);
+        stubExecute(result);
+        generator.failure = new IllegalStateException("合成失败");
+
+        qaService.streamAnswer(emitter, "华信能放多少", 4, USER_ID, round, System.currentTimeMillis());
+
+        assertTrue(emitter.eventNames().contains("event:error"));
+        assertFalse(emitter.eventNames().contains("event:done"));
+        com.lender.assistant.conversation.model.AssistantMessageCompletion completion = captured();
+        assertEquals("FAILED", completion.status());
+        assertTrue(completion.content().contains("合成答案"), "已推正文必须保留");
+    }
+
+    @Test
+    @DisplayName("合成超时：取消后按 error + FAILED 收尾")
+    void synthesisTimeoutEmitsErrorAndFailed() {
+        ExecutionPlan plan = twoStepPlan();
+        PlanExecutionResult result = new PlanExecutionResult(List.of(
+                outcome("s1", 1, "kb.search", StepStatus.DONE, List.of(source(1L)), "检索摘要"),
+                outcome("s2", 2, "customer.profile", StepStatus.DONE, List.of(), "客户摘要")),
+                false, 1L);
+        when(planning.plan(any(), any())).thenReturn(plan);
+        stubExecute(result);
+        generator.delayMillis = 100;
+
+        qaService.streamAnswer(emitter, "华信能放多少", 4, USER_ID, round, System.currentTimeMillis());
+
+        assertTrue(emitter.eventNames().contains("event:error"));
+        assertFalse(emitter.eventNames().contains("event:done"));
+        assertEquals("FAILED", captured().status());
+    }
+
+    private com.lender.assistant.conversation.model.AssistantMessageCompletion captured() {
+        org.mockito.ArgumentCaptor<com.lender.assistant.conversation.model.AssistantMessageCompletion>
+                captor = org.mockito.ArgumentCaptor.forClass(
+                com.lender.assistant.conversation.model.AssistantMessageCompletion.class);
+        verify(conversationService).completeRound(captor.capture());
+        return captor.getValue();
+    }
+
+    @Test
     @DisplayName("计划弃用：不发 step，退回 KNOWLEDGE 单次生成")
     void degradedPlanFallsBackToKnowledge() {
         when(planning.plan(any(), any())).thenReturn(ExecutionPlan.invalid());
@@ -190,11 +239,23 @@ class QaSynthesisFlowTest {
 
     static class CapturingGenerator implements AnswerGeneratorStrategy {
         final List<AnswerGenerationRequest> requests = new ArrayList<>();
+        RuntimeException failure;
+        long delayMillis;
 
         @Override
         public void generate(AnswerGenerationRequest request) {
             requests.add(request);
+            if (delayMillis > 0) {
+                try {
+                    Thread.sleep(delayMillis);
+                } catch (InterruptedException ex) {
+                    Thread.currentThread().interrupt();
+                }
+            }
             request.onDelta().accept("合成答案");
+            if (failure != null) {
+                throw failure;
+            }
         }
 
         @Override

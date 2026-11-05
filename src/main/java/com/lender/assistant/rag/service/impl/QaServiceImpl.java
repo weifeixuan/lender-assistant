@@ -321,10 +321,18 @@ public class QaServiceImpl implements QaService {
         if (routingService == null) {
             return new RoutingDecision(QuestionRoute.KNOWLEDGE, 0.0, "无路由服务", "NONE");
         }
-        List<MessageRow> rows = historyAssembler.listRows(request.round().conversationId());
-        QuestionRoute previous = previousRouteResolver == null ? null : previousRouteResolver.resolve(rows);
-        RoutingDecision decision = routingService.route(
-                new RoutingRequest(request.question(), request.lastUser(), previous, ""));
+        RoutingDecision decision;
+        try {
+            List<MessageRow> rows = historyAssembler.listRows(request.round().conversationId());
+            QuestionRoute previous = previousRouteResolver == null
+                    ? null : previousRouteResolver.resolve(rows);
+            decision = routingService.route(
+                    new RoutingRequest(request.question(), request.lastUser(), previous, ""));
+        } catch (RuntimeException ex) {
+            // 路由链路任何异常都 fail-open：降级 KNOWLEDGE，本轮仍按正常问答收尾（票 11）
+            log.warn("路由失败，降级 KNOWLEDGE: {}", ex.getMessage());
+            decision = new RoutingDecision(QuestionRoute.KNOWLEDGE, 0.0, "路由异常降级", "NONE");
+        }
         if (!send(emitter, "route",
                 new QaRouteResponse(decision.route().name(), decision.confidence()), request.stream())) {
             return null;
@@ -375,13 +383,19 @@ public class QaServiceImpl implements QaService {
             emitNoRecall(emitter, request.stream());
             return false;
         }
+        AtomicBoolean timedOut = new AtomicBoolean(false);
         long limit = Math.max(1, Math.min(SYNTHESIS_MAX_MILLIS, outcome.remainingBudgetMillis()));
-        ScheduledFuture<?> timeoutTask = timeoutScheduler.schedule(
-                request.stream().cancellation()::cancel, limit, TimeUnit.MILLISECONDS);
+        ScheduledFuture<?> timeoutTask = timeoutScheduler.schedule(() -> {
+            timedOut.set(true);
+            request.stream().cancellation().cancel();
+        }, limit, TimeUnit.MILLISECONDS);
         try {
             streamSynthesis(emitter, request.stream(), context.prompt(), hits);
         } finally {
             timeoutTask.cancel(false);
+        }
+        if (timedOut.get()) {
+            throw new BizException(ErrorCode.INTERNAL_ERROR, "本轮处理超时，请重试");
         }
         return true;
     }
