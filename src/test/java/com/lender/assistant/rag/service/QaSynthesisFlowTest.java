@@ -126,6 +126,28 @@ class QaSynthesisFlowTest {
     }
 
     @Test
+    @DisplayName("剩余预算耗尽：不发合成，推 error 并以 FAILED 落库")
+    void zeroRemainingBudgetFailsRound() {
+        ExecutionPlan plan = twoStepPlan();
+        PlanExecutionResult result = new PlanExecutionResult(List.of(
+                outcome("s1", 1, "kb.search", StepStatus.DONE, List.of(source(1L)), "检索摘要"),
+                outcome("s2", 2, "customer.profile", StepStatus.DONE, List.of(), "客户摘要")),
+                true, 0L);
+        when(planning.plan(any(), any())).thenReturn(plan);
+        stubExecute(result);
+
+        qaService.streamAnswer(emitter, "华信能放多少", 4, USER_ID, round, System.currentTimeMillis());
+
+        assertEquals(0, generator.requests.size());
+        assertTrue(emitter.eventNames().contains("event:error"));
+        org.mockito.ArgumentCaptor<com.lender.assistant.conversation.model.AssistantMessageCompletion>
+                captor = org.mockito.ArgumentCaptor.forClass(
+                com.lender.assistant.conversation.model.AssistantMessageCompletion.class);
+        verify(conversationService).completeRound(captor.capture());
+        assertEquals("FAILED", captor.getValue().status());
+    }
+
+    @Test
     @DisplayName("计划弃用：不发 step，退回 KNOWLEDGE 单次生成")
     void degradedPlanFallsBackToKnowledge() {
         when(planning.plan(any(), any())).thenReturn(ExecutionPlan.invalid());

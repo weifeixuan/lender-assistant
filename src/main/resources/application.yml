@@ -55,6 +55,8 @@ rag:
     # 无关问题的固定提示（非模型生成，done.provider=rule）
     irrelevant-reply: ${RAG_ROUTING_IRRELEVANT_REPLY:我只回答资方接入相关的资料问题，可以换个问法再试试。}
   plan:
+    # 整轮预算（路由+计划+步骤+合成共用）；唯一超时配置，其余超时为代码常量
+    total-budget-ms: ${RAG_PLAN_TOTAL_BUDGET_MS:90000}
     # 计划步数区间：越界整单弃用，退回 KNOWLEDGE 单次检索
     min-steps: ${RAG_PLAN_MIN_STEPS:2}
     max-steps: ${RAG_PLAN_MAX_STEPS:5}

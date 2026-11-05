@@ -260,7 +260,9 @@ public class QaServiceImpl implements QaService {
             // 追问时把「当前问题」与「上一轮问题」分段传给检索：关键词 token 配额按段分配，
             // 避免上一轮长问题按顺序把当前追问的关键词挤出配额（票 08）
             String lastUser = ConversationHistoryAssembler.lastUserContent(history);
-            RoundRequest request = new RoundRequest(question, lastUser, topK, round, stream);
+            // 预算从路由开始计时：路由、计划、步骤、合成共用这 90s（票 10）
+            RoundRequest request = new RoundRequest(question, lastUser, topK, round, stream,
+                    new PlanBudget(totalBudgetMillis, System::currentTimeMillis));
             PlanRoundOutcome planOutcome = null;
             if (!isMockMode()) {
                 RoutingDecision decision = routeRound(emitter, request);
@@ -348,13 +350,12 @@ public class QaServiceImpl implements QaService {
             log.info("计划弃用，按 KNOWLEDGE 链路执行: question={}", request.question());
             return null;
         }
-        PlanBudget budget = new PlanBudget(totalBudgetMillis, System::currentTimeMillis);
-        PlanExecutionResult result = planningService.execute(plan, request.topK(), budget,
+        PlanExecutionResult result = planningService.execute(plan, request.topK(), request.budget(),
                 event -> send(emitter, "step", QaStepResponse.of(event), request.stream()));
         request.stream().executionPlan(plan, result);
         // 所有步骤结束后一次性并集，按 chunkId 去重；全局 idx 由 pushSources 连续分配
         return new PlanRoundOutcome(PlanSourceAggregator.union(result.steps()), plan, result,
-                budget.remainingMillis());
+                result.remainingBudgetMillis());
     }
 
     /**
@@ -364,6 +365,9 @@ public class QaServiceImpl implements QaService {
      */
     private boolean synthesizePlan(SseEmitter emitter, RoundRequest request,
                                    PlanRoundOutcome outcome, List<SearchItemResponse> hits) {
+        if (outcome.remainingBudgetMillis() <= 0) {
+            throw new BizException(ErrorCode.INTERNAL_ERROR, "本轮处理超时，请重试");
+        }
         SynthesisPromptBuilder.Context context = SynthesisPromptBuilder.build(
                 request.question(), outcome.plan().goal(), outcome.result().steps());
         request.stream().contextTruncated(context.truncated());
@@ -406,7 +410,7 @@ public class QaServiceImpl implements QaService {
 
     /** 单轮请求参数：收敛参数个数，避免编排方法超过 4 个入参 */
     private record RoundRequest(String question, String lastUser, int topK,
-                                ConversationRound round, RoundStream stream) {
+                                ConversationRound round, RoundStream stream, PlanBudget budget) {
     }
 
     /** 无关问题：固定提示不检索不生成，sources 为空，provider=rule */
