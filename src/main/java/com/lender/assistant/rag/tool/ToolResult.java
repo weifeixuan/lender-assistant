@@ -1,0 +1,22 @@
+package com.lender.assistant.rag.tool;
+
+import java.util.List;
+
+/**
+ * 一次工具调用的结果。
+ *
+ * @param ok       调用是否成功（零命中仍算成功）
+ * @param content  给汇总合成用的文本产物
+ * @param chunkIds 命中的知识库块 id；mock 工具恒为空
+ * @param errorCode 失败时的固定错误码；成功为 null
+ */
+public record ToolResult(boolean ok, String content, List<Long> chunkIds, String errorCode) {
+
+    public static ToolResult success(String content, List<Long> chunkIds) {
+        return new ToolResult(true, content, chunkIds, null);
+    }
+
+    public static ToolResult failure(ToolErrorCode code, String content) {
+        return new ToolResult(false, content, List.of(), code.name());
+    }
+}
