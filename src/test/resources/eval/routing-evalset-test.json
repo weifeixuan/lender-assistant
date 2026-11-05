@@ -1,0 +1,8 @@
+{
+  "items": [
+    {"id": 1, "category": "KNOWLEDGE", "question": "接口鉴权用什么算法？", "expectedRoute": "KNOWLEDGE", "note": "单事实"},
+    {"id": 2, "category": "KNOWLEDGE", "question": "测试环境域名是什么？", "expectedRoute": "KNOWLEDGE", "note": "单事实"},
+    {"id": 3, "category": "PLAN", "question": "C10001 还能放 500 万吗？", "expectedRoute": "PLAN", "note": "客户+资料"},
+    {"id": 4, "category": "COREFERENCE", "question": "那二套呢？", "previousQuestion": "华信银行放款条件？", "expectedRoute": "PLAN", "allowedTools": ["kb.search"], "note": "指代"}
+  ]
+}

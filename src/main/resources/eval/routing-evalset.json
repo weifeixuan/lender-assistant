@@ -1,0 +1,42 @@
+{
+  "items": [
+    {"id": 1, "category": "IRRELEVANT", "question": "今天天气怎么样？", "expectedRoute": "IRRELEVANT", "note": "闲聊"},
+    {"id": 2, "category": "IRRELEVANT", "question": "帮我写一首关于春天的诗", "expectedRoute": "IRRELEVANT", "note": "创作"},
+    {"id": 3, "category": "IRRELEVANT", "question": "股票明天会涨还是跌？", "expectedRoute": "IRRELEVANT", "note": "超出业务范围"},
+    {"id": 4, "category": "IRRELEVANT", "question": "红烧肉怎么做才好吃？", "expectedRoute": "IRRELEVANT", "note": "生活类"},
+    {"id": 5, "category": "IRRELEVANT", "question": "推荐一部好看的电影", "expectedRoute": "IRRELEVANT", "note": "娱乐"},
+    {"id": 6, "category": "IRRELEVANT", "question": "世界杯冠军是谁？", "expectedRoute": "IRRELEVANT", "note": "体育"},
+    {"id": 7, "category": "IRRELEVANT", "question": "怎么快速减肥？", "expectedRoute": "IRRELEVANT", "note": "生活类"},
+    {"id": 8, "category": "IRRELEVANT", "question": "把 hello world 翻译成法语", "expectedRoute": "IRRELEVANT", "note": "翻译"},
+    {"id": 9, "category": "IRRELEVANT", "question": "帮我订一张去上海的机票", "expectedRoute": "IRRELEVANT", "note": "代办类"},
+    {"id": 10, "category": "IRRELEVANT", "question": "手机很卡怎么办？", "expectedRoute": "IRRELEVANT", "note": "数码"},
+
+    {"id": 11, "category": "KNOWLEDGE", "question": "资金方接入需要提交哪些基础材料？", "expectedRoute": "KNOWLEDGE", "note": "单事实"},
+    {"id": 12, "category": "KNOWLEDGE", "question": "接口鉴权的签名使用什么算法？", "expectedRoute": "KNOWLEDGE", "note": "单事实"},
+    {"id": 13, "category": "KNOWLEDGE", "question": "授信额度查询接口的路径是什么？", "expectedRoute": "KNOWLEDGE", "note": "字段/路径"},
+    {"id": 14, "category": "KNOWLEDGE", "question": "单笔代收的最低金额限制是多少？", "expectedRoute": "KNOWLEDGE", "note": "单事实"},
+    {"id": 15, "category": "KNOWLEDGE", "question": "放款申请的回调字段有哪些？", "expectedRoute": "KNOWLEDGE", "note": "字段清单"},
+    {"id": 16, "category": "KNOWLEDGE", "question": "合作状态有哪些取值？", "expectedRoute": "KNOWLEDGE", "note": "枚举"},
+    {"id": 17, "category": "KNOWLEDGE", "question": "对接测试环境的域名是什么？", "expectedRoute": "KNOWLEDGE", "note": "配置项"},
+    {"id": 18, "category": "KNOWLEDGE", "question": "客户风险的评估维度包括哪些？", "expectedRoute": "KNOWLEDGE", "note": "清单"},
+    {"id": 19, "category": "KNOWLEDGE", "question": "资料入库支持哪些文件格式？", "expectedRoute": "KNOWLEDGE", "note": "清单"},
+    {"id": 20, "category": "KNOWLEDGE", "question": "资金方产品信息包含哪些字段？", "expectedRoute": "KNOWLEDGE", "note": "字段清单"},
+
+    {"id": 21, "category": "PLAN", "question": "C10001 客户还能不能放 500 万？", "expectedRoute": "PLAN", "note": "客户+产品"},
+    {"id": 22, "category": "PLAN", "question": "P001 产品的费率和 C10001 的可用额度是否匹配？", "expectedRoute": "PLAN", "note": "产品+客户"},
+    {"id": 23, "category": "PLAN", "question": "帮我把华信银行的放款条件和 C10001 资质比对一下", "expectedRoute": "PLAN", "note": "资料+客户"},
+    {"id": 24, "category": "PLAN", "question": "先查产品 P002 的期限，再看客户 C10002 能不能满足", "expectedRoute": "PLAN", "note": "两步"},
+    {"id": 25, "category": "PLAN", "question": "客户 C10001 的可用额度够不够覆盖 1000 万，并给出对应产品", "expectedRoute": "PLAN", "note": "客户+资料"},
+    {"id": 26, "category": "PLAN", "question": "对比 P001 与 P002 的放款条件差异", "expectedRoute": "PLAN", "note": "多资料检索"},
+    {"id": 27, "category": "PLAN", "question": "查一下 C10002 的风险等级，并确认是否存在禁入项", "expectedRoute": "PLAN", "note": "客户+资料"},
+    {"id": 28, "category": "PLAN", "question": "华信银行二套房的放款条件是什么？再核对 C10001 的资质", "expectedRoute": "PLAN", "note": "资料+客户"},
+    {"id": 29, "category": "PLAN", "question": "根据客户 C10001 的已用额度，计算还能申请多少", "expectedRoute": "PLAN", "note": "客户计算"},
+    {"id": 30, "category": "PLAN", "question": "把单笔代收限额规则和 C10002 的可用额度一起看", "expectedRoute": "PLAN", "note": "资料+客户"},
+
+    {"id": 31, "category": "COREFERENCE", "question": "那二套呢？", "previousQuestion": "华信银行的放款条件是什么？", "expectedRoute": "PLAN", "allowedTools": ["kb.search"], "note": "指代：二套"},
+    {"id": 32, "category": "COREFERENCE", "question": "它的期限呢？", "previousQuestion": "P001 产品的费率是多少？", "expectedRoute": "PLAN", "allowedTools": ["kb.search"], "note": "指代：产品 P001"},
+    {"id": 33, "category": "COREFERENCE", "question": "它够放 500 万吗？", "previousQuestion": "C10001 的可用额度是多少？", "expectedRoute": "PLAN", "allowedTools": ["kb.search", "customer.profile"], "note": "指代：客户 C10001"},
+    {"id": 34, "category": "COREFERENCE", "question": "那回调验签呢？", "previousQuestion": "接口鉴权用什么算法？", "expectedRoute": "PLAN", "allowedTools": ["kb.search"], "note": "指代：验签"},
+    {"id": 35, "category": "COREFERENCE", "question": "它的合作状态呢？", "previousQuestion": "客户 C10002 风险等级怎么样？", "expectedRoute": "PLAN", "allowedTools": ["kb.search", "customer.profile"], "note": "指代：客户 C10002"}
+  ]
+}

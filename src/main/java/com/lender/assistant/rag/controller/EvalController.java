@@ -4,8 +4,10 @@ import com.lender.assistant.common.constant.SearchConstants;
 import com.lender.assistant.common.constant.SearchMode;
 import com.lender.assistant.common.util.TopKUtils;
 import com.lender.assistant.rag.service.EvalService;
+import com.lender.assistant.rag.service.RoutingEvalService;
 import com.lender.assistant.rag.vo.request.EvalRequest;
 import com.lender.assistant.rag.vo.response.EvalRunResponse;
+import com.lender.assistant.rag.vo.response.RoutingEvalResponse;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -23,14 +25,25 @@ import org.springframework.web.bind.annotation.RestController;
 public class EvalController {
 
     private final EvalService evalService;
+    private final RoutingEvalService routingEvalService;
 
-    public EvalController(EvalService evalService) {
+    public EvalController(EvalService evalService, RoutingEvalService routingEvalService) {
         this.evalService = evalService;
+        this.routingEvalService = routingEvalService;
     }
 
     @PostMapping("/run")
     public EvalRunResponse run(@RequestBody EvalRequest request) throws Exception {
         SearchMode mode = SearchMode.fromCode(request.mode());
         return evalService.run(TopKUtils.resolve(request.topK(), SearchConstants.DEFAULT_TOP_K), mode);
+    }
+
+    /**
+     * 路由与计划离线评估：POST /api/admin/eval/routing（无入参，跑固定评估集）。
+     * 只输出当前阈值下的指标，不做阈值调优。
+     */
+    @PostMapping("/routing")
+    public RoutingEvalResponse runRouting() throws Exception {
+        return routingEvalService.run();
     }
 }
