@@ -103,6 +103,26 @@ class ConversationHistoryAssemblerTest {
         assertEquals(null, ConversationHistoryAssembler.lastUserContent(List.of()));
     }
 
+    @Test
+    @DisplayName("provider=rule 的固定提示轮整轮跳过回放")
+    void skipsRuleReplies() {
+        when(messageMapper.listByConversation(CONVERSATION_ID)).thenReturn(List.of(
+                new MessageRow("msg-1", CONVERSATION_ID, "r1", "USER", "你好", "DONE",
+                        null, null, 0, null, "2026-11-01 10:00:00", null, null),
+                new MessageRow("msg-2", CONVERSATION_ID, "r1", "ASSISTANT", "固定提示", "DONE",
+                        "[]", "rule", 0, null, "2026-11-01 10:00:01", null, null),
+                new MessageRow("msg-3", CONVERSATION_ID, "r2", "USER", "单笔限额", "DONE",
+                        null, null, 0, null, "2026-11-01 10:00:02", null, null),
+                new MessageRow("msg-4", CONVERSATION_ID, "r2", "ASSISTANT", "回答", "DONE",
+                        "[]", "mock", 0, null, "2026-11-01 10:00:03", null, null)));
+
+        List<ChatTurn> history = assembler.assemble(CONVERSATION_ID, CURRENT_ROUND);
+
+        assertEquals(List.of(new ChatTurn("USER", "单笔限额"), new ChatTurn("ASSISTANT", "回答")),
+                history);
+        assertEquals("单笔限额", ConversationHistoryAssembler.lastUserContent(history));
+    }
+
     private static MessageRow row(String roundId, String role, String content, String status) {
         return new MessageRow("msg-" + roundId + "-" + role, CONVERSATION_ID, roundId, role,
                 content, status, null, null, null, null, "2026-11-01 10:00:00", null, null);

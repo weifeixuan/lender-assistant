@@ -11,6 +11,13 @@ import com.lender.assistant.conversation.model.QaSourceSnapshot;
 import com.lender.assistant.conversation.service.ConversationHistoryAssembler;
 import com.lender.assistant.conversation.service.ConversationLockRegistry;
 import com.lender.assistant.conversation.service.ConversationService;
+import com.lender.assistant.conversation.model.MessageRow;
+import com.lender.assistant.rag.routing.PreviousRouteResolver;
+import com.lender.assistant.rag.routing.QuestionRoutingService;
+import com.lender.assistant.rag.routing.model.QuestionRoute;
+import com.lender.assistant.rag.routing.model.RoutingDecision;
+import com.lender.assistant.rag.routing.model.RoutingRequest;
+import com.lender.assistant.rag.vo.response.QaRouteResponse;
 import com.lender.assistant.rag.service.QaService;
 import com.lender.assistant.rag.service.SearchService;
 import com.lender.assistant.rag.strategy.AnswerCancellation;
@@ -25,6 +32,7 @@ import jakarta.annotation.PreDestroy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
@@ -77,6 +85,20 @@ public class QaServiceImpl implements QaService {
      * 生命周期（应用关停时关闭）不交给工厂，留在本类 @PreDestroy。
      */
     private final ThreadPoolExecutor streamExecutor;
+
+    /** 当前生成 provider；mock 模式跳过路由与计划，事件序列保持现状（票 03） */
+    @Value("${rag.chat.provider:mock}")
+    private String chatProvider;
+
+    /** 无关问题的固定提示；非模型生成，done.provider=rule */
+    @Value("${rag.routing.irrelevant-reply:我只回答资方接入相关的资料问题，可以换个问法再试试。}")
+    private String irrelevantReply;
+
+    @Autowired(required = false)
+    private QuestionRoutingService routingService;
+
+    @Autowired(required = false)
+    private PreviousRouteResolver previousRouteResolver;
 
     @Autowired
     public QaServiceImpl(SearchService searchService, AnswerGeneratorStrategy generator,
@@ -194,6 +216,9 @@ public class QaServiceImpl implements QaService {
             // 追问时把「当前问题」与「上一轮问题」分段传给检索：关键词 token 配额按段分配，
             // 避免上一轮长问题按顺序把当前追问的关键词挤出配额（票 08）
             String lastUser = ConversationHistoryAssembler.lastUserContent(history);
+            if (!isMockMode() && !routeRound(emitter, question, lastUser, round, stream)) {
+                return;
+            }
             List<SearchItemResponse> hits = searchService.hybridSearch(question, lastUser, topK);
             if (!pushSources(emitter, hits, stream)) {
                 return;
@@ -218,6 +243,55 @@ public class QaServiceImpl implements QaService {
         } catch (Exception e) {
             handleFailure(emitter, question, e, stream);
         }
+    }
+
+    /**
+     * 路由并推送 route 事件。
+     *
+     * @return true 继续知识库链路；false 表示本轮已结束（无关问题）或客户端已断开
+     */
+    private boolean routeRound(SseEmitter emitter, String question, String lastUser,
+                               ConversationRound round, RoundStream stream) {
+        if (routingService == null) {
+            return true;
+        }
+        List<MessageRow> rows = historyAssembler.listRows(round.conversationId());
+        QuestionRoute previous = previousRouteResolver == null ? null : previousRouteResolver.resolve(rows);
+        RoutingDecision decision = routingService.route(
+                new RoutingRequest(question, lastUser, previous, ""));
+        if (!send(emitter, "route",
+                new QaRouteResponse(decision.route().name(), decision.confidence()), stream)) {
+            return false;
+        }
+        if (decision.route() == QuestionRoute.IRRELEVANT) {
+            emitIrrelevant(emitter, stream);
+            return false;
+        }
+        return true;
+    }
+
+    /** 无关问题：固定提示不检索不生成，sources 为空，provider=rule */
+    private void emitIrrelevant(SseEmitter emitter, RoundStream stream) {
+        stream.sources(List.of());
+        if (!send(emitter, "sources", List.of(), stream)) {
+            return;
+        }
+        stream.append(irrelevantReply);
+        if (!send(emitter, "delta", irrelevantReply, stream)) {
+            return;
+        }
+        stream.provider(MessageConstants.RULE_PROVIDER);
+        stream.done();
+        if (!send(emitter, "done", new QaDoneResponse(MessageConstants.RULE_PROVIDER,
+                stream.elapsedMillis(), 0), stream)) {
+            return;
+        }
+        emitter.complete();
+    }
+
+    /** mock 只保证对话能走通：跳过路由/计划，事件序列与现状一致 */
+    private boolean isMockMode() {
+        return chatProvider == null || "mock".equalsIgnoreCase(chatProvider);
     }
 
     /** 召回结果 → sources 事件；返回 false 表示客户端已断开（disconnected 已落 STOPPED） */
@@ -328,10 +402,19 @@ public class QaServiceImpl implements QaService {
          */
         private final AnswerCancellation cancellation = new AnswerCancellation();
         private List<QaSourceSnapshot> sources = List.of();
+        private String providerName = QaServiceImpl.this.generator.name();
 
         private RoundStream(ConversationRound round, long startedAt) {
             this.round = round;
             this.startedAt = startedAt;
+        }
+
+        long elapsedMillis() {
+            return System.currentTimeMillis() - startedAt;
+        }
+
+        void provider(String value) {
+            this.providerName = value;
         }
 
         synchronized void append(String token) {
@@ -389,7 +472,7 @@ public class QaServiceImpl implements QaService {
             }
             conversationService.completeRound(new AssistantMessageCompletion(
                     round.conversationId(), round.roundId(), round.assistantMessageId(),
-                    text, snapshot, generator.name(), System.currentTimeMillis() - startedAt,
+                    text, snapshot, providerName, System.currentTimeMillis() - startedAt,
                     status, error));
         }
     }

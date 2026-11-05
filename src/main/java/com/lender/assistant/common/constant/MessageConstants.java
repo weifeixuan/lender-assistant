@@ -14,6 +14,9 @@ public final class MessageConstants {
     public static final String STATUS_FAILED = "FAILED";
     public static final String STATUS_STOPPED = "STOPPED";
 
+    /** 规则生成（无关问题固定提示）的 provider 标识，用于回放排除与前端展示 */
+    public static final String RULE_PROVIDER = "rule";
+
     private MessageConstants() {
     }
 }

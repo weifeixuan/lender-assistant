@@ -20,6 +20,7 @@ import java.util.Map;
  *   缺任一条整轮丢弃——不和相邻轮拼接，避免模型看到"半个对话"。
  * - 最多最近 N 轮；总字符超上限时从最旧一轮开始整轮丢弃。
  * - FAILED / STOPPED 轮次整轮不进上下文，但照常展示在历史接口里。
+ * - provider="rule" 的固定提示轮整轮跳过：既不回放，也不作为 previousQuestion 来源。
  */
 @Component
 public class ConversationHistoryAssembler {
@@ -35,6 +36,11 @@ public class ConversationHistoryAssembler {
         this.messageMapper = messageMapper;
         this.maxRounds = maxRounds;
         this.maxChars = maxChars;
+    }
+
+    /** 会话内按 id 升序的原始消息行；供路由读取上一轮 route 用，不做回放过滤 */
+    public List<MessageRow> listRows(String conversationId) {
+        return messageMapper.listByConversation(conversationId);
     }
 
     /** @param currentRoundId 本轮 id，装配时排除，避免把刚提问的用户消息当成历史 */
@@ -54,12 +60,13 @@ public class ConversationHistoryAssembler {
                 round.user = row;
             } else if (MessageConstants.ROLE_ASSISTANT.equals(row.role())) {
                 round.assistant = row;
+                round.ruleReply = MessageConstants.RULE_PROVIDER.equals(row.provider());
             }
         }
 
         List<ChatTurn> complete = new ArrayList<>();
         for (RoundMessages round : rounds.values()) {
-            if (round.user != null && round.assistant != null) {
+            if (round.user != null && round.assistant != null && !round.ruleReply) {
                 complete.add(new ChatTurn(MessageConstants.ROLE_USER, round.user.content()));
                 complete.add(new ChatTurn(MessageConstants.ROLE_ASSISTANT, round.assistant.content()));
             }
@@ -98,5 +105,6 @@ public class ConversationHistoryAssembler {
     private static final class RoundMessages {
         private MessageRow user;
         private MessageRow assistant;
+        private boolean ruleReply;
     }
 }
