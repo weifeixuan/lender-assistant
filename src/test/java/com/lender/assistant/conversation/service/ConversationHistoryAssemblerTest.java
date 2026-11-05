@@ -105,6 +105,6 @@ class ConversationHistoryAssemblerTest {
 
     private static MessageRow row(String roundId, String role, String content, String status) {
         return new MessageRow("msg-" + roundId + "-" + role, CONVERSATION_ID, roundId, role,
-                content, status, null, null, null, null, "2026-11-01 10:00:00");
+                content, status, null, null, null, null, "2026-11-01 10:00:00", null, null);
     }
 }

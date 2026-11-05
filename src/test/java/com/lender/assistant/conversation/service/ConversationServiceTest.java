@@ -81,10 +81,10 @@ class ConversationServiceTest {
                 .thenReturn(activeConversation());
         when(messageMapper.listByConversation(CONVERSATION_ID)).thenReturn(List.of(
                 new MessageRow("msg-user", CONVERSATION_ID, "round-1", "USER", "问题",
-                        "DONE", null, null, null, null, "2026-11-02 20:00:00"),
+                        "DONE", null, null, null, null, "2026-11-02 20:00:00", null, null),
                 new MessageRow("msg-assistant", CONVERSATION_ID, "round-1", "ASSISTANT", "回答",
                         "DONE", "[{\"idx\":1,\"docTitle\":\"资方接口文档\",\"chunkId\":123}]",
-                        "deepseek-chat", 1234, null, "2026-11-02 20:00:01")));
+                        "deepseek-chat", 1234, null, "2026-11-02 20:00:01", null, null)));
 
         ConversationMessagesResponse result = service.getMessages(CONVERSATION_ID, USER_ID);
 

@@ -74,6 +74,24 @@ class MapperXmlContractTest {
                 "缺少 insert 语句");
         assertTrue(configuration.hasStatement(namespace + ".listByConversation"),
                 "缺少 listByConversation 语句");
+        assertTrue(configuration.hasStatement(namespace + ".updateRouteAndPlan"),
+                "缺少 updateRouteAndPlan 语句");
+    }
+
+    @Test
+    @DisplayName("updateRouteAndPlan 写入两列 JSONB，读取投影暴露两列")
+    void routeAndPlanColumnsAreWrittenAndRead() {
+        Configuration configuration = parse(MESSAGE_MAPPER);
+        String statementId = "com.lender.assistant.conversation.mapper.MessageMapper.updateRouteAndPlan";
+        String sql = configuration.getMappedStatement(statementId)
+                .getBoundSql(new Object[]{null, null, null, null}).getSql();
+        assertTrue(sql.contains("route = CAST("), "必须写入 route");
+        assertTrue(sql.contains("execution_plan = CAST("), "必须写入 execution_plan");
+        String listSql = configuration
+                .getMappedStatement("com.lender.assistant.conversation.mapper.MessageMapper.listByConversation")
+                .getBoundSql("conv-1").getSql();
+        assertTrue(listSql.contains("route::text"), "读取必须投影 route");
+        assertTrue(listSql.contains("execution_plan::text"), "读取必须投影 execution_plan");
     }
 
     @Test

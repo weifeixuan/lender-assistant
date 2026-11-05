@@ -21,6 +21,8 @@
             <arg column="elapsed_ms" javaType="java.lang.Integer"/>
             <arg column="error_msg" javaType="java.lang.String"/>
             <arg column="create_time" javaType="java.lang.String"/>
+            <arg column="route_json" javaType="java.lang.String"/>
+            <arg column="execution_plan_json" javaType="java.lang.String"/>
         </constructor>
     </resultMap>
 
@@ -39,9 +41,20 @@
         SELECT message_id, conversation_id, round_id, role, content, status,
                sources::text AS sources_json,
                provider, elapsed_ms, error_msg,
-               TO_CHAR(create_time, 'YYYY-MM-DD HH24:MI:SS') AS create_time
+               TO_CHAR(create_time, 'YYYY-MM-DD HH24:MI:SS') AS create_time,
+               route::text AS route_json,
+               execution_plan::text AS execution_plan_json
         FROM message
         WHERE conversation_id = #{conversationId}
         ORDER BY id ASC
     </select>
+
+    <update id="updateRouteAndPlan">
+        UPDATE message
+        SET route = CAST(#{routeJson,jdbcType=VARCHAR} AS jsonb),
+            execution_plan = CAST(#{executionPlanJson,jdbcType=VARCHAR} AS jsonb)
+        WHERE conversation_id = #{conversationId}
+          AND round_id = #{roundId}
+          AND role = 'ASSISTANT'
+    </update>
 </mapper>

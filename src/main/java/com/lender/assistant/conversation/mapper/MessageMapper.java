@@ -20,4 +20,10 @@ public interface MessageMapper {
 
     /** 按会话读取全部消息，id ASC 即会话内稳定时序 */
     List<MessageRow> listByConversation(@Param("conversationId") String conversationId);
+
+    /** 助手消息终态回填路由与计划快照；两个 JSON 文本可为 null */
+    int updateRouteAndPlan(@Param("conversationId") String conversationId,
+                           @Param("roundId") String roundId,
+                           @Param("routeJson") String routeJson,
+                           @Param("executionPlanJson") String executionPlanJson);
 }

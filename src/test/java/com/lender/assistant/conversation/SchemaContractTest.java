@@ -71,6 +71,21 @@ class SchemaContractTest {
     }
 
     @Test
+    @DisplayName("message 声明路由与计划快照两列且可空")
+    void messageDeclaresRouteAndExecutionPlan() {
+        assertTrue(SCHEMA.contains("route JSONB"), "缺少 message.route 列");
+        assertTrue(SCHEMA.contains("execution_plan JSONB"), "缺少 message.execution_plan 列");
+        assertTrue(SCHEMA.contains("ADD COLUMN IF NOT EXISTS route JSONB"),
+                "route 必须由幂等语句补齐");
+        assertTrue(SCHEMA.contains("ADD COLUMN IF NOT EXISTS execution_plan JSONB"),
+                "execution_plan 必须由幂等语句补齐");
+        assertTrue(SCHEMA.contains("COMMENT ON COLUMN message.route"),
+                "route 缺少列注释");
+        assertTrue(SCHEMA.contains("COMMENT ON COLUMN message.execution_plan"),
+                "execution_plan 缺少列注释");
+    }
+
+    @Test
     @DisplayName("两张新表都有 COMMENT ON TABLE")
     void tablesAreDocumented() {
         assertTrue(SCHEMA.contains("COMMENT ON TABLE conversation"),

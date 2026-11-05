@@ -152,6 +152,8 @@ CREATE TABLE IF NOT EXISTS message (
     status          TEXT        NOT NULL,
     sources         JSONB,
     provider        TEXT,
+    route           JSONB, -- 路由结果快照：route / confidence / reason / irrelevantCategory
+    execution_plan  JSONB, -- 计划与执行快照：goal / steps[] / 降级原因
     elapsed_ms      INT,
     error_msg       TEXT,
     create_time     TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -161,6 +163,10 @@ CREATE TABLE IF NOT EXISTS message (
     CONSTRAINT fk_message_conversation FOREIGN KEY (conversation_id)
         REFERENCES conversation (conversation_id)
 );
+
+-- 阶段 7 迁移：路由与计划快照。CREATE TABLE IF NOT EXISTS 不会给存量库加列，故用幂等 ADD。
+ALTER TABLE message ADD COLUMN IF NOT EXISTS route JSONB;
+ALTER TABLE message ADD COLUMN IF NOT EXISTS execution_plan JSONB;
 
 -- 历史消息按会话读取，并以自增 id 作为会话内稳定时序（GET /api/conversations/{id}/messages）
 CREATE INDEX IF NOT EXISTS idx_message_conversation_id
@@ -175,6 +181,8 @@ COMMENT ON COLUMN message.content IS '消息正文；失败或停止时保留已
 COMMENT ON COLUMN message.status IS '消息状态：DONE / FAILED / STOPPED';
 COMMENT ON COLUMN message.sources IS '助手消息的引用来源 JSONB 快照；用户消息为 NULL';
 COMMENT ON COLUMN message.provider IS '生成该回答的模型标识';
+COMMENT ON COLUMN message.route IS '路由结果快照（JSONB）：route / confidence / reason / irrelevantCategory；仅助手消息';
+COMMENT ON COLUMN message.execution_plan IS '计划与执行快照（JSONB）：goal / steps / 降级原因；仅计划轮与降级轮';
 COMMENT ON COLUMN message.elapsed_ms IS '生成耗时（毫秒）';
 COMMENT ON COLUMN message.error_msg IS 'FAILED 时的错误说明';
 COMMENT ON COLUMN message.create_time IS '消息创建时间';
