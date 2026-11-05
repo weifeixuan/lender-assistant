@@ -55,6 +55,9 @@ rag:
     # 无关问题的固定提示（非模型生成，done.provider=rule）
     irrelevant-reply: ${RAG_ROUTING_IRRELEVANT_REPLY:我只回答资方接入相关的资料问题，可以换个问法再试试。}
   plan:
+    # 计划步数区间：越界整单弃用，退回 KNOWLEDGE 单次检索
+    min-steps: ${RAG_PLAN_MIN_STEPS:2}
+    max-steps: ${RAG_PLAN_MAX_STEPS:5}
     tools:
       # mock 业务工具开关：生产必须关闭，只有联调需要 customer.profile / lender.product 时打开
       mock-enabled: ${RAG_PLAN_TOOLS_MOCK_ENABLED:false}
