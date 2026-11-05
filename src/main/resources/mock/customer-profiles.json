@@ -1,0 +1,17 @@
+{
+  "C10001": {
+    "creditTotal": "500",
+    "creditUsed": "320",
+    "creditAvailable": "180",
+    "riskLevel": "B",
+    "cooperationStatus": "合作中"
+  },
+  "C10002": {
+    "creditTotal": "200",
+    "creditUsed": "40",
+    "creditAvailable": "160",
+    "riskLevel": "A",
+    "cooperationStatus": "合作中"
+  }
+}
+</content>

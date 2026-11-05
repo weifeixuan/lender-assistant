@@ -1,0 +1,15 @@
+{
+  "P001": {
+    "rate": "0.35%",
+    "term": "12 期",
+    "disburseCondition": "需完成对公账户验证",
+    "supportedInterfaces": "单笔代收、批量代收"
+  },
+  "P002": {
+    "rate": "0.28%",
+    "term": "24 期",
+    "disburseCondition": "需提供近三个月流水",
+    "supportedInterfaces": "单笔代付"
+  }
+}
+</content>
