@@ -1,7 +1,7 @@
 package com.lender.assistant.draft.strategy.impl;
 
 import com.lender.assistant.draft.strategy.DraftGeneratorStrategy;
-import com.lender.assistant.extract.model.FieldMapping;
+import com.lender.assistant.extract.model.entity.FieldMappingEntity;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -56,12 +56,12 @@ public class OpenAiCompatibleDraftGeneratorStrategy implements DraftGeneratorStr
     }
 
     @Override
-    public String generateDraft(String docId, List<FieldMapping> mappings) {
+    public String generateDraft(String docId, List<FieldMappingEntity> mappings) {
         StringBuilder user = new StringBuilder();
         user.append("【骨架模板（在其上填充）】\n")
             .append(loadSkeleton())
             .append("\n\n【字段映射表】\n");
-        for (FieldMapping m : mappings) {
+        for (FieldMappingEntity m : mappings) {
             user.append("- ").append(m.internalFieldId()).append(" (").append(m.internalFieldName())
                 .append(") = ").append(m.lenderValue())
                 .append("　出处: ").append(m.sourceQuote()).append('\n');

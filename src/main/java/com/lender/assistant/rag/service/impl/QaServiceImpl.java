@@ -5,13 +5,13 @@ import com.lender.assistant.common.constant.MessageConstants;
 import com.lender.assistant.common.exception.BizException;
 import com.lender.assistant.common.exception.ErrorCode;
 import com.lender.assistant.common.util.ThreadPoolFactory;
-import com.lender.assistant.conversation.model.AssistantMessageCompletion;
-import com.lender.assistant.conversation.model.ConversationRound;
-import com.lender.assistant.conversation.model.QaSourceSnapshot;
+import com.lender.assistant.conversation.model.dto.AssistantMessageCompletionDTO;
+import com.lender.assistant.conversation.model.dto.ConversationRoundDTO;
+import com.lender.assistant.conversation.model.dto.QaSourceSnapshotDTO;
 import com.lender.assistant.conversation.service.ConversationHistoryAssembler;
 import com.lender.assistant.conversation.service.ConversationLockRegistry;
 import com.lender.assistant.conversation.service.ConversationService;
-import com.lender.assistant.conversation.model.MessageRow;
+import com.lender.assistant.conversation.model.entity.MessageEntity;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lender.assistant.rag.plan.PlanAndExecuteService;
@@ -187,7 +187,7 @@ public class QaServiceImpl implements QaService {
 
         // 首问懒创建 / 既有会话追问：都在请求线程内先落用户消息（DB 失败直接以普通 JSON 报错，不必开 SSE）。
         // 两条路径都先占同一把会话锁：首问的 conversationId 已随 meta 回传，必须从第一轮起就挡住并发追问。
-        ConversationRound round = beginRound(conversationId, userId, question);
+        ConversationRoundDTO round = beginRound(conversationId, userId, question);
 
         // 关键：立即返回 emitter，把检索+生成+send 放到独立线程。
         // 旧写法在请求线程内 send，Spring 的 ResponseBodyEmitter 会把数据先堆进
@@ -206,7 +206,7 @@ public class QaServiceImpl implements QaService {
             log.error("SSE 任务提交失败，已落 FAILED 兜底: conversationId={}", round.conversationId(), e);
             lockRegistry.release(round.conversationId());
             // 模型从未运行：provider 按 PRD §2.5 为 null；诊断信息只进日志（见上一行），不写进用户可见的 error
-            conversationService.completeRound(new AssistantMessageCompletion(
+            conversationService.completeRound(new AssistantMessageCompletionDTO(
                     round.conversationId(), round.roundId(), round.assistantMessageId(),
                     "", List.of(), null, 0, MessageConstants.STATUS_FAILED,
                     "服务繁忙，请重试", null, null));
@@ -221,12 +221,12 @@ public class QaServiceImpl implements QaService {
      * 归属校验必须先于占锁：他人会话/已删除会话返回 404，不能被误报成 409，也不能触碰他人的锁。
      * 占锁后落库失败要立刻释放，避免这一轮把会话永久锁死。
      */
-    private ConversationRound beginRound(String conversationId, String userId, String question) {
+    private ConversationRoundDTO beginRound(String conversationId, String userId, String question) {
         boolean firstQuestion = conversationId == null;
         if (!firstQuestion) {
             conversationService.validateOwnership(conversationId, userId);
         }
-        ConversationRound round = new ConversationRound(
+        ConversationRoundDTO round = new ConversationRoundDTO(
                 firstQuestion ? UUID.randomUUID().toString() : conversationId,
                 UUID.randomUUID().toString(),
                 UUID.randomUUID().toString(),
@@ -249,7 +249,7 @@ public class QaServiceImpl implements QaService {
 
     /** SSE 推送主流程，运行在 streamExecutor 工作线程上；每个 send 都是即时 flush 的真流式。 */
     public void streamAnswer(SseEmitter emitter, String question, int topK, String userId,
-                             ConversationRound round, long t0) {
+                             ConversationRoundDTO round, long t0) {
         RoundStream stream = new RoundStream(round, t0);
         // 超时 / 连接异常 / 提前完成都置位"客户端已断开"并落 STOPPED；
         // 正常路径先落 DONE 再 complete，因此这些回调不会覆盖终态。
@@ -332,7 +332,7 @@ public class QaServiceImpl implements QaService {
         }
         RoutingDecision decision;
         try {
-            List<MessageRow> rows = historyAssembler.listRows(request.round().conversationId());
+            List<MessageEntity> rows = historyAssembler.listRows(request.round().conversationId());
             QuestionRoute previous = previousRouteResolver == null
                     ? null : previousRouteResolver.resolve(rows);
             decision = routingService.route(
@@ -433,7 +433,7 @@ public class QaServiceImpl implements QaService {
 
     /** 单轮请求参数：收敛参数个数，避免编排方法超过 4 个入参 */
     private record RoundRequest(String question, String lastUser, int topK,
-                                ConversationRound round, RoundStream stream, PlanBudget budget) {
+                                ConversationRoundDTO round, RoundStream stream, PlanBudget budget) {
     }
 
     /** 无关问题：固定提示不检索不生成，sources 为空，provider=rule */
@@ -469,9 +469,9 @@ public class QaServiceImpl implements QaService {
         return send(emitter, "sources", sources, stream);
     }
 
-    /** SSE 响应元素 → 落库快照，字段逐项对应（QaSourceSnapshot 与 QaSourceResponse 同构） */
-    private static QaSourceSnapshot toSnapshot(QaSourceResponse source) {
-        return new QaSourceSnapshot(source.idx(), source.docTitle(), source.sectionPath(),
+    /** SSE 响应元素 → 落库快照，字段逐项对应（QaSourceSnapshotDTO 与 QaSourceResponse 同构） */
+    private static QaSourceSnapshotDTO toSnapshot(QaSourceResponse source) {
+        return new QaSourceSnapshotDTO(source.idx(), source.docTitle(), source.sectionPath(),
                 source.chunkId(), source.content(), source.vectorDistance(),
                 source.keywordHits(), source.bothChannels(), source.rrfScore());
     }
@@ -556,7 +556,7 @@ public class QaServiceImpl implements QaService {
     /** 单轮流式状态：累积正文与来源快照，并保证终态只落库一次 */
     private final class RoundStream {
 
-        private final ConversationRound round;
+        private final ConversationRoundDTO round;
         private final long startedAt;
         private final StringBuilder content = new StringBuilder();
         private final AtomicBoolean finished = new AtomicBoolean(false);
@@ -567,7 +567,7 @@ public class QaServiceImpl implements QaService {
          * 而不是等 generate 自然结束（否则白烧 token，且会话锁要多占一整段生成时间）。
          */
         private final AnswerCancellation cancellation = new AnswerCancellation();
-        private List<QaSourceSnapshot> sources = List.of();
+        private List<QaSourceSnapshotDTO> sources = List.of();
         private String providerName = QaServiceImpl.this.generator.name();
         /** 本轮路由结果；mock 模式为 null */
         private RoutingDecision routeDecision;
@@ -577,7 +577,7 @@ public class QaServiceImpl implements QaService {
         /** 合成上下文是否被 6000 字符截断（票 09） */
         private boolean contextTruncated;
 
-        private RoundStream(ConversationRound round, long startedAt) {
+        private RoundStream(ConversationRoundDTO round, long startedAt) {
             this.round = round;
             this.startedAt = startedAt;
         }
@@ -596,7 +596,7 @@ public class QaServiceImpl implements QaService {
             }
         }
 
-        synchronized void sources(List<QaSourceSnapshot> value) {
+        synchronized void sources(List<QaSourceSnapshotDTO> value) {
             this.sources = value;
         }
 
@@ -651,7 +651,7 @@ public class QaServiceImpl implements QaService {
                 return;
             }
             String text;
-            List<QaSourceSnapshot> snapshot;
+            List<QaSourceSnapshotDTO> snapshot;
             String routeJson;
             String executionPlanJson;
             synchronized (this) {
@@ -660,7 +660,7 @@ public class QaServiceImpl implements QaService {
                 routeJson = writeJson(routeDecision);
                 executionPlanJson = writeExecutionPlanJson();
             }
-            conversationService.completeRound(new AssistantMessageCompletion(
+            conversationService.completeRound(new AssistantMessageCompletionDTO(
                     round.conversationId(), round.roundId(), round.assistantMessageId(),
                     text, snapshot, providerName, System.currentTimeMillis() - startedAt,
                     status, error, routeJson, executionPlanJson));

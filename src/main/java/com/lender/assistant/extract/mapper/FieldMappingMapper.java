@@ -1,7 +1,7 @@
 package com.lender.assistant.extract.mapper;
 
-import com.lender.assistant.extract.model.FieldMappingRaw;
-import com.lender.assistant.extract.model.FieldMappingRow;
+import com.lender.assistant.extract.model.entity.FieldMappingRaw;
+import com.lender.assistant.extract.model.entity.FieldMappingRow;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 

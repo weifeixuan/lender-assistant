@@ -1,4 +1,4 @@
-package com.lender.assistant.extract.vo.response;
+package com.lender.assistant.extract.model.response;
 
 /**
  * 人工确认/修正的结果（对应 POST /api/extract/{docId}/confirm 的响应体）。

@@ -1,6 +1,6 @@
 package com.lender.assistant.extract.strategy;
 
-import com.lender.assistant.extract.model.FieldMapping;
+import com.lender.assistant.extract.model.entity.FieldMappingEntity;
 import com.lender.assistant.extract.service.InternalFieldCatalog;
 import com.lender.assistant.extract.strategy.impl.MockExtractGeneratorStrategy;
 import com.lender.assistant.rag.model.DocChunkLine;
@@ -16,7 +16,7 @@ import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * Mock 抽取器的特征测试：fixture 是瑞金租赁文档风格的脱敏文本，
- * 期望值来自 docs/plan_phase4.md 第二节"文档中的出处"表。
+ * 期望值按 docs/sample_docs/ 下华信/瑞金两份虚构文档的原文人工核对。
  *
  * Mock 抽取的意义（和 HashEmbeddingStrategy 同一个道理）：
  * 不验证"抽取效果好不好"（那是真实模型版的事），
@@ -46,31 +46,31 @@ class MockExtractGeneratorStrategyTest {
             参数 biz_date 指定对账日期，返回 CSV 内容，UTF-8 编码，逗号分隔。
             """;
 
-    private List<FieldMapping> extract(String title, String text) {
+    private List<FieldMappingEntity> extract(String title, String text) {
         return generator.extract(new DocContent(title, text, List.of(new DocChunkLine(title, null, text))));
     }
 
-    private Map<String, FieldMapping> extractAsMap(String title, String text) {
+    private Map<String, FieldMappingEntity> extractAsMap(String title, String text) {
         return extractAsMap(new DocContent(title, text, List.of(new DocChunkLine(title, null, text))));
     }
 
-    private Map<String, FieldMapping> extractAsMap(DocContent doc) {
-        List<FieldMapping> mappings = generator.extract(doc);
+    private Map<String, FieldMappingEntity> extractAsMap(DocContent doc) {
+        List<FieldMappingEntity> mappings = generator.extract(doc);
         return mappings.stream()
-                .collect(Collectors.toMap(FieldMapping::internalFieldId, m -> m));
+                .collect(Collectors.toMap(FieldMappingEntity::internalFieldId, m -> m));
     }
 
     @Test
     @DisplayName("lender_name：从文档标题提取资方名称")
     void extractsLenderName() {
-        Map<String, FieldMapping> m = extractAsMap("瑞金租赁_资金对接接口文档_v1.0", RUIJIN_TEXT);
+        Map<String, FieldMappingEntity> m = extractAsMap("瑞金租赁_资金对接接口文档_v1.0", RUIJIN_TEXT);
         assertEquals("瑞金租赁", m.get("lender_name").lenderValue());
     }
 
     @Test
     @DisplayName("gateway_url / uat_url：精确 URL 抽取，瑞金无联调地址则不产出该字段")
     void extractsGatewayUrls() {
-        Map<String, FieldMapping> m = extractAsMap("瑞金租赁_资金对接接口文档_v1.0", RUIJIN_TEXT);
+        Map<String, FieldMappingEntity> m = extractAsMap("瑞金租赁_资金对接接口文档_v1.0", RUIJIN_TEXT);
         assertEquals("https://fake-ruijin.example.com/openapi", m.get("gateway_url").lenderValue());
         assertFalse(m.containsKey("uat_url"), "瑞金文档没写联调环境地址——缺失字段不应编造");
     }
@@ -78,7 +78,7 @@ class MockExtractGeneratorStrategyTest {
     @Test
     @DisplayName("auth_method / credentials：鉴权与准入凭证")
     void extractsAuthAndCredentials() {
-        Map<String, FieldMapping> m = extractAsMap("瑞金租赁_资金对接接口文档_v1.0", RUIJIN_TEXT);
+        Map<String, FieldMappingEntity> m = extractAsMap("瑞金租赁_资金对接接口文档_v1.0", RUIJIN_TEXT);
         assertTrue(m.get("auth_method").lenderValue().contains("RSA2"));
         assertTrue(m.get("credentials").lenderValue().contains("partner_id"));
         assertTrue(m.get("credentials").lenderValue().contains("partner_key"));
@@ -87,7 +87,7 @@ class MockExtractGeneratorStrategyTest {
     @Test
     @DisplayName("payment_api：放款指令接口路径；collection_api 瑞金没有则缺失")
     void extractsApiPaths() {
-        Map<String, FieldMapping> m = extractAsMap("瑞金租赁_资金对接接口文档_v1.0", RUIJIN_TEXT);
+        Map<String, FieldMappingEntity> m = extractAsMap("瑞金租赁_资金对接接口文档_v1.0", RUIJIN_TEXT);
         assertEquals("/openapi/loan/order/create", m.get("payment_api").lenderValue());
         assertFalse(m.containsKey("collection_api"), "瑞金无代收接口——缺失不应编造");
     }
@@ -95,7 +95,7 @@ class MockExtractGeneratorStrategyTest {
     @Test
     @DisplayName("status_enum / file_delivery / file_format：状态枚举与对账文件要素")
     void extractsStatusAndFileFields() {
-        Map<String, FieldMapping> m = extractAsMap("瑞金租赁_资金对接接口文档_v1.0", RUIJIN_TEXT);
+        Map<String, FieldMappingEntity> m = extractAsMap("瑞金租赁_资金对接接口文档_v1.0", RUIJIN_TEXT);
         assertTrue(m.get("status_enum").lenderValue().contains("SUCCESS"));
         assertTrue(m.get("status_enum").lenderValue().contains("PROCESSING"));
         assertTrue(m.get("file_delivery").lenderValue().contains("T+1"));
@@ -105,9 +105,9 @@ class MockExtractGeneratorStrategyTest {
     @Test
     @DisplayName("每条映射带原文出处与 (0,1] 置信度，且 internalFieldName 来自字段目录")
     void mappingsCarrySourceQuoteAndConfidence() {
-        List<FieldMapping> mappings = extract("瑞金租赁_资金对接接口文档_v1.0", RUIJIN_TEXT);
+        List<FieldMappingEntity> mappings = extract("瑞金租赁_资金对接接口文档_v1.0", RUIJIN_TEXT);
         assertFalse(mappings.isEmpty());
-        for (FieldMapping fm : mappings) {
+        for (FieldMappingEntity fm : mappings) {
             assertNotNull(InternalFieldCatalog.byId(fm.internalFieldId()), "未知字段 id: " + fm.internalFieldId());
             assertEquals(InternalFieldCatalog.byId(fm.internalFieldId()).name(), fm.internalFieldName());
             assertFalse(fm.sourceQuote() == null || fm.sourceQuote().isBlank(),
@@ -129,7 +129,7 @@ class MockExtractGeneratorStrategyTest {
                                 "瑞金租赁 资金对接接口文档 > 一、接口总则", firstChapter),
                         new DocChunkLine("瑞金租赁_资金对接接口文档_v1.0",
                                 "瑞金租赁 资金对接接口文档 > 二、放款指令接口", secondChapter)));
-        Map<String, FieldMapping> m = extractAsMap(crossChunk);
+        Map<String, FieldMappingEntity> m = extractAsMap(crossChunk);
         assertTrue(m.containsKey("payment_api"), "章节信息来自 chunk 的 sectionPath，路径必须归入 payment_api");
         assertEquals("/openapi/loan/order/create", m.get("payment_api").lenderValue());
     }
@@ -143,7 +143,7 @@ class MockExtractGeneratorStrategyTest {
                 ring(200) | 是否必填: 是 | 备注: 资金用途
                 异步通知字段：loan_status 取值 SUCCESS / FAILED / PROCESSING；fail_reason 在失败时返回中文描述。
                 """;
-        Map<String, FieldMapping> m = extractAsMap("瑞金租赁_资金对接接口文档_v1.0", truncated);
+        Map<String, FieldMappingEntity> m = extractAsMap("瑞金租赁_资金对接接口文档_v1.0", truncated);
         assertTrue(m.get("status_enum").lenderValue().contains("PROCESSING"),
                 "应取最完整的枚举而非第一个（截断的）匹配");
     }
@@ -158,7 +158,7 @@ class MockExtractGeneratorStrategyTest {
                 生产环境网关地址为 https://fake-huaxin.example.com/gateway。请求报文统一使用 UTF-8 编码的 JSON。
                 响应中的核心字段：hxSeqNo 为我行流水号，最终态以对账文件或交易查询接口为准，状态为 PROCESSING 时不得直接作为失败处理。
                 """;
-        Map<String, FieldMapping> m = extractAsMap("华信银行_对公收付接口文档_v1.0", trap);
+        Map<String, FieldMappingEntity> m = extractAsMap("华信银行_对公收付接口文档_v1.0", trap);
         assertFalse(m.containsKey("file_delivery"), "'以对账文件…为准'不是文件获取方式，不得误报");
         assertFalse(m.containsKey("file_format"), "'报文 UTF-8 编码'不是对账文件格式，不得误报");
         assertEquals("https://fake-huaxin.example.com/gateway", m.get("gateway_url").lenderValue());
@@ -178,7 +178,7 @@ class MockExtractGeneratorStrategyTest {
                 接口路径 /v1/transactions/query。支持按 outBizNo 或 hxSeqNo 查询。
                 响应中的核心字段：hxSeqNo 为我行流水号，status 取值 PROCESSING/SUCCESS/FAIL。
                 """;
-        Map<String, FieldMapping> m = extractAsMap("华信银行_对公收付接口文档_v1.0", huaxin);
+        Map<String, FieldMappingEntity> m = extractAsMap("华信银行_对公收付接口文档_v1.0", huaxin);
         assertEquals("华信银行", m.get("lender_name").lenderValue());
         assertEquals("https://fake-huaxin.example.com/gateway", m.get("gateway_url").lenderValue());
         assertEquals("https://fake-huaxin-uat.example.com/gateway", m.get("uat_url").lenderValue());

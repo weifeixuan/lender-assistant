@@ -1,4 +1,4 @@
-package com.lender.assistant.extract.vo.request;
+package com.lender.assistant.extract.model.request;
 
 /**
  * POST /api/extract/{docId}/confirm 请求体：人工确认/修正一条映射。

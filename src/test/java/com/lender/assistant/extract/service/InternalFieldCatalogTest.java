@@ -1,6 +1,6 @@
 package com.lender.assistant.extract.service;
 
-import com.lender.assistant.extract.model.InternalField;
+import com.lender.assistant.extract.model.entity.InternalFieldEntity;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -22,7 +22,7 @@ class InternalFieldCatalogTest {
         assertEquals(12, InternalFieldCatalog.ALL.size(), "字段集规模变更必须显式改本测试——这是评估口径的一部分");
 
         Set<String> ids = new HashSet<>();
-        for (InternalField f : InternalFieldCatalog.ALL) {
+        for (InternalFieldEntity f : InternalFieldCatalog.ALL) {
             assertFalse(ids.contains(f.id()), "字段 id 重复: " + f.id());
             ids.add(f.id());
             assertFalse(f.name() == null || f.name().isBlank(), f.id() + " 缺名称");

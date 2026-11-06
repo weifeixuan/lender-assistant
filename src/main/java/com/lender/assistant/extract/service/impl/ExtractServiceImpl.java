@@ -4,10 +4,10 @@ import com.lender.assistant.common.constant.LlmScene;
 import com.lender.assistant.common.exception.BizException;
 import com.lender.assistant.common.exception.ErrorCode;
 import com.lender.assistant.extract.mapper.FieldMappingMapper;
-import com.lender.assistant.extract.model.FieldMapping;
-import com.lender.assistant.extract.model.FieldMappingRaw;
-import com.lender.assistant.extract.model.FieldMappingRow;
-import com.lender.assistant.extract.model.InternalField;
+import com.lender.assistant.extract.model.entity.FieldMappingEntity;
+import com.lender.assistant.extract.model.entity.FieldMappingRaw;
+import com.lender.assistant.extract.model.entity.FieldMappingRow;
+import com.lender.assistant.extract.model.entity.InternalFieldEntity;
 import com.lender.assistant.extract.service.ExtractService;
 import com.lender.assistant.extract.service.InternalFieldCatalog;
 import com.lender.assistant.extract.strategy.ExtractGeneratorStrategy;
@@ -44,7 +44,7 @@ public class ExtractServiceImpl implements ExtractService {
     }
 
     @Override
-    public List<FieldMapping> extractFromDoc(String docId) {
+    public List<FieldMappingEntity> extractFromDoc(String docId) {
         DocContent doc = documentService.loadDocContent(docId);
         // 业务失败抛 BizException 而非裸 IllegalArgumentException（§5.3）：带 ErrorCode 供全局处理器定 HTTP 状态与对外 code
         if (doc == null || doc.text().isBlank()) {
@@ -56,7 +56,7 @@ public class ExtractServiceImpl implements ExtractService {
 
     @Override
     @Transactional(rollbackFor = Exception.class)
-    public int saveMappings(String docId, List<FieldMapping> mappings) {
+    public int saveMappings(String docId, List<FieldMappingEntity> mappings) {
         // 先清掉本次没再抽出的 PENDING 旧映射（规则收紧/文档更新后消失的字段不留脏数据）；
         // 人工成果（CONFIRMED/CORRECTED）不受影响——DELETE 只限 PENDING，
         // upsert 的 WHERE status='PENDING' 再守一道。两步必须原子。
@@ -65,7 +65,7 @@ public class ExtractServiceImpl implements ExtractService {
             return 0;   // 空映射：清 stale 即完成，避免 <foreach> 生成空 VALUES
         }
         List<FieldMappingRaw> raws = new ArrayList<>(mappings.size());
-        for (FieldMapping m : mappings) {
+        for (FieldMappingEntity m : mappings) {
             raws.add(new FieldMappingRaw(docId, m.internalFieldId(), m.lenderFieldName(),
                     m.lenderValue(), m.sourceQuote(), m.confidence()));
         }
@@ -78,9 +78,9 @@ public class ExtractServiceImpl implements ExtractService {
     }
 
     @Override
-    public List<FieldMapping> listFieldMappings(String docId) {
+    public List<FieldMappingEntity> listFieldMappings(String docId) {
         return mapper.listForDraft(docId).stream()
-                .map(raw -> new FieldMapping(raw.internalFieldId(), internalFieldName(raw.internalFieldId()),
+                .map(raw -> new FieldMappingEntity(raw.internalFieldId(), internalFieldName(raw.internalFieldId()),
                         raw.lenderFieldName(), raw.lenderValue(), raw.sourceQuote(), raw.confidence()))
                 .toList();
     }
@@ -97,7 +97,7 @@ public class ExtractServiceImpl implements ExtractService {
 
     /** 字段目录查不到时回退为 id 本身——与旧 FieldMappingStore.listFieldMappings 行为一致 */
     private static String internalFieldName(String internalFieldId) {
-        InternalField field = InternalFieldCatalog.byId(internalFieldId);
+        InternalFieldEntity field = InternalFieldCatalog.byId(internalFieldId);
         return field == null ? internalFieldId : field.name();
     }
 }

@@ -1,6 +1,6 @@
-package com.lender.assistant.extract.vo.response;
+package com.lender.assistant.extract.model.response;
 
-import com.lender.assistant.extract.model.FieldMappingRow;
+import com.lender.assistant.extract.model.entity.FieldMappingRow;
 
 import java.util.List;
 

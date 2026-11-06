@@ -4,9 +4,9 @@ import com.lender.assistant.common.constant.LlmScene;
 import com.lender.assistant.common.exception.BizException;
 import com.lender.assistant.common.exception.ErrorCode;
 import com.lender.assistant.extract.mapper.FieldMappingMapper;
-import com.lender.assistant.extract.model.FieldMapping;
-import com.lender.assistant.extract.model.FieldMappingRaw;
-import com.lender.assistant.extract.model.FieldMappingRow;
+import com.lender.assistant.extract.model.entity.FieldMappingEntity;
+import com.lender.assistant.extract.model.entity.FieldMappingRaw;
+import com.lender.assistant.extract.model.entity.FieldMappingRow;
 import com.lender.assistant.extract.service.impl.ExtractServiceImpl;
 import com.lender.assistant.extract.strategy.ExtractGeneratorStrategy;
 import com.lender.assistant.resilience.LlmCallLogger;
@@ -58,7 +58,7 @@ class ExtractServiceTest {
 
         when(generator.name()).thenReturn("Mock");
         when(generator.extract(any(DocContent.class))).thenReturn(List.of(
-                new FieldMapping("gateway_url", "生产网关地址", "网关地址",
+                new FieldMappingEntity("gateway_url", "生产网关地址", "网关地址",
                         "https://fake-x.example.com", "网关地址 https://fake-x.example.com", 0.9)));
         String docText = "网关地址 https://fake-ruijin.example.com/openapi。\n接口路径 /openapi/loan/order/create。";
         when(documentService.loadDocContent("doc1")).thenReturn(
@@ -69,7 +69,7 @@ class ExtractServiceTest {
     @Test
     @DisplayName("正常抽取：文档按 chunk 序拼成全文，生成器收到标题+全文")
     void orchestratesLoadAndExtract() {
-        List<FieldMapping> result = service.extractFromDoc("doc1");
+        List<FieldMappingEntity> result = service.extractFromDoc("doc1");
 
         assertEquals(1, result.size());
         ArgumentCaptor<DocContent> docCaptor = ArgumentCaptor.forClass(DocContent.class);
@@ -102,8 +102,8 @@ class ExtractServiceTest {
         assertEquals(ErrorCode.PARAM_INVALID, e.errorCode(), "文档不存在是业务失败，须带业务码");
     }
 
-    private FieldMapping sampleMapping() {
-        return new FieldMapping("gateway_url", "生产网关地址", "网关地址",
+    private FieldMappingEntity sampleMapping() {
+        return new FieldMappingEntity("gateway_url", "生产网关地址", "网关地址",
                 "https://fake-ruijin.example.com/openapi", "网关地址 https://fake-ruijin.example.com/openapi", 0.9);
     }
 
@@ -157,7 +157,7 @@ class ExtractServiceTest {
                 new FieldMappingRaw("doc1", "gateway_url", "网关地址", "https://x", "网关地址 https://x", 0.9),
                 new FieldMappingRaw("doc1", "no_such_field", "x", "y", "z", 0.7)));
 
-        List<FieldMapping> result = service.listFieldMappings("doc1");
+        List<FieldMappingEntity> result = service.listFieldMappings("doc1");
 
         assertEquals("生产网关地址", result.get(0).internalFieldName(), "目录里的字段必须补出中文名");
         assertEquals("no_such_field", result.get(1).internalFieldName(), "目录查不到时回退为 id，不丢数据");

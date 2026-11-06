@@ -1,7 +1,7 @@
 package com.lender.assistant.extract.service;
 
-import com.lender.assistant.extract.model.FieldMapping;
-import com.lender.assistant.extract.model.FieldMappingRow;
+import com.lender.assistant.extract.model.entity.FieldMappingEntity;
+import com.lender.assistant.extract.model.entity.FieldMappingRow;
 
 import java.util.List;
 
@@ -15,16 +15,16 @@ import java.util.List;
 public interface ExtractService {
 
     /** @throws IllegalArgumentException 文档不存在或未入库 */
-    List<FieldMapping> extractFromDoc(String docId);
+    List<FieldMappingEntity> extractFromDoc(String docId);
 
     /** 落库：先清该文档 stale PENDING 再批量 upsert（只覆盖 PENDING 行），返回写入条数 */
-    int saveMappings(String docId, List<FieldMapping> mappings);
+    int saveMappings(String docId, List<FieldMappingEntity> mappings);
 
     /** 某文档完整映射行（含状态），供 GET /api/extract/{docId} */
     List<FieldMappingRow> listMappings(String docId);
 
     /** 类型化查询（内部字段名由字段目录补全），供草稿生成 */
-    List<FieldMapping> listFieldMappings(String docId);
+    List<FieldMappingEntity> listFieldMappings(String docId);
 
     /** 人工确认/修正：correctedValue 非空 → CORRECTED，否则 → CONFIRMED */
     void confirm(String docId, String internalFieldId, String correctedFieldName, String correctedValue);

@@ -1,4 +1,4 @@
-package com.lender.assistant.extract.model;
+package com.lender.assistant.extract.model.entity;
 
 /**
  * field_mapping 查询行：GET /api/extract/{docId} 的原样返回元素。

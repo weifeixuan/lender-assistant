@@ -1,4 +1,4 @@
-package com.lender.assistant.extract.model;
+package com.lender.assistant.extract.model.entity;
 
 /**
  * field_mapping 的原始行（无内部字段名）：两个用途共用同一 record —

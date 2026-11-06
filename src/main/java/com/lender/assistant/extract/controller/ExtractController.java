@@ -2,14 +2,14 @@ package com.lender.assistant.extract.controller;
 
 import com.lender.assistant.common.exception.BizException;
 import com.lender.assistant.common.exception.ErrorCode;
-import com.lender.assistant.extract.model.FieldMapping;
-import com.lender.assistant.extract.model.InternalField;
+import com.lender.assistant.extract.model.entity.FieldMappingEntity;
+import com.lender.assistant.extract.model.entity.InternalFieldEntity;
 import com.lender.assistant.extract.service.ExtractService;
 import com.lender.assistant.extract.service.InternalFieldCatalog;
-import com.lender.assistant.extract.vo.request.ConfirmRequest;
-import com.lender.assistant.extract.vo.response.ConfirmResponse;
-import com.lender.assistant.extract.vo.response.ExtractListResponse;
-import com.lender.assistant.extract.vo.response.ExtractRunResponse;
+import com.lender.assistant.extract.model.request.ConfirmRequest;
+import com.lender.assistant.extract.model.response.ConfirmResponse;
+import com.lender.assistant.extract.model.response.ExtractListResponse;
+import com.lender.assistant.extract.model.response.ExtractRunResponse;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -38,7 +38,7 @@ public class ExtractController {
     public ExtractRunResponse extract(@PathVariable String docId) {
         // 只调一次模型：结果先落库再转响应，三处复用同一份结果。
         // 文档不存在等异常不再就地 catch——交由全局异常处理器按语义转 400/500
-        List<FieldMapping> mappings = extractService.extractFromDoc(docId);
+        List<FieldMappingEntity> mappings = extractService.extractFromDoc(docId);
         extractService.saveMappings(docId, mappings);
         return new ExtractRunResponse(docId, mappings.size(), mappings);
     }
@@ -60,7 +60,7 @@ public class ExtractController {
     }
 
     @GetMapping("/fields")
-    public List<InternalField> fields() {
+    public List<InternalFieldEntity> fields() {
         return InternalFieldCatalog.ALL;
     }
 }

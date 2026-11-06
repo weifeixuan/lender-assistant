@@ -6,7 +6,7 @@ import com.lender.assistant.common.exception.ErrorCode;
 import com.lender.assistant.draft.service.DraftService;
 import com.lender.assistant.draft.strategy.DraftGeneratorStrategy;
 import com.lender.assistant.draft.vo.response.DraftResponse;
-import com.lender.assistant.extract.model.FieldMapping;
+import com.lender.assistant.extract.model.entity.FieldMappingEntity;
 import com.lender.assistant.extract.service.ExtractService;
 import com.lender.assistant.resilience.ResilientLlmExecutor;
 import org.springframework.stereotype.Service;
@@ -40,7 +40,7 @@ public class DraftServiceImpl implements DraftService {
 
     @Override
     public DraftResponse generate(String docId) {
-        List<FieldMapping> mappings = extractService.listFieldMappings(docId);
+        List<FieldMappingEntity> mappings = extractService.listFieldMappings(docId);
         // 业务失败抛 BizException 而非裸 IllegalArgumentException（§5.3）：带 ErrorCode 供全局处理器定 HTTP 状态与对外 code
         if (mappings.isEmpty()) {
             throw new BizException(ErrorCode.PARAM_INVALID,

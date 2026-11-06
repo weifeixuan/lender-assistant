@@ -1,6 +1,6 @@
 package com.lender.assistant.extract.strategy;
 
-import com.lender.assistant.extract.model.FieldMapping;
+import com.lender.assistant.extract.model.entity.FieldMappingEntity;
 import com.lender.assistant.rag.model.DocContent;
 
 import java.util.List;
@@ -21,7 +21,7 @@ public interface ExtractGeneratorStrategy {
      * @param doc 文档标题 + 全文 + 结构化 chunk 行（见 {@link DocContent}）
      * @return 抽到的映射列表；文档中不存在的字段**不应**出现在结果里（宁缺勿编）
      */
-    List<FieldMapping> extract(DocContent doc);
+    List<FieldMappingEntity> extract(DocContent doc);
 
     /** 实现标识（"Mock" / 实际模型名），进留痕日志与前端展示 */
     String name();

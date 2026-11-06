@@ -13,7 +13,7 @@
 -->
 <mapper namespace="com.lender.assistant.extract.mapper.FieldMappingMapper">
 
-    <resultMap id="rowMap" type="com.lender.assistant.extract.model.FieldMappingRow">
+    <resultMap id="rowMap" type="com.lender.assistant.extract.model.entity.FieldMappingRow">
         <constructor>
             <arg column="id" javaType="java.lang.Long"/>
             <arg column="doc_id" javaType="java.lang.String"/>
@@ -26,7 +26,7 @@
         </constructor>
     </resultMap>
 
-    <resultMap id="rawMap" type="com.lender.assistant.extract.model.FieldMappingRaw">
+    <resultMap id="rawMap" type="com.lender.assistant.extract.model.entity.FieldMappingRaw">
         <constructor>
             <arg column="doc_id" javaType="java.lang.String"/>
             <arg column="internal_field_id" javaType="java.lang.String"/>

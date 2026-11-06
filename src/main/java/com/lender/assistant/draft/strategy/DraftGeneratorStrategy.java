@@ -1,6 +1,6 @@
 package com.lender.assistant.draft.strategy;
 
-import com.lender.assistant.extract.model.FieldMapping;
+import com.lender.assistant.extract.model.entity.FieldMappingEntity;
 
 import java.util.List;
 
@@ -18,7 +18,7 @@ public interface DraftGeneratorStrategy {
      * @param mappings 该文档已确认/待确认的字段映射
      * @return Java 源码草稿文本（不含 {{...}} 占位符残留）
      */
-    String generateDraft(String docId, List<FieldMapping> mappings);
+    String generateDraft(String docId, List<FieldMappingEntity> mappings);
 
     String name();
 }

@@ -1,6 +1,6 @@
 package com.lender.assistant.extract.strategy.impl;
 
-import com.lender.assistant.extract.model.FieldMapping;
+import com.lender.assistant.extract.model.entity.FieldMappingEntity;
 import com.lender.assistant.extract.service.InternalFieldCatalog;
 import com.lender.assistant.extract.strategy.ExtractGeneratorStrategy;
 import com.lender.assistant.rag.model.DocChunkLine;
@@ -50,16 +50,16 @@ public class MockExtractGeneratorStrategy implements ExtractGeneratorStrategy {
             "^\\s*(?:\\d+(?:\\.\\d+)*\\s|[一二三四五六七八九十]+[、.]|（[一二三四五六七八九十]+）)");
 
     @Override
-    public List<FieldMapping> extract(DocContent doc) {
+    public List<FieldMappingEntity> extract(DocContent doc) {
         String docTitle = doc.docTitle();
         String docText = doc.text();
-        List<FieldMapping> out = new ArrayList<>();
+        List<FieldMappingEntity> out = new ArrayList<>();
         List<String> textLines = List.of(docText.split("\\r?\\n|。"));
 
         // 1. 资方名称：标题 → 首行兜底
         String lenderName = extractLenderName(docTitle, docText);
         if (lenderName != null) {
-            FieldMapping lenderNameMapping = new FieldMapping("lender_name", "资方名称", "资方自称", lenderName,
+            FieldMappingEntity lenderNameMapping = new FieldMappingEntity("lender_name", "资方名称", "资方自称", lenderName,
                     firstLineOf(docText), CONF_EXACT);
             out.add(lenderNameMapping);
         }
@@ -72,7 +72,7 @@ public class MockExtractGeneratorStrategy implements ExtractGeneratorStrategy {
         Matcher authMatcher = AUTH.matcher(docText);
         String auth = authMatcher.find() ? authMatcher.group().trim() : null;
         if (auth != null) {
-            FieldMapping authMethod = new FieldMapping("auth_method", "鉴权方式", "认证/签名表述", auth,
+            FieldMappingEntity authMethod = new FieldMappingEntity("auth_method", "鉴权方式", "认证/签名表述", auth,
                     lineContaining(textLines, auth), CONF_SENTENCE);
             out.add(authMethod);
         }
@@ -83,7 +83,7 @@ public class MockExtractGeneratorStrategy implements ExtractGeneratorStrategy {
             List<String> ids = IDENTIFIER.matcher(credSentence).results()
                     .map(mr -> mr.group()).distinct().toList();
             if (!ids.isEmpty()) {
-                FieldMapping credentials = new FieldMapping("credentials", "准入凭证字段",
+                FieldMappingEntity credentials = new FieldMappingEntity("credentials", "准入凭证字段",
                         String.join(", ", ids), credSentence.trim(),
                         lineContaining(textLines, ids.get(0)), CONF_SENTENCE);
                 out.add(credentials);
@@ -96,7 +96,7 @@ public class MockExtractGeneratorStrategy implements ExtractGeneratorStrategy {
             signSentence = firstSentenceContaining(docText, "签名");
         }
         if (signSentence != null) {
-            FieldMapping signRule = new FieldMapping("sign_rule", "签名规则", "签名表述", signSentence.trim(),
+            FieldMappingEntity signRule = new FieldMappingEntity("sign_rule", "签名规则", "签名表述", signSentence.trim(),
                     lineContaining(textLines, "签名"), CONF_SENTENCE);
             out.add(signRule);
         }
@@ -114,7 +114,7 @@ public class MockExtractGeneratorStrategy implements ExtractGeneratorStrategy {
             }
         }
         if (bestStatus != null) {
-            FieldMapping statusEnum = new FieldMapping("status_enum", "交易状态枚举", "status", bestStatus,
+            FieldMappingEntity statusEnum = new FieldMappingEntity("status_enum", "交易状态枚举", "status", bestStatus,
                     lineContaining(textLines, bestStatus), CONF_EXACT);
             out.add(statusEnum);
         }
@@ -129,7 +129,7 @@ public class MockExtractGeneratorStrategy implements ExtractGeneratorStrategy {
                     || (low.contains("日末文件") && (low.contains("生成") || low.contains("推送")));
         });
         if (delivery != null) {
-            FieldMapping fileDelivery = new FieldMapping("file_delivery", "对账文件获取方式", "文件获取", delivery.trim(),
+            FieldMappingEntity fileDelivery = new FieldMappingEntity("file_delivery", "对账文件获取方式", "文件获取", delivery.trim(),
                     lineContaining(textLines, "对账"), CONF_SENTENCE);
             out.add(fileDelivery);
         }
@@ -145,7 +145,7 @@ public class MockExtractGeneratorStrategy implements ExtractGeneratorStrategy {
                 if (dl.find()) {
                     value += "，" + dl.group().trim();
                 }
-                FieldMapping fileFormat = new FieldMapping("file_format", "对账文件格式", "文件格式", value,
+                FieldMappingEntity fileFormat = new FieldMappingEntity("file_format", "对账文件格式", "文件格式", value,
                         lineContaining(textLines, cs.group()), CONF_SENTENCE);
                 out.add(fileFormat);
             }
@@ -174,11 +174,11 @@ public class MockExtractGeneratorStrategy implements ExtractGeneratorStrategy {
         return byText.find() ? byText.group(1).trim() : null;
     }
 
-    private void addRegexMapping(List<FieldMapping> out, String text, String fieldId,
+    private void addRegexMapping(List<FieldMappingEntity> out, String text, String fieldId,
                                  String fieldName, String lenderField, Pattern p, double conf) {
         Matcher m = p.matcher(text);
         if (m.find()) {
-            FieldMapping mapping = new FieldMapping(fieldId, fieldName, lenderField, m.group(1).trim(),
+            FieldMappingEntity mapping = new FieldMappingEntity(fieldId, fieldName, lenderField, m.group(1).trim(),
                     lineContaining(List.of(text.split("\\r?\\n|。")), m.group(1)), conf);
             out.add(mapping);
         }
@@ -190,8 +190,8 @@ public class MockExtractGeneratorStrategy implements ExtractGeneratorStrategy {
      * ② 行内编号标题（直接抽取纯文本时的兜底）。
      * 取"路径出现前最近一次声明的章节"做分类。
      */
-    private List<FieldMapping> extractApiPaths(List<DocChunkLine> chunkLines) {
-        List<FieldMapping> out = new ArrayList<>();
+    private List<FieldMappingEntity> extractApiPaths(List<DocChunkLine> chunkLines) {
+        List<FieldMappingEntity> out = new ArrayList<>();
         String section = "";
         for (DocChunkLine chunkLine : chunkLines) {
             if (chunkLine.sectionPath() != null && !chunkLine.sectionPath().isBlank()) {
@@ -207,7 +207,7 @@ public class MockExtractGeneratorStrategy implements ExtractGeneratorStrategy {
                     String fieldId = classifyApiSection(section);
                     if (fieldId != null && out.stream().noneMatch(fm -> fm.internalFieldId().equals(fieldId))) {
                         String name = InternalFieldCatalog.byId(fieldId).name();
-                        FieldMapping apiPath = new FieldMapping(fieldId, name, section, path.group(1), line, CONF_EXACT);
+                        FieldMappingEntity apiPath = new FieldMappingEntity(fieldId, name, section, path.group(1), line, CONF_EXACT);
                         out.add(apiPath);
                     }
                 }

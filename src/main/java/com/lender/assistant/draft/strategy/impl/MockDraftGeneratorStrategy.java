@@ -1,7 +1,7 @@
 package com.lender.assistant.draft.strategy.impl;
 
 import com.lender.assistant.draft.strategy.DraftGeneratorStrategy;
-import com.lender.assistant.extract.model.FieldMapping;
+import com.lender.assistant.extract.model.entity.FieldMappingEntity;
 import com.lender.assistant.extract.service.InternalFieldCatalog;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
@@ -49,9 +49,9 @@ public class MockDraftGeneratorStrategy implements DraftGeneratorStrategy {
     }
 
     @Override
-    public String generateDraft(String docId, List<FieldMapping> mappings) {
+    public String generateDraft(String docId, List<FieldMappingEntity> mappings) {
         Map<String, String> byField = mappings.stream()
-                .collect(Collectors.toMap(FieldMapping::internalFieldId, FieldMapping::lenderValue, (a, b) -> a));
+                .collect(Collectors.toMap(FieldMappingEntity::internalFieldId, FieldMappingEntity::lenderValue, (a, b) -> a));
 
         String lenderName = byField.getOrDefault("lender_name", docId);
         String out = loadSkeleton()

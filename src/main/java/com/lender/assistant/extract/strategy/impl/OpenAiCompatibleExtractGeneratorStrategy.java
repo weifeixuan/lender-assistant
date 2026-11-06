@@ -2,8 +2,8 @@ package com.lender.assistant.extract.strategy.impl;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.lender.assistant.extract.model.FieldMapping;
-import com.lender.assistant.extract.model.InternalField;
+import com.lender.assistant.extract.model.entity.FieldMappingEntity;
+import com.lender.assistant.extract.model.entity.InternalFieldEntity;
 import com.lender.assistant.extract.service.InternalFieldCatalog;
 import com.lender.assistant.extract.strategy.ExtractGeneratorStrategy;
 import com.lender.assistant.rag.model.DocContent;
@@ -46,7 +46,7 @@ public class OpenAiCompatibleExtractGeneratorStrategy implements ExtractGenerato
     }
 
     @Override
-    public List<FieldMapping> extract(DocContent doc) {
+    public List<FieldMappingEntity> extract(DocContent doc) {
         String raw = chatClient.prompt()
                 .system(systemPrompt())
                 .user(userPrompt(doc.docTitle(), doc.text()))
@@ -67,7 +67,7 @@ public class OpenAiCompatibleExtractGeneratorStrategy implements ExtractGenerato
 
                 内部标准字段清单（internalFieldId 必须取自以下之一）：
                 """);
-        for (InternalField f : InternalFieldCatalog.ALL) {
+        for (InternalFieldEntity f : InternalFieldCatalog.ALL) {
             sb.append("- ").append(f.id()).append("（").append(f.name()).append("）：")
               .append(f.description()).append('\n');
         }
@@ -86,8 +86,8 @@ public class OpenAiCompatibleExtractGeneratorStrategy implements ExtractGenerato
     }
 
     /** 解析并过滤模型输出：未知字段 id、空值一律丢弃 */
-    private List<FieldMapping> parse(String raw) {
-        List<FieldMapping> out = new ArrayList<>();
+    private List<FieldMappingEntity> parse(String raw) {
+        List<FieldMappingEntity> out = new ArrayList<>();
         if (raw == null || raw.isBlank()) {
             return out;
         }
@@ -108,14 +108,14 @@ public class OpenAiCompatibleExtractGeneratorStrategy implements ExtractGenerato
         for (JsonNode n : root) {
             String id = text(n, "internalFieldId");
             String value = text(n, "lenderValue");
-            InternalField def = id == null ? null : InternalFieldCatalog.byId(id);
+            InternalFieldEntity def = id == null ? null : InternalFieldCatalog.byId(id);
             // 未知字段 id 或空值：丢弃（模型幻觉进不了映射表）
             if (def == null || value == null || value.isBlank()) {
                 continue;
             }
             String lenderField = text(n, "lenderFieldName");
             String quote = text(n, "sourceQuote");
-            out.add(new FieldMapping(id, def.name(),
+            out.add(new FieldMappingEntity(id, def.name(),
                     lenderField == null || lenderField.isBlank() ? def.name() : lenderField,
                     value,
                     quote == null ? "" : quote,
