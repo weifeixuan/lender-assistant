@@ -141,6 +141,42 @@ class QaServiceTest {
     }
 
     @Test
+    @DisplayName("systemPrompt 禁止评判/否定历史轮回答，资料不足只就当前问题说明")
+    void systemPromptForbidsJudgingHistory() {
+        when(searchService.hybridSearch(any(), any(), anyInt()))
+                .thenReturn(List.of(hit(1, "华信银行_对公收付接口文档", "2 单笔代收接口", "单笔限额 500 万元")));
+
+        qaService.answer("华信单笔代收支持哪些币种", 4, null, USER_ID);
+        awaitAsyncDone(() -> generator.system != null);
+
+        assertTrue(generator.system.contains("不得评判、否定、撤回或质疑历史轮回答的有效性"),
+                "历史结论可能来自业务工具，不能用本轮召回资料反向否定");
+        assertTrue(generator.system.contains("只就当前问题"),
+                "缺资料时说明范围必须限定在当前问题");
+    }
+
+    @Test
+    @DisplayName("回归：历史为工具数据、本轮无相关资料时，上下文带来源标注且系统提示禁止否定历史")
+    void toolBackedHistoryIsNotDiscredited() {
+        when(historyAssembler.assemble("conv-1", "round-1")).thenReturn(List.of(
+                new ChatTurn("USER", "华信币种和 C10001 额度"),
+                new ChatTurn("ASSISTANT", "客户 C10001：可用 180 万元"
+                        + "\n[上一轮回答包含业务工具数据：customer.profile，非知识库文档]")));
+        when(searchService.hybridSearch(any(), any(), anyInt()))
+                .thenReturn(List.of(hit(1, "华信银行_对公收付接口文档", "2 单笔代收接口", "单笔限额 500 万元")));
+
+        qaService.streamAnswer(new RecordingEmitter(), "华信单笔代收支持哪些币种", 4, USER_ID,
+                round, System.currentTimeMillis());
+
+        assertEquals(2, generator.history.size());
+        assertTrue(generator.history.get(1).content()
+                        .contains("[上一轮回答包含业务工具数据：customer.profile，非知识库文档]"),
+                "工具来源标注必须进入本轮上下文");
+        assertTrue(generator.system.contains("不得评判、否定、撤回或质疑历史轮回答的有效性"),
+                "系统提示必须约束模型不得撤回历史结论");
+    }
+
+    @Test
     @DisplayName("问题与召回结果按原顺序结构化传给生成器（【来源N】编号由实现方按顺序拼）")
     void passesQuestionAndContextHitsInRecallOrder() {
         when(searchService.hybridSearch(any(), any(), anyInt())).thenReturn(List.of(

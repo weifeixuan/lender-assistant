@@ -1,5 +1,7 @@
 package com.lender.assistant.conversation.service;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lender.assistant.common.constant.MessageConstants;
 import com.lender.assistant.conversation.mapper.MessageMapper;
 import com.lender.assistant.conversation.model.MessageRow;
@@ -21,19 +23,28 @@ import java.util.Map;
  * - 最多最近 N 轮；总字符超上限时从最旧一轮开始整轮丢弃。
  * - FAILED / STOPPED 轮次整轮不进上下文，但照常展示在历史接口里。
  * - provider="rule" 的固定提示轮整轮跳过：既不回放，也不作为 previousQuestion 来源。
+ * - 含业务工具产物的历史助手回答（如 PLAN 轮中的 customer.profile）追加一行机器标注，
+ *   只进 LLM 上下文、不改库里 content，避免模型把合法工具数据当成"与召回资料矛盾"而撤回。
  */
 @Component
 public class ConversationHistoryAssembler {
 
+    private static final String KB_SEARCH_TOOL = "kb.search";
+    private static final String TOOL_NOTE_PREFIX = "[上一轮回答包含业务工具数据：";
+    private static final String TOOL_NOTE_SUFFIX = "，非知识库文档]";
+
     private final MessageMapper messageMapper;
+    private final ObjectMapper objectMapper;
     private final int maxRounds;
     private final int maxChars;
 
     public ConversationHistoryAssembler(
             MessageMapper messageMapper,
+            ObjectMapper objectMapper,
             @Value("${rag.qa.history-max-rounds:6}") int maxRounds,
             @Value("${rag.qa.history-max-chars:2000}") int maxChars) {
         this.messageMapper = messageMapper;
+        this.objectMapper = objectMapper;
         this.maxRounds = maxRounds;
         this.maxChars = maxChars;
     }
@@ -68,7 +79,8 @@ public class ConversationHistoryAssembler {
         for (RoundMessages round : rounds.values()) {
             if (round.user != null && round.assistant != null && !round.ruleReply) {
                 complete.add(new ChatTurn(MessageConstants.ROLE_USER, round.user.content()));
-                complete.add(new ChatTurn(MessageConstants.ROLE_ASSISTANT, round.assistant.content()));
+                complete.add(new ChatTurn(MessageConstants.ROLE_ASSISTANT,
+                        assistantContent(round.assistant)));
             }
         }
 
@@ -82,6 +94,45 @@ public class ConversationHistoryAssembler {
             selected.subList(0, Math.min(2, selected.size())).clear();
         }
         return selected;
+    }
+
+    /**
+     * 助手正文 + 来源标注：只在计划里出现非 kb.search 工具产物时追加，
+     * 让模型知道这段历史结论来自业务工具而非本轮召回资料。标注只存在于装配结果，
+     * 库里的 content 与前端展示不受影响。
+     */
+    private String assistantContent(MessageRow assistant) {
+        List<String> tools = businessToolNames(assistant);
+        if (tools.isEmpty()) {
+            return assistant.content();
+        }
+        return assistant.content() + "\n" + TOOL_NOTE_PREFIX
+                + String.join("、", tools) + TOOL_NOTE_SUFFIX;
+    }
+
+    /** 从 execution_plan 快照里取非 kb.search 的工具名（去重、保序）；弃用计划没有工具产物 */
+    private List<String> businessToolNames(MessageRow assistant) {
+        String json = assistant.executionPlanJson();
+        if (json == null || json.isBlank()) {
+            return List.of();
+        }
+        try {
+            JsonNode root = objectMapper.readTree(json);
+            if (root.path("degraded").asBoolean(false)) {
+                return List.of();
+            }
+            List<String> tools = new ArrayList<>();
+            for (JsonNode step : root.path("steps")) {
+                String tool = step.path("tool").asText("");
+                if (!tool.isBlank() && !KB_SEARCH_TOOL.equals(tool) && !tools.contains(tool)) {
+                    tools.add(tool);
+                }
+            }
+            return tools;
+        } catch (Exception ex) {
+            // 快照解析失败按"无工具产物"处理：宁可少标注，也不能把历史正文弄脏
+            return List.of();
+        }
     }
 
     /** 检索 query 用的最近一条历史用户正文；没有可用历史返回 null */

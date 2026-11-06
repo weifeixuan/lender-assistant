@@ -1,5 +1,6 @@
 package com.lender.assistant.conversation.service;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lender.assistant.conversation.mapper.MessageMapper;
 import com.lender.assistant.conversation.model.MessageRow;
 import com.lender.assistant.rag.model.ChatTurn;
@@ -25,7 +26,7 @@ class ConversationHistoryAssemblerTest {
     @BeforeEach
     void setUp() {
         messageMapper = mock(MessageMapper.class);
-        assembler = new ConversationHistoryAssembler(messageMapper, 6, 2000);
+        assembler = new ConversationHistoryAssembler(messageMapper, new ObjectMapper(), 6, 2000);
     }
 
     @Test
@@ -84,7 +85,8 @@ class ConversationHistoryAssemblerTest {
                 row("r3", "USER", "e".repeat(50), "DONE"),
                 row("r3", "ASSISTANT", "f".repeat(50), "DONE")));
 
-        ConversationHistoryAssembler limited = new ConversationHistoryAssembler(messageMapper, 6, 200);
+        ConversationHistoryAssembler limited =
+                new ConversationHistoryAssembler(messageMapper, new ObjectMapper(), 6, 200);
         List<ChatTurn> history = limited.assemble(CONVERSATION_ID, CURRENT_ROUND);
 
         assertEquals(4, history.size(), "丢弃最旧一轮后剩两轮");
@@ -121,6 +123,62 @@ class ConversationHistoryAssemblerTest {
         assertEquals(List.of(new ChatTurn("USER", "单笔限额"), new ChatTurn("ASSISTANT", "回答")),
                 history);
         assertEquals("单笔限额", ConversationHistoryAssembler.lastUserContent(history));
+    }
+
+    @Test
+    @DisplayName("PLAN 轮历史含业务工具产物时，助手正文追加来源标注且不改 USER 轮")
+    void annotatesToolBackedAssistantTurn() {
+        String content = "客户 C10001：授信 500 万元；已用 320 万元；可用 180 万元";
+        when(messageMapper.listByConversation(CONVERSATION_ID)).thenReturn(List.of(
+                row("r1", "USER", "华信币种和 C10001 额度", "DONE"),
+                assistantRow("r1", content, "{\"route\":\"PLAN\"}", """
+                        {"degraded":false,"steps":[
+                          {"stepId":"s1","order":1,"tool":"kb.search","status":"DONE"},
+                          {"stepId":"s2","order":2,"tool":"customer.profile","status":"DONE"}]}
+                        """)));
+
+        List<ChatTurn> history = assembler.assemble(CONVERSATION_ID, CURRENT_ROUND);
+
+        assertEquals("华信币种和 C10001 额度", history.get(0).content(), "USER 轮不得被改写");
+        assertEquals(content + "\n[上一轮回答包含业务工具数据：customer.profile，非知识库文档]",
+                history.get(1).content());
+    }
+
+    @Test
+    @DisplayName("PLAN 轮只有 kb.search 步骤时不加标注")
+    void kbOnlyPlanIsNotAnnotated() {
+        when(messageMapper.listByConversation(CONVERSATION_ID)).thenReturn(List.of(
+                row("r1", "USER", "华信单笔限额", "DONE"),
+                assistantRow("r1", "单笔限额 500 万元", "{\"route\":\"PLAN\"}", """
+                        {"degraded":false,"steps":[
+                          {"stepId":"s1","order":1,"tool":"kb.search","status":"DONE"},
+                          {"stepId":"s2","order":2,"tool":"kb.search","status":"DONE"}]}
+                        """)));
+
+        List<ChatTurn> history = assembler.assemble(CONVERSATION_ID, CURRENT_ROUND);
+
+        assertEquals("单笔限额 500 万元", history.get(1).content());
+    }
+
+    @Test
+    @DisplayName("计划已弃用（degraded）时没有工具产物，不加标注")
+    void degradedPlanIsNotAnnotated() {
+        when(messageMapper.listByConversation(CONVERSATION_ID)).thenReturn(List.of(
+                row("r1", "USER", "华信单笔限额", "DONE"),
+                assistantRow("r1", "单笔限额 500 万元", "{\"route\":\"PLAN\"}", """
+                        {"degraded":true,"degradedReason":"计划校验失败","steps":[]}
+                        """)));
+
+        List<ChatTurn> history = assembler.assemble(CONVERSATION_ID, CURRENT_ROUND);
+
+        assertEquals("单笔限额 500 万元", history.get(1).content());
+    }
+
+    private static MessageRow assistantRow(String roundId, String content,
+                                           String routeJson, String planJson) {
+        return new MessageRow("msg-" + roundId + "-ASSISTANT", CONVERSATION_ID, roundId,
+                "ASSISTANT", content, "DONE", "[]", "deepseek-chat", 0, null,
+                "2026-11-01 10:00:01", routeJson, planJson);
     }
 
     private static MessageRow row(String roundId, String role, String content, String status) {

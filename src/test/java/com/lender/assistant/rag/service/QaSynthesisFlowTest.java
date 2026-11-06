@@ -100,6 +100,9 @@ class QaSynthesisFlowTest {
         assertEquals(1, generator.requests.size());
         assertTrue(generator.requests.get(0).history().isEmpty(), "合成不重放完整历史");
         assertTrue(generator.requests.get(0).question().contains("本轮目标："));
+        assertTrue(generator.requests.get(0).systemPrompt()
+                        .contains("不得评判、否定、撤回或质疑历史轮回答的有效性"),
+                "合成提示同样禁止用本轮资料否定历史工具结论");
         assertEquals(List.of("event:meta", "event:route", "event:plan",
                 "event:step", "event:step", "event:step", "event:step",
                 "event:sources", "event:delta", "event:done"), emitter.eventNames());
