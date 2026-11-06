@@ -1,6 +1,6 @@
 package com.lender.assistant.tools;
 
-import com.lender.assistant.rag.model.DocSummary;
+import com.lender.assistant.rag.model.dto.DocSummaryDTO;
 import com.lender.assistant.rag.service.DocumentService;
 import org.springframework.ai.tool.annotation.Tool;
 import org.springframework.ai.tool.annotation.ToolParam;
@@ -27,29 +27,29 @@ public class LenderQueryTools {
         this.documentService = documentService;
     }
 
-    @Tool(name = "listIngestedDocs", description = "查询已入库的资方文件列表，返回每个文档的 docId、标题与 chunk 数量")
+    @Tool(name = "listIngestedDocs", description = "查询已入库的资方文件列表，返回每个文档的 docId、标题与 ChunkDTO 数量")
     public String listIngestedDocs() {
-        List<DocSummary> docs = documentService.listDocuments();
+        List<DocSummaryDTO> docs = documentService.listDocuments();
         if (docs.isEmpty()) {
             return "资料库中暂无已入库文档。";
         }
         StringBuilder sb = new StringBuilder("已入库文档共 ").append(docs.size()).append(" 份：\n");
         for (int i = 0; i < docs.size(); i++) {
-            DocSummary d = docs.get(i);
+            DocSummaryDTO d = docs.get(i);
             sb.append(i + 1).append(". [").append(d.docId()).append("] ")
               .append(d.docTitle()).append("（").append(d.chunkCount()).append(" 块）\n");
         }
         return sb.toString().trim();
     }
 
-    @Tool(name = "getDocChunkStats", description = "查询指定 docId 文档的入库 chunk 数量")
+    @Tool(name = "getDocChunkStats", description = "查询指定 docId 文档的入库 ChunkDTO 数量")
     public String getDocChunkStats(@ToolParam(description = "文档 docId") String docId) {
         int n = documentService.countByDoc(docId);
-        return n == 0 ? docId + " 未入库或无内容。" : docId + " 已入库 " + n + " 个 chunk。";
+        return n == 0 ? docId + " 未入库或无内容。" : docId + " 已入库 " + n + " 个 ChunkDTO。";
     }
 
     /** 供 ToolIntentRouter 做 docId 匹配（非工具方法，不暴露给模型） */
     public List<String> knownDocIds() {
-        return documentService.listDocuments().stream().map(DocSummary::docId).toList();
+        return documentService.listDocuments().stream().map(DocSummaryDTO::docId).toList();
     }
 }

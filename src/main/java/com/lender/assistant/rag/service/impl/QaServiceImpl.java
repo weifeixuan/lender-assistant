@@ -14,31 +14,31 @@ import com.lender.assistant.conversation.service.ConversationService;
 import com.lender.assistant.conversation.model.entity.MessageEntity;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.lender.assistant.rag.plan.PlanAndExecuteService;
-import com.lender.assistant.rag.plan.PlanBudget;
-import com.lender.assistant.rag.plan.PlanSourceAggregator;
-import com.lender.assistant.rag.plan.SynthesisPromptBuilder;
-import com.lender.assistant.rag.plan.model.ExecutionPlan;
-import com.lender.assistant.rag.plan.model.ExecutionPlanSnapshot;
-import com.lender.assistant.rag.plan.model.PlanExecutionResult;
-import com.lender.assistant.rag.routing.PreviousRouteResolver;
-import com.lender.assistant.rag.routing.QuestionRoutingService;
-import com.lender.assistant.rag.routing.model.QuestionRoute;
-import com.lender.assistant.rag.routing.model.RoutingDecision;
-import com.lender.assistant.rag.routing.model.RoutingRequest;
-import com.lender.assistant.rag.vo.response.QaPlanResponse;
-import com.lender.assistant.rag.vo.response.QaRouteResponse;
-import com.lender.assistant.rag.vo.response.QaStepResponse;
+import com.lender.assistant.rag.service.PlanAndExecuteService;
+import com.lender.assistant.rag.service.PlanBudget;
+import com.lender.assistant.rag.service.PlanSourceAggregator;
+import com.lender.assistant.rag.service.SynthesisPromptBuilder;
+import com.lender.assistant.rag.model.dto.ExecutionPlanDTO;
+import com.lender.assistant.rag.model.dto.ExecutionPlanSnapshotDTO;
+import com.lender.assistant.rag.model.dto.PlanExecutionResultDTO;
+import com.lender.assistant.rag.service.PreviousRouteResolver;
+import com.lender.assistant.rag.service.QuestionRoutingService;
+import com.lender.assistant.rag.model.dto.QuestionRoute;
+import com.lender.assistant.rag.model.dto.RoutingDecisionDTO;
+import com.lender.assistant.rag.model.dto.RoutingRequestDTO;
+import com.lender.assistant.rag.model.response.QaPlanResponse;
+import com.lender.assistant.rag.model.response.QaRouteResponse;
+import com.lender.assistant.rag.model.response.QaStepResponse;
 import com.lender.assistant.rag.service.QaService;
 import com.lender.assistant.rag.service.SearchService;
-import com.lender.assistant.rag.strategy.AnswerCancellation;
-import com.lender.assistant.rag.strategy.AnswerGenerationRequest;
+import com.lender.assistant.rag.model.dto.AnswerCancellationDTO;
+import com.lender.assistant.rag.model.dto.AnswerGenerationRequestDTO;
 import com.lender.assistant.rag.strategy.AnswerGeneratorStrategy;
-import com.lender.assistant.rag.model.ChatTurn;
-import com.lender.assistant.rag.vo.response.QaDoneResponse;
-import com.lender.assistant.rag.vo.response.QaMetaResponse;
-import com.lender.assistant.rag.vo.response.QaSourceResponse;
-import com.lender.assistant.rag.vo.response.SearchItemResponse;
+import com.lender.assistant.rag.model.dto.ChatTurnDTO;
+import com.lender.assistant.rag.model.response.QaDoneResponse;
+import com.lender.assistant.rag.model.response.QaMetaResponse;
+import com.lender.assistant.rag.model.response.QaSourceResponse;
+import com.lender.assistant.rag.model.response.SearchItemResponse;
 import jakarta.annotation.PreDestroy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -265,7 +265,7 @@ public class QaServiceImpl implements QaService {
             }
 
             // 历史只在追问时非空；检索 query 带最近一条历史用户提问，让"那二套呢"这类指代能召回正确资料
-            List<ChatTurn> history = historyAssembler.assemble(round.conversationId(), round.roundId());
+            List<ChatTurnDTO> history = historyAssembler.assemble(round.conversationId(), round.roundId());
             // 追问时把「当前问题」与「上一轮问题」分段传给检索：关键词 token 配额按段分配，
             // 避免上一轮长问题按顺序把当前追问的关键词挤出配额（票 08）
             String lastUser = ConversationHistoryAssembler.lastUserContent(history);
@@ -274,7 +274,7 @@ public class QaServiceImpl implements QaService {
                     new PlanBudget(totalBudgetMillis, System::currentTimeMillis));
             PlanRoundOutcome planOutcome = null;
             if (!isMockMode()) {
-                RoutingDecision decision = routeRound(emitter, request);
+                RoutingDecisionDTO decision = routeRound(emitter, request);
                 if (decision == null) {
                     return;
                 }
@@ -326,21 +326,21 @@ public class QaServiceImpl implements QaService {
      *
      * @return 路由结果；null 表示客户端已断开
      */
-    private RoutingDecision routeRound(SseEmitter emitter, RoundRequest request) {
+    private RoutingDecisionDTO routeRound(SseEmitter emitter, RoundRequest request) {
         if (routingService == null) {
-            return new RoutingDecision(QuestionRoute.KNOWLEDGE, 0.0, "无路由服务", "NONE");
+            return new RoutingDecisionDTO(QuestionRoute.KNOWLEDGE, 0.0, "无路由服务", "NONE");
         }
-        RoutingDecision decision;
+        RoutingDecisionDTO decision;
         try {
             List<MessageEntity> rows = historyAssembler.listRows(request.round().conversationId());
             QuestionRoute previous = previousRouteResolver == null
                     ? null : previousRouteResolver.resolve(rows);
             decision = routingService.route(
-                    new RoutingRequest(request.question(), request.lastUser(), previous, ""));
+                    new RoutingRequestDTO(request.question(), request.lastUser(), previous, ""));
         } catch (RuntimeException ex) {
             // 路由链路任何异常都 fail-open：降级 KNOWLEDGE，本轮仍按正常问答收尾（票 11）
             log.warn("路由失败，降级 KNOWLEDGE: {}", ex.getMessage());
-            decision = new RoutingDecision(QuestionRoute.KNOWLEDGE, 0.0, "路由异常降级", "NONE");
+            decision = new RoutingDecisionDTO(QuestionRoute.KNOWLEDGE, 0.0, "路由异常降级", "NONE");
         }
         if (!send(emitter, "route",
                 new QaRouteResponse(decision.route().name(), decision.confidence()), request.stream())) {
@@ -359,7 +359,7 @@ public class QaServiceImpl implements QaService {
         if (planningService == null) {
             return null;
         }
-        ExecutionPlan plan = planningService.plan(request.question(), request.lastUser());
+        ExecutionPlanDTO plan = planningService.plan(request.question(), request.lastUser());
         if (!send(emitter, "plan", QaPlanResponse.of(plan), request.stream())) {
             return null;
         }
@@ -367,9 +367,9 @@ public class QaServiceImpl implements QaService {
             log.info("计划弃用，按 KNOWLEDGE 链路执行: question={}", request.question());
             return null;
         }
-        PlanExecutionResult result = planningService.execute(plan, request.topK(), request.budget(),
+        PlanExecutionResultDTO result = planningService.execute(plan, request.topK(), request.budget(),
                 event -> send(emitter, "step", QaStepResponse.of(event), request.stream()));
-        request.stream().executionPlan(plan, result);
+        request.stream().ExecutionPlanDTO(plan, result);
         // 所有步骤结束后一次性并集，按 chunkId 去重；全局 idx 由 pushSources 连续分配
         return new PlanRoundOutcome(PlanSourceAggregator.union(result.steps()), plan, result,
                 result.remainingBudgetMillis());
@@ -414,7 +414,7 @@ public class QaServiceImpl implements QaService {
                                  List<SearchItemResponse> hits) {
         executor.execute(LlmScene.SYNTHESIS, generator.name(),
                 () -> {
-                    generator.generate(new AnswerGenerationRequest(SYNTHESIS_SYSTEM_PROMPT, List.of(),
+                    generator.generate(new AnswerGenerationRequestDTO(SYNTHESIS_SYSTEM_PROMPT, List.of(),
                             prompt, hits, token -> {
                                 if (stream.isDisconnected()) {
                                     return;
@@ -427,8 +427,8 @@ public class QaServiceImpl implements QaService {
     }
 
     /** PLAN 轮的检索并集与预算余量；用于合成阶段判断是否还有时间 */
-    private record PlanRoundOutcome(List<SearchItemResponse> hits, ExecutionPlan plan,
-                                    PlanExecutionResult result, long remainingBudgetMillis) {
+    private record PlanRoundOutcome(List<SearchItemResponse> hits, ExecutionPlanDTO plan,
+                                    PlanExecutionResultDTO result, long remainingBudgetMillis) {
     }
 
     /** 单轮请求参数：收敛参数个数，避免编排方法超过 4 个入参 */
@@ -536,11 +536,11 @@ public class QaServiceImpl implements QaService {
      * 韧性（阶段4）：经 ResilientLlmExecutor 走 qa 链路——留痕 + 熔断；
      * allowRetry=false：SSE token 已推给用户，重试会导致内容重放。
      */
-    private void streamModelAnswer(SseEmitter emitter, String question, List<ChatTurn> history,
+    private void streamModelAnswer(SseEmitter emitter, String question, List<ChatTurnDTO> history,
                                    List<SearchItemResponse> hits, RoundStream stream) {
         executor.execute(LlmScene.QA, generator.name(),
                 () -> {
-                    generator.generate(new AnswerGenerationRequest(systemPrompt(), history, question, hits,
+                    generator.generate(new AnswerGenerationRequestDTO(systemPrompt(), history, question, hits,
                             token -> {
                                 // 已断开（超时/客户端取消）时不再累积，也不再尝试推送
                                 if (stream.isDisconnected()) {
@@ -566,14 +566,14 @@ public class QaServiceImpl implements QaService {
          * 上游生成取消句柄：断开/超时的同一时刻 cancel，让模型侧停止消费 token，
          * 而不是等 generate 自然结束（否则白烧 token，且会话锁要多占一整段生成时间）。
          */
-        private final AnswerCancellation cancellation = new AnswerCancellation();
+        private final AnswerCancellationDTO cancellation = new AnswerCancellationDTO();
         private List<QaSourceSnapshotDTO> sources = List.of();
         private String providerName = QaServiceImpl.this.generator.name();
         /** 本轮路由结果；mock 模式为 null */
-        private RoutingDecision routeDecision;
+        private RoutingDecisionDTO routeDecision;
         /** PLAN 轮的计划与执行快照；KNOWLEDGE / IRRELEVANT 轮为 null */
-        private ExecutionPlan executionPlan;
-        private PlanExecutionResult executionResult;
+        private ExecutionPlanDTO ExecutionPlanDTO;
+        private PlanExecutionResultDTO executionResult;
         /** 合成上下文是否被 6000 字符截断（票 09） */
         private boolean contextTruncated;
 
@@ -600,12 +600,12 @@ public class QaServiceImpl implements QaService {
             this.sources = value;
         }
 
-        synchronized void route(RoutingDecision decision) {
+        synchronized void route(RoutingDecisionDTO decision) {
             this.routeDecision = decision;
         }
 
-        synchronized void executionPlan(ExecutionPlan plan, PlanExecutionResult result) {
-            this.executionPlan = plan;
+        synchronized void ExecutionPlanDTO(ExecutionPlanDTO plan, PlanExecutionResultDTO result) {
+            this.ExecutionPlanDTO = plan;
             this.executionResult = result;
         }
 
@@ -621,7 +621,7 @@ public class QaServiceImpl implements QaService {
             return disconnected.get();
         }
 
-        AnswerCancellation cancellation() {
+        AnswerCancellationDTO cancellation() {
             return cancellation;
         }
 
@@ -668,17 +668,17 @@ public class QaServiceImpl implements QaService {
 
         /** execution_plan 快照：弃用计划只有头信息，执行过的计划带逐步结果 */
         private String writeExecutionPlanJson() {
-            if (executionPlan == null) {
+            if (ExecutionPlanDTO == null) {
                 return null;
             }
-            return writeJson(ExecutionPlanSnapshot.of(executionPlan, executionResult,
-                    new ExecutionPlanSnapshot.SnapshotContext(providerName, elapsedMillis(),
+            return writeJson(ExecutionPlanSnapshotDTO.of(ExecutionPlanDTO, executionResult,
+                    new ExecutionPlanSnapshotDTO.SnapshotContext(providerName, elapsedMillis(),
                             contextTruncated, degradedReason())));
         }
 
         private String degradedReason() {
-            if (executionPlan.degraded()) {
-                return executionPlan.degradedReason();
+            if (ExecutionPlanDTO.degraded()) {
+                return ExecutionPlanDTO.degradedReason();
             }
             return executionResult != null && executionResult.budgetExhausted()
                     ? "BUDGET_EXHAUSTED" : null;

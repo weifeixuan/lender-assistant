@@ -1,7 +1,7 @@
 package com.lender.assistant.rag.service;
 
 import com.lender.assistant.common.constant.SearchMode;
-import com.lender.assistant.rag.vo.response.SearchItemResponse;
+import com.lender.assistant.rag.model.response.SearchItemResponse;
 import java.util.List;
 
 /**

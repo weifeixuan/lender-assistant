@@ -1,6 +1,6 @@
 package com.lender.assistant.rag.tool;
 
-import com.lender.assistant.rag.vo.response.SearchItemResponse;
+import com.lender.assistant.rag.model.response.SearchItemResponse;
 
 import java.util.List;
 

@@ -4,12 +4,12 @@ import com.lender.assistant.common.constant.SearchConstants;
 import com.lender.assistant.common.constant.SearchMode;
 import com.lender.assistant.common.util.PgVectorUtils;
 import com.lender.assistant.rag.mapper.DocChunkMapper;
-import com.lender.assistant.rag.model.KeywordHit;
-import com.lender.assistant.rag.model.VectorHit;
+import com.lender.assistant.rag.model.dto.KeywordHitDTO;
+import com.lender.assistant.rag.model.dto.VectorHitDTO;
 import com.lender.assistant.rag.service.SearchService;
 import com.lender.assistant.rag.strategy.EmbeddingStrategy;
 import com.lender.assistant.rag.strategy.impl.HashEmbeddingStrategy;
-import com.lender.assistant.rag.vo.response.SearchItemResponse;
+import com.lender.assistant.rag.model.response.SearchItemResponse;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
@@ -30,8 +30,8 @@ import java.util.Map;
  *
  * 召回口径（票 09 诊断的现场）：两通道先各召回 max(2*topK, 12) 条候选，
  * 融合 + 同 section 相邻切片合并后再截断到 topK。
- * 若直接用 topK 做 LIMIT，完整承载字段清单的切片（如 chunk 4）会因排名差一两位被切掉，
- * 只剩它的尾巴（chunk 5）进入答案上下文。
+ * 若直接用 topK 做 LIMIT，完整承载字段清单的切片（如 ChunkDTO 4）会因排名差一两位被切掉，
+ * 只剩它的尾巴（ChunkDTO 5）进入答案上下文。
  */
 @Service
 public class SearchServiceImpl implements SearchService {
@@ -42,7 +42,7 @@ public class SearchServiceImpl implements SearchService {
     private static final int KEYWORD_TOKEN_MIN_CHARS = 2;
     /** 关键词 token 去重后上限：防止 <foreach> 拼出的 SQL 过长 */
     private static final int KEYWORD_TOKEN_MAX_COUNT = 8;
-    /** 关键词通道排序的缺省排名：未命中关键词通道的 chunk 排到末尾 */
+    /** 关键词通道排序的缺省排名：未命中关键词通道的 ChunkDTO 排到末尾 */
     private static final int RANK_FALLBACK = 99;
     /** 向量通道排序的缺省距离：仅关键词命中（无 vectorDistance）时排到末尾 */
     private static final double DISTANCE_FALLBACK = 2;
@@ -103,9 +103,9 @@ public class SearchServiceImpl implements SearchService {
     /** 通道 1：向量召回（按余弦距离），超出 maxDistance 阈值的命中直接丢弃 */
     private List<ChannelHit> vectorChannel(String query, int candidateLimit) {
         float[] queryVector = embeddingStrategy.embed(query);
-        List<VectorHit> hits = docChunkMapper.searchByVector(PgVectorUtils.toLiteral(queryVector), candidateLimit);
+        List<VectorHitDTO> hits = docChunkMapper.searchByVector(PgVectorUtils.toLiteral(queryVector), candidateLimit);
         List<ChannelHit> results = new ArrayList<>();
-        for (VectorHit hit : hits) {
+        for (VectorHitDTO hit : hits) {
             if (maxDistance >= 0 && hit.distance() > maxDistance) {
                 continue;   // 超出阈值的召回丢弃（maxDistance<0 时该开关关闭）
             }
@@ -125,9 +125,9 @@ public class SearchServiceImpl implements SearchService {
         List<String> tokens = keywordTokens(question, previousQuestion);
         // 空 token 守卫下沉到 Service：MyBatis <foreach> 空集合会生成非法 SQL
         //（旧 DocumentStore 在方法内部处理 tokens.isEmpty()）
-        List<KeywordHit> hits = tokens.isEmpty() ? List.of() : docChunkMapper.searchByKeyword(tokens, candidateLimit);
+        List<KeywordHitDTO> hits = tokens.isEmpty() ? List.of() : docChunkMapper.searchByKeyword(tokens, candidateLimit);
         List<ChannelHit> results = new ArrayList<>();
-        for (KeywordHit hit : hits) {
+        for (KeywordHitDTO hit : hits) {
             SearchItemResponse item = new SearchItemResponse(hit.id(), hit.docId(), hit.docTitle(),
                     hit.sectionPath(), hit.content(), null, hit.hits(), false, null);
             results.add(new ChannelHit(item, results.size() + 1, hit.chunkIndex()));
@@ -170,8 +170,8 @@ public class SearchServiceImpl implements SearchService {
     }
 
     /**
-     * 合并两通道：保留向量通道顺序，关键词通道只补缺席的 chunk。
-     * 同一 chunk 双通道命中时保留向量侧内容，补齐关键词命中数并置 bothChannels=true。
+     * 合并两通道：保留向量通道顺序，关键词通道只补缺席的 ChunkDTO。
+     * 同一 ChunkDTO 双通道命中时保留向量侧内容，补齐关键词命中数并置 bothChannels=true。
      */
     private List<Candidate> mergeChannels(List<ChannelHit> vectorHits, List<ChannelHit> keywordHits) {
         Map<Long, Candidate> mergedById = new LinkedHashMap<>();

@@ -5,9 +5,9 @@ import com.lender.assistant.common.exception.ErrorCode;
 import com.lender.assistant.conversation.service.ConversationHistoryAssembler;
 import com.lender.assistant.conversation.service.ConversationLockRegistry;
 import com.lender.assistant.conversation.service.ConversationService;
-import com.lender.assistant.conversation.model.ConversationRound;
-import com.lender.assistant.rag.model.ChatTurn;
-import com.lender.assistant.rag.vo.response.SearchItemResponse;
+import com.lender.assistant.conversation.model.dto.ConversationRoundDTO;
+import com.lender.assistant.rag.model.dto.ChatTurnDTO;
+import com.lender.assistant.rag.model.response.SearchItemResponse;
 import com.lender.assistant.rag.service.SearchService;
 import com.lender.assistant.rag.service.impl.QaServiceImpl;
 import com.lender.assistant.rag.strategy.AnswerGeneratorStrategy;
@@ -62,18 +62,18 @@ class QaServiceTest {
     /** 桩生成器：抓取收到的 system Prompt、问题与召回结果，并回流一个固定 token */
     private RecordingGenerator generator;
     private QaServiceImpl qaService;
-    private ConversationRound round;
+    private ConversationRoundDTO round;
 
     /** 测试专用 AnswerGeneratorStrategy：记录入参，不做任何模型调用 */
     static class RecordingGenerator implements AnswerGeneratorStrategy {
         String system;
         String question;
-        List<ChatTurn> history;
+        List<ChatTurnDTO> history;
         List<SearchItemResponse> contextHits;
         final List<String> deltas = new java.util.ArrayList<>();
 
         @Override
-        public void generate(com.lender.assistant.rag.strategy.AnswerGenerationRequest request) {
+        public void generate(com.lender.assistant.rag.model.dto.AnswerGenerationRequestDTO request) {
             this.system = request.systemPrompt();
             this.history = request.history();
             this.question = request.question();
@@ -101,7 +101,7 @@ class QaServiceTest {
                 3, 10, 2, false);
         qaService = new QaServiceImpl(searchService, generator, resilientExecutor, conversationService,
                 lockRegistry, historyAssembler);
-        round = new ConversationRound("conv-1", "round-1", "msg-user", "msg-assistant");
+        round = new ConversationRoundDTO("conv-1", "round-1", "msg-user", "msg-assistant");
         when(historyAssembler.assemble(anyString(), anyString())).thenReturn(List.of());
     }
 
@@ -159,8 +159,8 @@ class QaServiceTest {
     @DisplayName("回归：历史为工具数据、本轮无相关资料时，上下文带来源标注且系统提示禁止否定历史")
     void toolBackedHistoryIsNotDiscredited() {
         when(historyAssembler.assemble("conv-1", "round-1")).thenReturn(List.of(
-                new ChatTurn("USER", "华信币种和 C10001 额度"),
-                new ChatTurn("ASSISTANT", "客户 C10001：可用 180 万元"
+                new ChatTurnDTO("USER", "华信币种和 C10001 额度"),
+                new ChatTurnDTO("ASSISTANT", "客户 C10001：可用 180 万元"
                         + "\n[上一轮回答包含业务工具数据：customer.profile，非知识库文档]")));
         when(searchService.hybridSearch(any(), any(), anyInt()))
                 .thenReturn(List.of(hit(1, "华信银行_对公收付接口文档", "2 单笔代收接口", "单笔限额 500 万元")));
@@ -216,7 +216,7 @@ class QaServiceTest {
                 .thenReturn(List.of(hit(1, "某文档", "某节", "内容")));
         AnswerGeneratorStrategy broken = new AnswerGeneratorStrategy() {
             @Override
-            public void generate(com.lender.assistant.rag.strategy.AnswerGenerationRequest request) {
+            public void generate(com.lender.assistant.rag.model.dto.AnswerGenerationRequestDTO request) {
                 throw new RuntimeException("模拟模型超时");
             }
 
@@ -374,7 +374,7 @@ class QaServiceTest {
                 .thenReturn(List.of(hit(1, "某文档", "某节", "内容")));
         AnswerGeneratorStrategy broken = new AnswerGeneratorStrategy() {
             @Override
-            public void generate(com.lender.assistant.rag.strategy.AnswerGenerationRequest request) {
+            public void generate(com.lender.assistant.rag.model.dto.AnswerGenerationRequestDTO request) {
                 request.onDelta().accept("已生成的一半");
                 throw new RuntimeException("模拟模型超时");
             }
@@ -423,7 +423,7 @@ class QaServiceTest {
         java.util.concurrent.atomic.AtomicInteger emitted = new java.util.concurrent.atomic.AtomicInteger();
         AnswerGeneratorStrategy longRunning = new AnswerGeneratorStrategy() {
             @Override
-            public void generate(com.lender.assistant.rag.strategy.AnswerGenerationRequest request) {
+            public void generate(com.lender.assistant.rag.model.dto.AnswerGenerationRequestDTO request) {
                 // 150 片 × 20ms ≈ 3s：这是"不取消就会一直烧 token 到自然结束"的基线
                 for (int i = 0; i < 150; i++) {
                     if (request.cancellation().isCancelled()) {
@@ -536,7 +536,7 @@ class QaServiceTest {
         qaService.answer("首问", 4, null, USER_ID);
         awaitAsyncDone(() -> searching.getCount() == 0);
 
-        ArgumentCaptor<ConversationRound> captor = ArgumentCaptor.forClass(ConversationRound.class);
+        ArgumentCaptor<ConversationRoundDTO> captor = ArgumentCaptor.forClass(ConversationRoundDTO.class);
         verify(conversationService).startNewRound(captor.capture(), eq(USER_ID), eq("首问"));
         String conversationId = captor.getValue().conversationId();
         assertTrue(lockRegistry.isBusy(conversationId), "首问生成中也必须占锁");
@@ -567,14 +567,14 @@ class QaServiceTest {
     @DisplayName("追问：历史按序传给生成器，检索 query 拼接最近一条历史用户提问")
     void passesHistoryAndPrependsLastUserQuestionToRetrieval() {
         when(historyAssembler.assemble("conv-1", "round-1")).thenReturn(List.of(
-                new ChatTurn("USER", "首轮问题"), new ChatTurn("ASSISTANT", "首轮回答")));
+                new ChatTurnDTO("USER", "首轮问题"), new ChatTurnDTO("ASSISTANT", "首轮回答")));
         when(searchService.hybridSearch("追问", "首轮问题", 4))
                 .thenReturn(List.of(hit(1, "某文档", "某节", "内容")));
 
         qaService.streamAnswer(new RecordingEmitter(), "追问", 4, USER_ID, round,
                 System.currentTimeMillis());
 
-        assertEquals(List.of(new ChatTurn("USER", "首轮问题"), new ChatTurn("ASSISTANT", "首轮回答")),
+        assertEquals(List.of(new ChatTurnDTO("USER", "首轮问题"), new ChatTurnDTO("ASSISTANT", "首轮回答")),
                 generator.history);
         assertEquals("追问", generator.question, "传给模型的是当前问题，历史单独成列");
         verify(searchService).hybridSearch("追问", "首轮问题", 4);
@@ -610,7 +610,7 @@ class QaServiceTest {
         BizException exception = assertThrows(BizException.class,
                 () -> svc.answer("问题", 4, null, USER_ID));
 
-        ArgumentCaptor<ConversationRound> captor = ArgumentCaptor.forClass(ConversationRound.class);
+        ArgumentCaptor<ConversationRoundDTO> captor = ArgumentCaptor.forClass(ConversationRoundDTO.class);
         verify(conversationService).startNewRound(captor.capture(), eq(USER_ID), eq("问题"));
         String roundId = captor.getValue().roundId();
 
@@ -643,7 +643,7 @@ class QaServiceTest {
         CallbackEmitter emitter = new CallbackEmitter();
         AnswerGeneratorStrategy slow = new AnswerGeneratorStrategy() {
             @Override
-            public void generate(com.lender.assistant.rag.strategy.AnswerGenerationRequest request) {
+            public void generate(com.lender.assistant.rag.model.dto.AnswerGenerationRequestDTO request) {
                 request.onDelta().accept("前半段");
                 emitter.timeoutAction.run();
                 request.onDelta().accept("后半段不应写入");

@@ -12,8 +12,8 @@ import com.lender.assistant.extract.strategy.ExtractGeneratorStrategy;
 import com.lender.assistant.resilience.LlmCallLogger;
 import com.lender.assistant.resilience.ResilientLlmExecutor;
 import com.lender.assistant.resilience.mapper.LlmCallLogMapper;
-import com.lender.assistant.rag.model.DocChunkLine;
-import com.lender.assistant.rag.model.DocContent;
+import com.lender.assistant.rag.model.dto.DocChunkLineDTO;
+import com.lender.assistant.rag.model.dto.DocContentDTO;
 import com.lender.assistant.rag.service.DocumentService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -57,28 +57,28 @@ class ExtractServiceTest {
         service = new ExtractServiceImpl(generator, documentService, mapper, executor);
 
         when(generator.name()).thenReturn("Mock");
-        when(generator.extract(any(DocContent.class))).thenReturn(List.of(
+        when(generator.extract(any(DocContentDTO.class))).thenReturn(List.of(
                 new FieldMappingEntity("gateway_url", "生产网关地址", "网关地址",
                         "https://fake-x.example.com", "网关地址 https://fake-x.example.com", 0.9)));
         String docText = "网关地址 https://fake-ruijin.example.com/openapi。\n接口路径 /openapi/loan/order/create。";
         when(documentService.loadDocContent("doc1")).thenReturn(
-                new DocContent("瑞金租赁_资金对接接口文档_v1.0", docText,
-                        List.of(new DocChunkLine("瑞金租赁_资金对接接口文档_v1.0", null, docText))));
+                new DocContentDTO("瑞金租赁_资金对接接口文档_v1.0", docText,
+                        List.of(new DocChunkLineDTO("瑞金租赁_资金对接接口文档_v1.0", null, docText))));
     }
 
     @Test
-    @DisplayName("正常抽取：文档按 chunk 序拼成全文，生成器收到标题+全文")
+    @DisplayName("正常抽取：文档按 ChunkDTO 序拼成全文，生成器收到标题+全文")
     void orchestratesLoadAndExtract() {
         List<FieldMappingEntity> result = service.extractFromDoc("doc1");
 
         assertEquals(1, result.size());
-        ArgumentCaptor<DocContent> docCaptor = ArgumentCaptor.forClass(DocContent.class);
+        ArgumentCaptor<DocContentDTO> docCaptor = ArgumentCaptor.forClass(DocContentDTO.class);
         verify(generator).extract(docCaptor.capture());
-        DocContent doc = docCaptor.getValue();
+        DocContentDTO doc = docCaptor.getValue();
         assertEquals("瑞金租赁_资金对接接口文档_v1.0", doc.docTitle());
         assertTrue(doc.text().contains("网关地址 https://fake-ruijin.example.com/openapi"));
         assertTrue(doc.text().contains("接口路径 /openapi/loan/order/create"));
-        assertEquals(1, doc.lines().size(), "结构化 chunk 行必须一并传给生成器");
+        assertEquals(1, doc.lines().size(), "结构化 ChunkDTO 行必须一并传给生成器");
         // 生成器调用必须经韧性执行器包装，scene=extract
         verify(executor).execute(eq(LlmScene.EXTRACT), eq("Mock"), any(Supplier.class), eq(true));
     }
@@ -86,7 +86,7 @@ class ExtractServiceTest {
     @Test
     @DisplayName("生成器抛异常：留痕记 FAIL 后异常上抛（由 Controller 转降级响应）")
     void generatorFailureIsLoggedAndRethrown() {
-        when(generator.extract(any(DocContent.class)))
+        when(generator.extract(any(DocContentDTO.class)))
                 .thenThrow(new RuntimeException("模拟抽取超时"));
 
         assertThrows(RuntimeException.class, () -> service.extractFromDoc("doc1"));

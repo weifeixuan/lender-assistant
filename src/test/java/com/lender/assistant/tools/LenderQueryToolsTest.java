@@ -1,6 +1,6 @@
 package com.lender.assistant.tools;
 
-import com.lender.assistant.rag.model.DocSummary;
+import com.lender.assistant.rag.model.dto.DocSummaryDTO;
 import com.lender.assistant.rag.service.DocumentService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -27,12 +27,12 @@ class LenderQueryToolsTest {
     }
 
     @Test
-    @DisplayName("查已入库文件列表：返回 docId/标题/chunk 数的格式化清单")
+    @DisplayName("查已入库文件列表：返回 docId/标题/ChunkDTO 数的格式化清单")
     void listIngestedDocsFormatsSummary() {
         when(documentService.listDocuments()).thenReturn(List.of(
-                new DocSummary("ruijin_api_v1", "瑞金租赁_资金对接接口文档_v1.0",
+                new DocSummaryDTO("ruijin_api_v1", "瑞金租赁_资金对接接口文档_v1.0",
                         "docs/瑞金租赁_资金对接接口文档_v1.0.docx", 5, 1200L, "2026-10-29 10:00:00"),
-                new DocSummary("huaxin_corp_api_v1", "华信银行_对公收付接口文档_v1.0",
+                new DocSummaryDTO("huaxin_corp_api_v1", "华信银行_对公收付接口文档_v1.0",
                         "docs/华信银行_对公收付接口文档_v1.0.docx", 8, 2400L, "2026-10-29 10:05:00")));
 
         String result = tools.listIngestedDocs();
@@ -40,7 +40,7 @@ class LenderQueryToolsTest {
         assertTrue(result.contains("2"));
         assertTrue(result.contains("ruijin_api_v1"));
         assertTrue(result.contains("瑞金租赁_资金对接接口文档_v1.0"));
-        assertTrue(result.contains("5"), "必须带 chunk 数量");
+        assertTrue(result.contains("5"), "必须带 ChunkDTO 数量");
     }
 
     @Test
@@ -51,7 +51,7 @@ class LenderQueryToolsTest {
     }
 
     @Test
-    @DisplayName("查某文档 chunk 数：已入库返回数量")
+    @DisplayName("查某文档 ChunkDTO 数：已入库返回数量")
     void docChunkStatsKnownDoc() {
         when(documentService.countByDoc("ruijin_api_v1")).thenReturn(5);
         String result = tools.getDocChunkStats("ruijin_api_v1");
@@ -60,7 +60,7 @@ class LenderQueryToolsTest {
     }
 
     @Test
-    @DisplayName("查某文档 chunk 数：未入库文档给出明确提示（宁说没有，不编数字）")
+    @DisplayName("查某文档 ChunkDTO 数：未入库文档给出明确提示（宁说没有，不编数字）")
     void docChunkStatsUnknownDoc() {
         when(documentService.countByDoc("nope")).thenReturn(0);
         assertTrue(tools.getDocChunkStats("nope").contains("未入库"));
@@ -70,7 +70,7 @@ class LenderQueryToolsTest {
     @DisplayName("knownDocIds 供意图路由做 docId 匹配")
     void knownDocIdsExposed() {
         when(documentService.listDocuments()).thenReturn(List.of(
-                new DocSummary("ruijin_api_v1", "瑞金", "docs/瑞金.docx", 5, 1200L, "2026-10-29 10:00:00")));
+                new DocSummaryDTO("ruijin_api_v1", "瑞金", "docs/瑞金.docx", 5, 1200L, "2026-10-29 10:00:00")));
         assertEquals(List.of("ruijin_api_v1"), tools.knownDocIds());
     }
 }

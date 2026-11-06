@@ -1,11 +1,11 @@
 package com.lender.assistant.rag.service;
 
 import com.lender.assistant.common.constant.SearchMode;
-import com.lender.assistant.rag.vo.response.SearchItemResponse;
+import com.lender.assistant.rag.model.response.SearchItemResponse;
 import com.lender.assistant.rag.strategy.EmbeddingStrategy;
 import com.lender.assistant.rag.mapper.DocChunkMapper;
-import com.lender.assistant.rag.model.KeywordHit;
-import com.lender.assistant.rag.model.VectorHit;
+import com.lender.assistant.rag.model.dto.KeywordHitDTO;
+import com.lender.assistant.rag.model.dto.VectorHitDTO;
 import com.lender.assistant.rag.service.impl.SearchServiceImpl;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -45,24 +45,24 @@ class SearchServiceTest {
     }
 
     /** 缺省切片序号按 id 放大，避免既有用例里的条目被"相邻切片合并"误伤 */
-    private VectorHit vec(long id, String content, double dist) {
+    private VectorHitDTO vec(long id, String content, double dist) {
         return vec(id, (int) (id * 10), "第1节", content, dist);
     }
 
-    private KeywordHit kw(long id, String content, int hits) {
+    private KeywordHitDTO kw(long id, String content, int hits) {
         return kw(id, (int) (id * 10), "第1节", content, hits);
     }
 
-    private VectorHit vec(long id, int chunkIndex, String section, String content, double dist) {
-        return new VectorHit(id, "doc1", "测试文档", section, content, dist, chunkIndex);
+    private VectorHitDTO vec(long id, int chunkIndex, String section, String content, double dist) {
+        return new VectorHitDTO(id, "doc1", "测试文档", section, content, dist, chunkIndex);
     }
 
-    private KeywordHit kw(long id, int chunkIndex, String section, String content, int hits) {
-        return new KeywordHit(id, "doc1", "测试文档", section, content, hits, chunkIndex);
+    private KeywordHitDTO kw(long id, int chunkIndex, String section, String content, int hits) {
+        return new KeywordHitDTO(id, "doc1", "测试文档", section, content, hits, chunkIndex);
     }
 
     @Test
-    @DisplayName("hybrid：RRF 融合排序——双通道都命中的 chunk 排最前")
+    @DisplayName("hybrid：RRF 融合排序——双通道都命中的 ChunkDTO 排最前")
     void hybridRrfFusion() {
         // 向量通道：A 第1名、B 第2名；关键词通道：B 第1名、C 第2名
         when(embeddingStrategy.embed(any())).thenReturn(new float[4]);

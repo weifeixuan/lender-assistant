@@ -17,7 +17,7 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
  *
  * 为什么回到 ResponseBodyAdvice（回退 ADR-0007）：切面 @Around 返回 ApiResponse 时，
  * controller 被 CGLIB 代理后，生成的代理方法会把返回值强制转换回声明类型
- * （如 List&lt;DocSummary&gt;），导致 ClassCastException——返回 List 的接口全部 500。
+ * （如 List&lt;DocSummaryDTO&gt;），导致 ClassCastException——返回 List 的接口全部 500。
  * ResponseBodyAdvice 在消息转换器出站前替换 body，不改变 JVM 方法返回值，天然没有这个问题。
  *
  * 不包装的情形：

@@ -2,7 +2,7 @@ package com.lender.assistant.rag.tool;
 
 import com.lender.assistant.rag.service.SearchService;
 import com.lender.assistant.rag.tool.impl.KbSearchPlanTool;
-import com.lender.assistant.rag.vo.response.SearchItemResponse;
+import com.lender.assistant.rag.model.response.SearchItemResponse;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;

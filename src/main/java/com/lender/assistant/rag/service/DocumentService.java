@@ -1,10 +1,10 @@
 package com.lender.assistant.rag.service;
 
-import com.lender.assistant.rag.model.ChunkRow;
-import com.lender.assistant.rag.model.DocContent;
-import com.lender.assistant.rag.model.DocSummary;
-import com.lender.assistant.rag.vo.response.ChunkPageResponse;
-import com.lender.assistant.rag.vo.response.UploadResponse;
+import com.lender.assistant.rag.model.entity.ChunkEntity;
+import com.lender.assistant.rag.model.dto.DocContentDTO;
+import com.lender.assistant.rag.model.dto.DocSummaryDTO;
+import com.lender.assistant.rag.model.response.ChunkPageResponse;
+import com.lender.assistant.rag.model.response.UploadResponse;
 
 import java.util.List;
 
@@ -27,19 +27,19 @@ public interface DocumentService {
     UploadResponse ingestDocument(String docId, String fileName, byte[] fileBytes) throws Exception;
 
     /** 先删旧块再插新块：同一 docId 重复入库幂等；删+插必须原子（事务在实现方法上） */
-    void replaceDocument(String docId, String docTitle, String sourcePath, List<ChunkRow> rows);
+    void replaceDocument(String docId, String docTitle, String sourcePath, List<ChunkEntity> rows);
 
     int countByDoc(String docId);
 
     void deleteByDoc(String docId);
 
-    List<DocSummary> listDocuments();
+    List<DocSummaryDTO> listDocuments();
 
     /**
-     * 按 chunk 序取文档内容：text 为拼好的全文（每块前置一行【章节】section_path，供模型 Prompt），
-     * lines 为结构化 chunk 行（供规则抽取按章节分类）；文档不存在返回 null。
+     * 按 ChunkDTO 序取文档内容：text 为拼好的全文（每块前置一行【章节】section_path，供模型 Prompt），
+     * lines 为结构化 ChunkDTO 行（供规则抽取按章节分类）；文档不存在返回 null。
      */
-    DocContent loadDocContent(String docId);
+    DocContentDTO loadDocContent(String docId);
 
     /**
      * 切片分页查询：page 从 1 开始、size 1-100，未传与越界都在本方法归一；

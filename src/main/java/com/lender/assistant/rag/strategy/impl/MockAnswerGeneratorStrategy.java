@@ -1,9 +1,9 @@
 package com.lender.assistant.rag.strategy.impl;
 
-import com.lender.assistant.rag.strategy.AnswerCancellation;
-import com.lender.assistant.rag.strategy.AnswerGenerationRequest;
+import com.lender.assistant.rag.model.dto.AnswerCancellationDTO;
+import com.lender.assistant.rag.model.dto.AnswerGenerationRequestDTO;
 import com.lender.assistant.rag.strategy.AnswerGeneratorStrategy;
-import com.lender.assistant.rag.vo.response.SearchItemResponse;
+import com.lender.assistant.rag.model.response.SearchItemResponse;
 import com.lender.assistant.tools.ToolIntentRouter.ToolIntent;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -53,7 +53,7 @@ public class MockAnswerGeneratorStrategy implements AnswerGeneratorStrategy {
     }
 
     @Override
-    public void generate(AnswerGenerationRequest request) {
+    public void generate(AnswerGenerationRequestDTO request) {
         // Mock 不模拟多轮语义：签名与真实实现保持一致，历史直接忽略
         streamAnswer(buildAnswer(request.question(), request.contextHits()), request.onDelta(),
                 request.cancellation());
@@ -92,7 +92,7 @@ public class MockAnswerGeneratorStrategy implements AnswerGeneratorStrategy {
         return answer.toString();
     }
 
-    private void streamAnswer(String full, Consumer<String> onDelta, AnswerCancellation cancellation) {
+    private void streamAnswer(String full, Consumer<String> onDelta, AnswerCancellationDTO cancellation) {
         for (int i = 0; i < full.length(); i += STREAM_DELTA_CHARS) {
             // 客户端断开后立即停止：不再切片、不再回调（模拟"停止消费上游 token"）
             if (cancellation.isCancelled()) {

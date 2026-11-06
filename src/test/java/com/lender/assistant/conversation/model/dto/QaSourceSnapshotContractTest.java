@@ -2,7 +2,7 @@ package com.lender.assistant.conversation.model.dto;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.lender.assistant.rag.vo.response.QaSourceResponse;
+import com.lender.assistant.rag.model.response.QaSourceResponse;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 

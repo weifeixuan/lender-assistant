@@ -1,14 +1,14 @@
 package com.lender.assistant.rag.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.lender.assistant.rag.plan.PlanAndExecuteService;
-import com.lender.assistant.rag.plan.model.ExecutionPlan;
-import com.lender.assistant.rag.plan.model.PlanStep;
-import com.lender.assistant.rag.routing.QuestionRoutingService;
-import com.lender.assistant.rag.routing.model.QuestionRoute;
-import com.lender.assistant.rag.routing.model.RoutingDecision;
+import com.lender.assistant.rag.service.PlanAndExecuteService;
+import com.lender.assistant.rag.model.dto.ExecutionPlanDTO;
+import com.lender.assistant.rag.model.dto.PlanStepDTO;
+import com.lender.assistant.rag.service.QuestionRoutingService;
+import com.lender.assistant.rag.model.dto.QuestionRoute;
+import com.lender.assistant.rag.model.dto.RoutingDecisionDTO;
 import com.lender.assistant.rag.service.impl.RoutingEvalServiceImpl;
-import com.lender.assistant.rag.vo.response.RoutingEvalResponse;
+import com.lender.assistant.rag.model.response.RoutingEvalResponse;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
@@ -31,7 +31,7 @@ class RoutingEvalServiceImplTest {
     void computesMetrics() throws Exception {
         QuestionRoutingService routing = mock(QuestionRoutingService.class);
         when(routing.route(any())).thenReturn(
-                new RoutingDecision(QuestionRoute.KNOWLEDGE, 0.9, "单事实", "NONE"));
+                new RoutingDecisionDTO(QuestionRoute.KNOWLEDGE, 0.9, "单事实", "NONE"));
         PlanAndExecuteService planning = mock(PlanAndExecuteService.class);
         when(planning.plan(any(), any())).thenReturn(validPlan());
 
@@ -54,9 +54,9 @@ class RoutingEvalServiceImplTest {
     void mockPlannerYieldsZeroPlanValidity() throws Exception {
         QuestionRoutingService routing = mock(QuestionRoutingService.class);
         when(routing.route(any())).thenReturn(
-                new RoutingDecision(QuestionRoute.KNOWLEDGE, 0.4, "降级", "NONE"));
+                new RoutingDecisionDTO(QuestionRoute.KNOWLEDGE, 0.4, "降级", "NONE"));
         PlanAndExecuteService planning = mock(PlanAndExecuteService.class);
-        when(planning.plan(any(), any())).thenReturn(ExecutionPlan.invalid());
+        when(planning.plan(any(), any())).thenReturn(ExecutionPlanDTO.invalid());
 
         RoutingEvalResponse response = service(routing, planning).run();
 
@@ -73,9 +73,9 @@ class RoutingEvalServiceImplTest {
         return service;
     }
 
-    private static ExecutionPlan validPlan() {
-        return ExecutionPlan.valid("目标", List.of(
-                new PlanStep("s1", 1, "检索", "kb.search", Map.of("query", "放款条件")),
-                new PlanStep("s2", 2, "查客户", "customer.profile", Map.of("customerId", "C10001"))));
+    private static ExecutionPlanDTO validPlan() {
+        return ExecutionPlanDTO.valid("目标", List.of(
+                new PlanStepDTO("s1", 1, "检索", "kb.search", Map.of("query", "放款条件")),
+                new PlanStepDTO("s2", 2, "查客户", "customer.profile", Map.of("customerId", "C10001"))));
     }
 }

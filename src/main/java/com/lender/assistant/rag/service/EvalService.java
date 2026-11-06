@@ -1,7 +1,7 @@
 package com.lender.assistant.rag.service;
 
 import com.lender.assistant.common.constant.SearchMode;
-import com.lender.assistant.rag.vo.response.EvalRunResponse;
+import com.lender.assistant.rag.model.response.EvalRunResponse;
 
 /**
  * 检索质量评估（跑评估集 → 算 recall@K / MRR → 出 markdown 报告）。

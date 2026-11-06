@@ -5,7 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lender.assistant.common.constant.MessageConstants;
 import com.lender.assistant.conversation.mapper.MessageMapper;
 import com.lender.assistant.conversation.model.entity.MessageEntity;
-import com.lender.assistant.rag.model.ChatTurn;
+import com.lender.assistant.rag.model.dto.ChatTurnDTO;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
@@ -55,7 +55,7 @@ public class ConversationHistoryAssembler {
     }
 
     /** @param currentRoundId 本轮 id，装配时排除，避免把刚提问的用户消息当成历史 */
-    public List<ChatTurn> assemble(String conversationId, String currentRoundId) {
+    public List<ChatTurnDTO> assemble(String conversationId, String currentRoundId) {
         List<MessageEntity> rows = messageMapper.listByConversation(conversationId);
 
         Map<String, RoundMessages> rounds = new LinkedHashMap<>();
@@ -75,11 +75,11 @@ public class ConversationHistoryAssembler {
             }
         }
 
-        List<ChatTurn> complete = new ArrayList<>();
+        List<ChatTurnDTO> complete = new ArrayList<>();
         for (RoundMessages round : rounds.values()) {
             if (round.user != null && round.assistant != null && !round.ruleReply) {
-                complete.add(new ChatTurn(MessageConstants.ROLE_USER, round.user.content()));
-                complete.add(new ChatTurn(MessageConstants.ROLE_ASSISTANT,
+                complete.add(new ChatTurnDTO(MessageConstants.ROLE_USER, round.user.content()));
+                complete.add(new ChatTurnDTO(MessageConstants.ROLE_ASSISTANT,
                         assistantContent(round.assistant)));
             }
         }
@@ -87,7 +87,7 @@ public class ConversationHistoryAssembler {
         // 最近 maxRounds 轮（一轮两条消息）
         int roundsToKeep = maxRounds * 2;
         int from = Math.max(0, complete.size() - roundsToKeep);
-        List<ChatTurn> selected = new ArrayList<>(complete.subList(from, complete.size()));
+        List<ChatTurnDTO> selected = new ArrayList<>(complete.subList(from, complete.size()));
 
         // 超字符上限：从最旧一轮开始整轮丢弃（每次丢 USER + ASSISTANT 两条）
         while (totalChars(selected) > maxChars && !selected.isEmpty()) {
@@ -136,7 +136,7 @@ public class ConversationHistoryAssembler {
     }
 
     /** 检索 query 用的最近一条历史用户正文；没有可用历史返回 null */
-    public static String lastUserContent(List<ChatTurn> history) {
+    public static String lastUserContent(List<ChatTurnDTO> history) {
         for (int i = history.size() - 1; i >= 0; i--) {
             if (MessageConstants.ROLE_USER.equals(history.get(i).role())) {
                 return history.get(i).content();
@@ -145,9 +145,9 @@ public class ConversationHistoryAssembler {
         return null;
     }
 
-    private static int totalChars(List<ChatTurn> history) {
+    private static int totalChars(List<ChatTurnDTO> history) {
         int total = 0;
-        for (ChatTurn turn : history) {
+        for (ChatTurnDTO turn : history) {
             total += turn.content() == null ? 0 : turn.content().length();
         }
         return total;

@@ -2,14 +2,14 @@ package com.lender.assistant.rag.controller;
 
 import com.lender.assistant.common.constant.SearchConstants;
 import com.lender.assistant.common.util.TopKUtils;
-import com.lender.assistant.rag.model.DocSummary;
+import com.lender.assistant.rag.model.dto.DocSummaryDTO;
 import com.lender.assistant.rag.service.DocumentService;
 import com.lender.assistant.rag.service.SearchService;
-import com.lender.assistant.rag.vo.request.SearchRequest;
-import com.lender.assistant.rag.vo.response.ChunkPageResponse;
-import com.lender.assistant.rag.vo.response.DeleteResponse;
-import com.lender.assistant.rag.vo.response.SearchItemResponse;
-import com.lender.assistant.rag.vo.response.UploadResponse;
+import com.lender.assistant.rag.model.request.SearchRequest;
+import com.lender.assistant.rag.model.response.ChunkPageResponse;
+import com.lender.assistant.rag.model.response.DeleteResponse;
+import com.lender.assistant.rag.model.response.SearchItemResponse;
+import com.lender.assistant.rag.model.response.UploadResponse;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -57,7 +57,7 @@ public class DocumentAdminController {
     }
 
     @GetMapping
-    public List<DocSummary> list() {
+    public List<DocSummaryDTO> list() {
         return documentService.listDocuments();
     }
 

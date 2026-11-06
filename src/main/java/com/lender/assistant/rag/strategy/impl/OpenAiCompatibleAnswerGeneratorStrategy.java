@@ -1,9 +1,9 @@
 package com.lender.assistant.rag.strategy.impl;
 
-import com.lender.assistant.rag.strategy.AnswerGenerationRequest;
+import com.lender.assistant.rag.model.dto.AnswerGenerationRequestDTO;
 import com.lender.assistant.rag.strategy.AnswerGeneratorStrategy;
-import com.lender.assistant.rag.model.ChatTurn;
-import com.lender.assistant.rag.vo.response.SearchItemResponse;
+import com.lender.assistant.rag.model.dto.ChatTurnDTO;
+import com.lender.assistant.rag.model.response.SearchItemResponse;
 import com.lender.assistant.tools.LenderQueryTools;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.messages.AssistantMessage;
@@ -52,9 +52,9 @@ public class OpenAiCompatibleAnswerGeneratorStrategy implements AnswerGeneratorS
     }
 
     @Override
-    public void generate(AnswerGenerationRequest request) {
+    public void generate(AnswerGenerationRequestDTO request) {
         List<Message> messages = new ArrayList<>();
-        for (ChatTurn turn : request.history()) {
+        for (ChatTurnDTO turn : request.history()) {
             messages.add("ASSISTANT".equals(turn.role())
                     ? new AssistantMessage(turn.content())
                     : new UserMessage(turn.content()));

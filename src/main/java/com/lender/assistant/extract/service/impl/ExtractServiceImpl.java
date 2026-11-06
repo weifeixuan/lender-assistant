@@ -11,7 +11,7 @@ import com.lender.assistant.extract.model.entity.InternalFieldEntity;
 import com.lender.assistant.extract.service.ExtractService;
 import com.lender.assistant.extract.service.InternalFieldCatalog;
 import com.lender.assistant.extract.strategy.ExtractGeneratorStrategy;
-import com.lender.assistant.rag.model.DocContent;
+import com.lender.assistant.rag.model.dto.DocContentDTO;
 import com.lender.assistant.rag.service.DocumentService;
 import com.lender.assistant.resilience.ResilientLlmExecutor;
 import org.springframework.stereotype.Service;
@@ -45,7 +45,7 @@ public class ExtractServiceImpl implements ExtractService {
 
     @Override
     public List<FieldMappingEntity> extractFromDoc(String docId) {
-        DocContent doc = documentService.loadDocContent(docId);
+        DocContentDTO doc = documentService.loadDocContent(docId);
         // 业务失败抛 BizException 而非裸 IllegalArgumentException（§5.3）：带 ErrorCode 供全局处理器定 HTTP 状态与对外 code
         if (doc == null || doc.text().isBlank()) {
             throw new BizException(ErrorCode.PARAM_INVALID, "文档不存在或未入库: " + docId);

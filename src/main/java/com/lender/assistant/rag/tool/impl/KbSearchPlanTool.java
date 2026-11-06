@@ -5,7 +5,7 @@ import com.lender.assistant.rag.tool.AgentTool;
 import com.lender.assistant.rag.tool.ToolContext;
 import com.lender.assistant.rag.tool.ToolErrorCode;
 import com.lender.assistant.rag.tool.ToolResult;
-import com.lender.assistant.rag.vo.response.SearchItemResponse;
+import com.lender.assistant.rag.model.response.SearchItemResponse;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;

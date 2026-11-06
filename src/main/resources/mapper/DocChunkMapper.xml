@@ -12,7 +12,7 @@
 -->
 <mapper namespace="com.lender.assistant.rag.mapper.DocChunkMapper">
 
-    <resultMap id="docSummaryMap" type="com.lender.assistant.rag.model.DocSummary">
+    <resultMap id="docSummaryMap" type="com.lender.assistant.rag.model.dto.DocSummaryDTO">
         <constructor>
             <arg column="doc_id" javaType="java.lang.String"/>
             <arg column="doc_title" javaType="java.lang.String"/>
@@ -23,7 +23,7 @@
         </constructor>
     </resultMap>
 
-    <resultMap id="chunkLineMap" type="com.lender.assistant.rag.model.DocChunkLine">
+    <resultMap id="chunkLineMap" type="com.lender.assistant.rag.model.dto.DocChunkLineDTO">
         <constructor>
             <arg column="doc_title" javaType="java.lang.String"/>
             <arg column="section_path" javaType="java.lang.String"/>
@@ -31,7 +31,7 @@
         </constructor>
     </resultMap>
 
-    <resultMap id="chunkItemMap" type="com.lender.assistant.rag.model.ChunkItemRow">
+    <resultMap id="chunkItemMap" type="com.lender.assistant.rag.model.entity.ChunkItemEntity">
         <constructor>
             <arg column="id" javaType="java.lang.Long"/>
             <arg column="chunk_index" javaType="java.lang.Integer"/>
@@ -41,7 +41,7 @@
         </constructor>
     </resultMap>
 
-    <resultMap id="vectorHitMap" type="com.lender.assistant.rag.model.VectorHit">
+    <resultMap id="vectorHitMap" type="com.lender.assistant.rag.model.dto.VectorHitDTO">
         <constructor>
             <arg column="id" javaType="java.lang.Long"/>
             <arg column="doc_id" javaType="java.lang.String"/>
@@ -53,7 +53,7 @@
         </constructor>
     </resultMap>
 
-    <resultMap id="keywordHitMap" type="com.lender.assistant.rag.model.KeywordHit">
+    <resultMap id="keywordHitMap" type="com.lender.assistant.rag.model.dto.KeywordHitDTO">
         <constructor>
             <arg column="id" javaType="java.lang.Long"/>
             <arg column="doc_id" javaType="java.lang.String"/>

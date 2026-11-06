@@ -6,7 +6,7 @@ import com.lender.assistant.common.exception.BizException;
 import com.lender.assistant.common.exception.ErrorCode;
 import com.lender.assistant.common.util.TopKUtils;
 import com.lender.assistant.common.web.UserIdInterceptor;
-import com.lender.assistant.rag.vo.request.QaRequest;
+import com.lender.assistant.rag.model.request.QaRequest;
 import com.lender.assistant.rag.service.QaService;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.PostMapping;

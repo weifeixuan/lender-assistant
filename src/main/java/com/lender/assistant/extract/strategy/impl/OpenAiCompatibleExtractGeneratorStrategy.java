@@ -6,7 +6,7 @@ import com.lender.assistant.extract.model.entity.FieldMappingEntity;
 import com.lender.assistant.extract.model.entity.InternalFieldEntity;
 import com.lender.assistant.extract.service.InternalFieldCatalog;
 import com.lender.assistant.extract.strategy.ExtractGeneratorStrategy;
-import com.lender.assistant.rag.model.DocContent;
+import com.lender.assistant.rag.model.dto.DocContentDTO;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -46,7 +46,7 @@ public class OpenAiCompatibleExtractGeneratorStrategy implements ExtractGenerato
     }
 
     @Override
-    public List<FieldMappingEntity> extract(DocContent doc) {
+    public List<FieldMappingEntity> extract(DocContentDTO doc) {
         String raw = chatClient.prompt()
                 .system(systemPrompt())
                 .user(userPrompt(doc.docTitle(), doc.text()))

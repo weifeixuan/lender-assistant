@@ -2,14 +2,14 @@ package com.lender.assistant.rag.service.impl;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.lender.assistant.rag.plan.PlanAndExecuteService;
-import com.lender.assistant.rag.plan.model.ExecutionPlan;
-import com.lender.assistant.rag.routing.QuestionRoutingService;
-import com.lender.assistant.rag.routing.model.RoutingDecision;
-import com.lender.assistant.rag.routing.model.RoutingRequest;
+import com.lender.assistant.rag.service.PlanAndExecuteService;
+import com.lender.assistant.rag.model.dto.ExecutionPlanDTO;
+import com.lender.assistant.rag.service.QuestionRoutingService;
+import com.lender.assistant.rag.model.dto.RoutingDecisionDTO;
+import com.lender.assistant.rag.model.dto.RoutingRequestDTO;
 import com.lender.assistant.rag.service.RoutingEvalService;
-import com.lender.assistant.rag.vo.response.RoutingEvalItemResponse;
-import com.lender.assistant.rag.vo.response.RoutingEvalResponse;
+import com.lender.assistant.rag.model.response.RoutingEvalItemResponse;
+import com.lender.assistant.rag.model.response.RoutingEvalResponse;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -66,14 +66,14 @@ public class RoutingEvalServiceImpl implements RoutingEvalService {
     }
 
     private RoutingEvalItemResponse evaluate(EvalItem item) {
-        RoutingDecision decision = routingService.route(
-                new RoutingRequest(item.question(), item.previousQuestion(), null, ""));
+        RoutingDecisionDTO decision = routingService.route(
+                new RoutingRequestDTO(item.question(), item.previousQuestion(), null, ""));
         boolean correct = item.expectedRoute().equals(decision.route().name());
         boolean planValid = false;
         int stepCount = 0;
         boolean coreferencePass = false;
         if (PLAN.equals(item.expectedRoute())) {
-            ExecutionPlan plan = planningService.plan(item.question(), item.previousQuestion());
+            ExecutionPlanDTO plan = planningService.plan(item.question(), item.previousQuestion());
             planValid = !plan.degraded();
             stepCount = plan.steps().size();
             coreferencePass = coreferencePass(item, plan);
@@ -84,7 +84,7 @@ public class RoutingEvalServiceImpl implements RoutingEvalService {
     }
 
     /** 指代型追问的验收动作：合法计划且步骤工具全部在允许清单内 */
-    private static boolean coreferencePass(EvalItem item, ExecutionPlan plan) {
+    private static boolean coreferencePass(EvalItem item, ExecutionPlanDTO plan) {
         if (!COREFERENCE.equals(item.category()) || plan.degraded()) {
             return false;
         }

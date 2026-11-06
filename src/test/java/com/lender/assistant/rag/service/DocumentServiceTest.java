@@ -3,21 +3,21 @@ package com.lender.assistant.rag.service;
 import com.lender.assistant.common.exception.BizException;
 import com.lender.assistant.common.exception.ErrorCode;
 import com.lender.assistant.rag.mapper.DocChunkMapper;
-import com.lender.assistant.rag.model.Chunk;
-import com.lender.assistant.rag.model.ChunkItemRow;
-import com.lender.assistant.rag.model.ChunkRow;
-import com.lender.assistant.rag.model.DocChunkLine;
-import com.lender.assistant.rag.model.DocContent;
-import com.lender.assistant.rag.model.DocSummary;
-import com.lender.assistant.rag.model.ParsedDocument;
+import com.lender.assistant.rag.model.dto.ChunkDTO;
+import com.lender.assistant.rag.model.entity.ChunkItemEntity;
+import com.lender.assistant.rag.model.entity.ChunkEntity;
+import com.lender.assistant.rag.model.dto.DocChunkLineDTO;
+import com.lender.assistant.rag.model.dto.DocContentDTO;
+import com.lender.assistant.rag.model.dto.DocSummaryDTO;
+import com.lender.assistant.rag.model.dto.ParsedDocumentDTO;
 import com.lender.assistant.rag.service.impl.DocumentServiceImpl;
 import com.lender.assistant.rag.strategy.ChunkSplitterStrategy;
 import com.lender.assistant.rag.strategy.DocumentParserStrategy;
 import com.lender.assistant.rag.strategy.EmbeddingStrategy;
 import com.lender.assistant.rag.strategy.factory.DocumentParserStrategyFactory;
-import com.lender.assistant.rag.vo.response.ChunkItemResponse;
-import com.lender.assistant.rag.vo.response.ChunkPageResponse;
-import com.lender.assistant.rag.vo.response.UploadResponse;
+import com.lender.assistant.rag.model.response.ChunkItemResponse;
+import com.lender.assistant.rag.model.response.ChunkPageResponse;
+import com.lender.assistant.rag.model.response.UploadResponse;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -32,7 +32,7 @@ import static org.mockito.Mockito.*;
  * DocumentServiceImpl 单元测试：只测自身编排逻辑，Mapper 全部 mock（§10.2 不连真库）。
  *
  * 断言锚点是"与旧 rag/store/DocumentStore 逐行为等价"：
- * 空文档只删不插、非空文档先删后插、无 chunk 返回 null、【章节】前缀拼接逐字一致。
+ * 空文档只删不插、非空文档先删后插、无 ChunkDTO 返回 null、【章节】前缀拼接逐字一致。
  */
 class DocumentServiceTest {
 
@@ -66,7 +66,7 @@ class DocumentServiceTest {
     @Test
     @DisplayName("replaceDocument：非空 rows 先删后插，参数原样透传")
     void replaceDocumentWithRowsDeletesThenInserts() {
-        List<ChunkRow> rows = List.of(new ChunkRow("第1节", 0, "正文A", 3, "[0.1,0.2]"));
+        List<ChunkEntity> rows = List.of(new ChunkEntity("第1节", 0, "正文A", 3, "[0.1,0.2]"));
 
         service.replaceDocument("doc1", "测试文档", "/path/x.docx", rows);
 
@@ -77,7 +77,7 @@ class DocumentServiceTest {
     @Test
     @DisplayName("replaceDocument：docId 为空/超 64 字符/含非法字符时抛 BizException，且不触达 Mapper")
     void replaceDocumentRejectsInvalidDocId() {
-        List<ChunkRow> rows = List.of(new ChunkRow("第1节", 0, "正文A", 3, "[0.1,0.2]"));
+        List<ChunkEntity> rows = List.of(new ChunkEntity("第1节", 0, "正文A", 3, "[0.1,0.2]"));
         String tooLong = "a".repeat(65);
 
         assertThrows(BizException.class,
@@ -106,8 +106,8 @@ class DocumentServiceTest {
     void listChunkPageAppliesDefaults() {
         when(mapper.countByDoc("doc1")).thenReturn(35);
         when(mapper.listChunkPage("doc1", 20, 0)).thenReturn(List.of(
-                new ChunkItemRow(1L, 0, "甲", 10, "正文A"),
-                new ChunkItemRow(2L, 1, "乙", 20, "正文B")));
+                new ChunkItemEntity(1L, 0, "甲", 10, "正文A"),
+                new ChunkItemEntity(2L, 1, "乙", 20, "正文B")));
 
         ChunkPageResponse page = service.listChunkPage("doc1", null, null);
 
@@ -150,7 +150,7 @@ class DocumentServiceTest {
     void listChunkPageMapsItemsAndOffset() {
         when(mapper.countByDoc("doc1")).thenReturn(35);
         when(mapper.listChunkPage("doc1", 10, 10)).thenReturn(List.of(
-                new ChunkItemRow(11L, 10, "3 逾期文件 > 3.2 格式", 88, "逾期阶段 M1 为 1-30 天")));
+                new ChunkItemEntity(11L, 10, "3 逾期文件 > 3.2 格式", 88, "逾期阶段 M1 为 1-30 天")));
 
         ChunkPageResponse page = service.listChunkPage("doc1", 2, 10);
 
@@ -169,13 +169,13 @@ class DocumentServiceTest {
     @Test
     @DisplayName("ingestDocument：同内容不同 docId 不再新增，返回既有文档且不做向量化")
     void ingestDeduplicatesSameContentUnderDifferentDocId() throws Exception {
-        List<Chunk> chunks = List.of(
-                new Chunk("第1节", 0, "正文A", 3), new Chunk("第2节", 1, "正文B", 3));
+        List<ChunkDTO> chunks = List.of(
+                new ChunkDTO("第1节", 0, "正文A", 3), new ChunkDTO("第2节", 1, "正文B", 3));
         when(mapper.listDocuments()).thenReturn(List.of(
-                new DocSummary("huaxin_corp_api_v1", "旧标题", "旧路径.docx", 2, 6L, "2026-10-29 22:50:21")));
+                new DocSummaryDTO("huaxin_corp_api_v1", "旧标题", "旧路径.docx", 2, 6L, "2026-10-29 22:50:21")));
         when(mapper.listChunkLines("huaxin_corp_api_v1")).thenReturn(List.of(
-                new DocChunkLine("旧标题", "第1节", "正文A"),
-                new DocChunkLine("旧标题", "第2节", "正文B")));
+                new DocChunkLineDTO("旧标题", "第1节", "正文A"),
+                new DocChunkLineDTO("旧标题", "第2节", "正文B")));
 
         UploadResponse response = ingest("new_doc_id", "换了文件名.docx", chunks);
 
@@ -189,13 +189,13 @@ class DocumentServiceTest {
     @Test
     @DisplayName("ingestDocument：切片数/总字符数相同但内容不同，正常向量化并写入")
     void ingestInsertsWhenContentDiffers() throws Exception {
-        List<Chunk> chunks = List.of(
-                new Chunk("第1节", 0, "正文A", 3), new Chunk("第2节", 1, "正文C", 3));
+        List<ChunkDTO> chunks = List.of(
+                new ChunkDTO("第1节", 0, "正文A", 3), new ChunkDTO("第2节", 1, "正文C", 3));
         when(mapper.listDocuments()).thenReturn(List.of(
-                new DocSummary("huaxin_corp_api_v1", "旧标题", "旧路径.docx", 2, 6L, "2026-10-29 22:50:21")));
+                new DocSummaryDTO("huaxin_corp_api_v1", "旧标题", "旧路径.docx", 2, 6L, "2026-10-29 22:50:21")));
         when(mapper.listChunkLines("huaxin_corp_api_v1")).thenReturn(List.of(
-                new DocChunkLine("旧标题", "第1节", "正文A"),
-                new DocChunkLine("旧标题", "第2节", "正文B")));
+                new DocChunkLineDTO("旧标题", "第1节", "正文A"),
+                new DocChunkLineDTO("旧标题", "第2节", "正文B")));
         when(embeddingStrategy.embed(any())).thenReturn(new float[]{0.5f, 0.5f});
 
         UploadResponse response = ingest("new_doc_id", "新文档.docx", chunks);
@@ -206,8 +206,8 @@ class DocumentServiceTest {
     }
 
     /** 走完 解析 → 切分 → 判重 的前半段，parser/splitter 用 mock 喂固定切片 */
-    private UploadResponse ingest(String docId, String fileName, List<Chunk> chunks) throws Exception {
-        ParsedDocument parsed = new ParsedDocument(fileName, List.of(ParsedDocument.Block.paragraph("正文")));
+    private UploadResponse ingest(String docId, String fileName, List<ChunkDTO> chunks) throws Exception {
+        ParsedDocumentDTO parsed = new ParsedDocumentDTO(fileName, List.of(ParsedDocumentDTO.Block.paragraph("正文")));
         DocumentParserStrategy parser = mock(DocumentParserStrategy.class);
         when(parserFactory.resolve(fileName)).thenReturn(parser);
         when(parser.parse(eq(fileName), any())).thenReturn(parsed);
@@ -220,19 +220,19 @@ class DocumentServiceTest {
     void loadDocContentReturnsNullWhenNoChunks() {
         when(mapper.listChunkLines("doc1")).thenReturn(List.of());
 
-        DocContent content = service.loadDocContent("doc1");
+        DocContentDTO content = service.loadDocContent("doc1");
 
-        assertNull(content, "无 chunk 视为文档不存在，返回 null 而非空串");
+        assertNull(content, "无 ChunkDTO 视为文档不存在，返回 null 而非空串");
     }
 
     @Test
-    @DisplayName("loadDocContent：按 chunk 序拼接，每块前置【章节】，标题取首行")
+    @DisplayName("loadDocContent：按 ChunkDTO 序拼接，每块前置【章节】，标题取首行")
     void loadDocContentJoinsChunksWithSectionPrefix() {
         when(mapper.listChunkLines("doc1")).thenReturn(List.of(
-                new DocChunkLine("标题", "甲", "正文A"),
-                new DocChunkLine("标题", "乙", "正文B")));
+                new DocChunkLineDTO("标题", "甲", "正文A"),
+                new DocChunkLineDTO("标题", "乙", "正文B")));
 
-        DocContent content = service.loadDocContent("doc1");
+        DocContentDTO content = service.loadDocContent("doc1");
 
         assertNotNull(content);
         assertEquals("标题", content.docTitle(), "同一 doc 各块标题相同，取首行即可");

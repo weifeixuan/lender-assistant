@@ -1,7 +1,7 @@
 package com.lender.assistant.rag.strategy;
 
-import com.lender.assistant.rag.model.Chunk;
-import com.lender.assistant.rag.model.ParsedDocument;
+import com.lender.assistant.rag.model.dto.ChunkDTO;
+import com.lender.assistant.rag.model.dto.ParsedDocumentDTO;
 
 import java.util.List;
 
@@ -11,5 +11,5 @@ import java.util.List;
  */
 public interface ChunkSplitterStrategy {
 
-    List<Chunk> split(ParsedDocument doc);
+    List<ChunkDTO> split(ParsedDocumentDTO doc);
 }

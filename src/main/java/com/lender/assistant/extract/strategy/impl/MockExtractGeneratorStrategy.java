@@ -3,8 +3,8 @@ package com.lender.assistant.extract.strategy.impl;
 import com.lender.assistant.extract.model.entity.FieldMappingEntity;
 import com.lender.assistant.extract.service.InternalFieldCatalog;
 import com.lender.assistant.extract.strategy.ExtractGeneratorStrategy;
-import com.lender.assistant.rag.model.DocChunkLine;
-import com.lender.assistant.rag.model.DocContent;
+import com.lender.assistant.rag.model.dto.DocChunkLineDTO;
+import com.lender.assistant.rag.model.dto.DocContentDTO;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
@@ -50,7 +50,7 @@ public class MockExtractGeneratorStrategy implements ExtractGeneratorStrategy {
             "^\\s*(?:\\d+(?:\\.\\d+)*\\s|[一二三四五六七八九十]+[、.]|（[一二三四五六七八九十]+）)");
 
     @Override
-    public List<FieldMappingEntity> extract(DocContent doc) {
+    public List<FieldMappingEntity> extract(DocContentDTO doc) {
         String docTitle = doc.docTitle();
         String docText = doc.text();
         List<FieldMappingEntity> out = new ArrayList<>();
@@ -105,7 +105,7 @@ public class MockExtractGeneratorStrategy implements ExtractGeneratorStrategy {
         out.addAll(extractApiPaths(doc.lines()));
 
         // 7. 状态枚举：收集全部匹配取最长——硬切分可能把枚举截断（"SUCCESS / FAIL"），
-        //    完整值在相邻 chunk 里；首匹配会抽到残缺形态，最长匹配最稳
+        //    完整值在相邻 ChunkDTO 里；首匹配会抽到残缺形态，最长匹配最稳
         Matcher status = STATUS_ENUM.matcher(docText);
         String bestStatus = null;
         while (status.find()) {
@@ -186,14 +186,14 @@ public class MockExtractGeneratorStrategy implements ExtractGeneratorStrategy {
 
     /**
      * 接口路径抽取：路径语义在章节标题里，标题来自两个来源——
-     * ① chunk 的 sectionPath（loadDocContent 返回的结构化字段，主通道）；
+     * ① ChunkDTO 的 sectionPath（loadDocContent 返回的结构化字段，主通道）；
      * ② 行内编号标题（直接抽取纯文本时的兜底）。
      * 取"路径出现前最近一次声明的章节"做分类。
      */
-    private List<FieldMappingEntity> extractApiPaths(List<DocChunkLine> chunkLines) {
+    private List<FieldMappingEntity> extractApiPaths(List<DocChunkLineDTO> chunkLines) {
         List<FieldMappingEntity> out = new ArrayList<>();
         String section = "";
-        for (DocChunkLine chunkLine : chunkLines) {
+        for (DocChunkLineDTO chunkLine : chunkLines) {
             if (chunkLine.sectionPath() != null && !chunkLine.sectionPath().isBlank()) {
                 section = lastSectionOf(chunkLine.sectionPath());
             }

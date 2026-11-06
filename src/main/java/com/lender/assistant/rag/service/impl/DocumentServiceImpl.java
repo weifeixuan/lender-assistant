@@ -4,22 +4,22 @@ import com.lender.assistant.common.exception.BizException;
 import com.lender.assistant.common.exception.ErrorCode;
 import com.lender.assistant.common.util.PgVectorUtils;
 import com.lender.assistant.rag.mapper.DocChunkMapper;
-import com.lender.assistant.rag.model.Chunk;
-import com.lender.assistant.rag.model.ChunkItemRow;
-import com.lender.assistant.rag.model.ChunkRow;
-import com.lender.assistant.rag.model.DocChunkLine;
-import com.lender.assistant.rag.model.DocContent;
-import com.lender.assistant.rag.model.DocSummary;
-import com.lender.assistant.rag.model.ParsedDocument;
+import com.lender.assistant.rag.model.dto.ChunkDTO;
+import com.lender.assistant.rag.model.entity.ChunkItemEntity;
+import com.lender.assistant.rag.model.entity.ChunkEntity;
+import com.lender.assistant.rag.model.dto.DocChunkLineDTO;
+import com.lender.assistant.rag.model.dto.DocContentDTO;
+import com.lender.assistant.rag.model.dto.DocSummaryDTO;
+import com.lender.assistant.rag.model.dto.ParsedDocumentDTO;
 import com.lender.assistant.rag.service.DocumentService;
 import com.lender.assistant.rag.strategy.ChunkSplitterStrategy;
 import com.lender.assistant.rag.strategy.DocumentParserStrategy;
 import com.lender.assistant.rag.strategy.EmbeddingStrategy;
 import com.lender.assistant.rag.strategy.factory.DocumentParserStrategyFactory;
-import com.lender.assistant.rag.vo.response.ChunkItemResponse;
-import com.lender.assistant.rag.vo.response.ChunkPageResponse;
-import com.lender.assistant.rag.vo.response.IngestMillisResponse;
-import com.lender.assistant.rag.vo.response.UploadResponse;
+import com.lender.assistant.rag.model.response.ChunkItemResponse;
+import com.lender.assistant.rag.model.response.ChunkPageResponse;
+import com.lender.assistant.rag.model.response.IngestMillisResponse;
+import com.lender.assistant.rag.model.response.UploadResponse;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -77,36 +77,36 @@ public class DocumentServiceImpl implements DocumentService {
         DocumentParserStrategy parser = parserFactory.resolve(fileName);
 
         long parseStart = System.currentTimeMillis();
-        ParsedDocument parsed = parser.parse(fileName, fileBytes);
+        ParsedDocumentDTO parsed = parser.parse(fileName, fileBytes);
         long parseMillis = System.currentTimeMillis() - parseStart;
 
         long splitStart = System.currentTimeMillis();
-        List<Chunk> chunks = splitter.split(parsed);
+        List<ChunkDTO> chunks = splitter.split(parsed);
         long splitMillis = System.currentTimeMillis() - splitStart;
 
         // 内容判重放在切分之后、向量化之前：切片文本已确定，能判中"同内容不同文件名"；
         // 且重复上传直接复用既有文档，省掉整轮向量化与写库
-        DocSummary duplicate = chunks.isEmpty() ? null : findDuplicateDocument(chunks);
+        DocSummaryDTO duplicate = chunks.isEmpty() ? null : findDuplicateDocument(chunks);
         if (duplicate != null) {
             return duplicateResponse(duplicate, parsed, parseMillis, splitMillis);
         }
 
         long embedStart = System.currentTimeMillis();
-        List<ChunkRow> rows = embedChunks(chunks);
+        List<ChunkEntity> rows = embedChunks(chunks);
         long embedMillis = System.currentTimeMillis() - embedStart;
 
         long storeStart = System.currentTimeMillis();
         self.replaceDocument(docId, stripExtension(fileName), fileName, rows);
         long storeMillis = System.currentTimeMillis() - storeStart;
 
-        double avgChunkChars = rows.stream().mapToInt(ChunkRow::charCount).average().orElse(0);
+        double avgChunkChars = rows.stream().mapToInt(ChunkEntity::charCount).average().orElse(0);
         return new UploadResponse(docId, parsed.blocks().size(), rows.size(), avgChunkChars,
                 new IngestMillisResponse(parseMillis, splitMillis, embedMillis, storeMillis),
                 embeddingStrategy.getClass().getSimpleName());
     }
 
     /** 重复上传：直接复用既有文档的统计值，向量化与写库耗时记 0 */
-    private UploadResponse duplicateResponse(DocSummary duplicate, ParsedDocument parsed,
+    private UploadResponse duplicateResponse(DocSummaryDTO duplicate, ParsedDocumentDTO parsed,
                                              long parseMillis, long splitMillis) {
         double avgChunkChars = duplicate.chunkCount() == 0
                 ? 0
@@ -117,14 +117,14 @@ public class DocumentServiceImpl implements DocumentService {
     }
 
     /** 逐切片向量化：章节路径拼进向量化输入（标题是强语义信号，丢掉太可惜） */
-    private List<ChunkRow> embedChunks(List<Chunk> chunks) {
-        List<ChunkRow> rows = new ArrayList<>(chunks.size());
-        for (Chunk chunk : chunks) {
-            String embedInput = chunk.sectionPath() == null || chunk.sectionPath().isEmpty()
-                    ? chunk.content()
-                    : chunk.sectionPath() + "\n" + chunk.content();
-            rows.add(new ChunkRow(chunk.sectionPath(), chunk.index(), chunk.content(),
-                    chunk.charCount(), PgVectorUtils.toLiteral(embeddingStrategy.embed(embedInput))));
+    private List<ChunkEntity> embedChunks(List<ChunkDTO> chunks) {
+        List<ChunkEntity> rows = new ArrayList<>(chunks.size());
+        for (ChunkDTO ChunkDTO : chunks) {
+            String embedInput = ChunkDTO.sectionPath() == null || ChunkDTO.sectionPath().isEmpty()
+                    ? ChunkDTO.content()
+                    : ChunkDTO.sectionPath() + "\n" + ChunkDTO.content();
+            rows.add(new ChunkEntity(ChunkDTO.sectionPath(), ChunkDTO.index(), ChunkDTO.content(),
+                    ChunkDTO.charCount(), PgVectorUtils.toLiteral(embeddingStrategy.embed(embedInput))));
         }
         return rows;
     }
@@ -136,10 +136,10 @@ public class DocumentServiceImpl implements DocumentService {
      * 哈希只取「章节 + 正文」的有序序列，不含 docId / 文件名 / doc_title，
      * 因此同一文件重复上传、内容相同但文件名不同，都能判中。
      */
-    private DocSummary findDuplicateDocument(List<Chunk> chunks) {
+    private DocSummaryDTO findDuplicateDocument(List<ChunkDTO> chunks) {
         String hash = contentHash(chunks);
-        long totalChars = chunks.stream().mapToLong(Chunk::charCount).sum();
-        for (DocSummary doc : mapper.listDocuments()) {
+        long totalChars = chunks.stream().mapToLong(ChunkDTO::charCount).sum();
+        for (DocSummaryDTO doc : mapper.listDocuments()) {
             if (doc.chunkCount() == null || doc.charCountTotal() == null) {
                 continue;
             }
@@ -153,17 +153,17 @@ public class DocumentServiceImpl implements DocumentService {
         return null;
     }
 
-    private String contentHash(List<Chunk> chunks) {
+    private String contentHash(List<ChunkDTO> chunks) {
         StringBuilder canonical = new StringBuilder();
-        for (Chunk chunk : chunks) {
-            canonical.append(canonicalLine(chunk.sectionPath(), chunk.content()));
+        for (ChunkDTO ChunkDTO : chunks) {
+            canonical.append(canonicalLine(ChunkDTO.sectionPath(), ChunkDTO.content()));
         }
         return sha256(canonical.toString());
     }
 
-    private String linesHash(List<DocChunkLine> lines) {
+    private String linesHash(List<DocChunkLineDTO> lines) {
         StringBuilder canonical = new StringBuilder();
-        for (DocChunkLine line : lines) {
+        for (DocChunkLineDTO line : lines) {
             canonical.append(canonicalLine(line.sectionPath(), line.content()));
         }
         return sha256(canonical.toString());
@@ -191,7 +191,7 @@ public class DocumentServiceImpl implements DocumentService {
 
     @Override
     @Transactional(rollbackFor = Exception.class)
-    public void replaceDocument(String docId, String docTitle, String sourcePath, List<ChunkRow> rows) {
+    public void replaceDocument(String docId, String docTitle, String sourcePath, List<ChunkEntity> rows) {
         validateDocId(docId);
         mapper.deleteByDoc(docId);
         if (rows.isEmpty()) {
@@ -211,13 +211,13 @@ public class DocumentServiceImpl implements DocumentService {
     }
 
     @Override
-    public List<DocSummary> listDocuments() {
+    public List<DocSummaryDTO> listDocuments() {
         return mapper.listDocuments();
     }
 
     @Override
-    public DocContent loadDocContent(String docId) {
-        List<DocChunkLine> lines = mapper.listChunkLines(docId);
+    public DocContentDTO loadDocContent(String docId) {
+        List<DocChunkLineDTO> lines = mapper.listChunkLines(docId);
         if (lines.isEmpty()) {
             return null;
         }
@@ -226,7 +226,7 @@ public class DocumentServiceImpl implements DocumentService {
         String text = lines.stream()
                 .map(l -> "【章节】" + l.sectionPath() + "\n" + l.content())
                 .collect(Collectors.joining("\n"));
-        return new DocContent(lines.get(0).docTitle(), text, lines);
+        return new DocContentDTO(lines.get(0).docTitle(), text, lines);
     }
 
     @Override
@@ -241,7 +241,7 @@ public class DocumentServiceImpl implements DocumentService {
                 : Math.max(MIN_PAGE_SIZE, Math.min(MAX_PAGE_SIZE, size));
         // 用 long 计算 offset：超页码时直接返回空页，避免乘方溢出成负数传给 SQL
         long offset = (long) (resolvedPage - 1) * resolvedSize;
-        List<ChunkItemRow> rows = offset >= total
+        List<ChunkItemEntity> rows = offset >= total
                 ? List.of()
                 : mapper.listChunkPage(docId, resolvedSize, (int) offset);
         List<ChunkItemResponse> items = rows.stream()

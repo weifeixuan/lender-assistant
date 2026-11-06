@@ -1,6 +1,6 @@
 package com.lender.assistant.rag.strategy.impl;
 
-import com.lender.assistant.rag.model.ParsedDocument;
+import com.lender.assistant.rag.model.dto.ParsedDocumentDTO;
 import com.lender.assistant.rag.strategy.DocumentParserStrategy;
 import org.springframework.stereotype.Component;
 
@@ -22,9 +22,9 @@ public class TextDocumentParserStrategy implements DocumentParserStrategy {
     }
 
     @Override
-    public ParsedDocument parse(String fileName, byte[] content) {
+    public ParsedDocumentDTO parse(String fileName, byte[] content) {
         String text = new String(content, StandardCharsets.UTF_8);
-        List<ParsedDocument.Block> blocks = new ArrayList<>();
+        List<ParsedDocumentDTO.Block> blocks = new ArrayList<>();
         for (String line : text.split("\r?\n")) {
             String trimmed = line.trim();
             if (trimmed.isEmpty()) {
@@ -35,11 +35,11 @@ public class TextDocumentParserStrategy implements DocumentParserStrategy {
                 while (level < trimmed.length() && trimmed.charAt(level) == '#') {
                     level++;
                 }
-                blocks.add(ParsedDocument.Block.heading(level, trimmed.substring(level).trim()));
+                blocks.add(ParsedDocumentDTO.Block.heading(level, trimmed.substring(level).trim()));
             } else {
-                blocks.add(ParsedDocument.Block.paragraph(trimmed));
+                blocks.add(ParsedDocumentDTO.Block.paragraph(trimmed));
             }
         }
-        return new ParsedDocument(fileName, blocks);
+        return new ParsedDocumentDTO(fileName, blocks);
     }
 }

@@ -1,5 +1,8 @@
 package com.lender.assistant.rag.strategy;
 
+import com.lender.assistant.rag.model.dto.AnswerCancellationDTO;
+import com.lender.assistant.rag.model.dto.AnswerGenerationRequestDTO;
+
 /**
  * 对话模型的策略接口（六边形架构里的"输出端口"）。
  *
@@ -18,7 +21,7 @@ package com.lender.assistant.rag.strategy;
  * generate 返回即代表生成结束（同步流式：回调在 generate 调用线程上依次发生）。
  *
  * 取消契约（2026-11 客户端断开取消）：SSE 断开时编排方 cancel 传入的
- * {@link AnswerCancellation}，实现方必须尽快停止消费上游 token 并返回——
+ * {@link AnswerCancellationDTO}，实现方必须尽快停止消费上游 token 并返回——
  * Mock 每片之间轮询，真实模型 dispose Reactor 订阅。取消后已回流的正文不回收，
  * 由编排方按 STOPPED 落库。
  */
@@ -27,7 +30,7 @@ public interface AnswerGeneratorStrategy {
     /**
      * @param request 本次生成的完整入参（系统提示、历史、当前问题、召回、回调与取消句柄）
      */
-    void generate(AnswerGenerationRequest request);
+    void generate(AnswerGenerationRequestDTO request);
 
     /** 实现标识，用于前端展示与日志（如 "Mock" / 实际模型名） */
     String name();

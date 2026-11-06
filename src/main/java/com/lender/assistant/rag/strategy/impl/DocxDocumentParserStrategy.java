@@ -1,6 +1,6 @@
 package com.lender.assistant.rag.strategy.impl;
 
-import com.lender.assistant.rag.model.ParsedDocument;
+import com.lender.assistant.rag.model.dto.ParsedDocumentDTO;
 import com.lender.assistant.rag.strategy.DocumentParserStrategy;
 import org.apache.poi.xwpf.usermodel.IBodyElement;
 import org.apache.poi.xwpf.usermodel.XWPFDocument;
@@ -24,7 +24,7 @@ import java.util.List;
  * 如果你的模板样式名不同，改 headingLevelOf() 一处即可。
  *
  * 表格：逐行转成 "列名: 值 | 列名: 值" 文本——接口文档的字段表经这样转换后，
- * "逾期天数在第几列"这类问题的答案会以自然语言形式出现在 chunk 里。
+ * "逾期天数在第几列"这类问题的答案会以自然语言形式出现在 ChunkDTO 里。
  */
 @Component
 public class DocxDocumentParserStrategy implements DocumentParserStrategy {
@@ -45,8 +45,8 @@ public class DocxDocumentParserStrategy implements DocumentParserStrategy {
     }
 
     @Override
-    public ParsedDocument parse(String fileName, byte[] content) throws Exception {
-        List<ParsedDocument.Block> blocks = new ArrayList<>();
+    public ParsedDocumentDTO parse(String fileName, byte[] content) throws Exception {
+        List<ParsedDocumentDTO.Block> blocks = new ArrayList<>();
         try (XWPFDocument doc = new XWPFDocument(new ByteArrayInputStream(content))) {
             // bodyElements 按文档实际顺序返回段落和表格，不会打乱阅读顺序；
             // PARAGRAPH 元素本身就是 XWPFParagraph 实例，直接强转即可
@@ -60,20 +60,20 @@ public class DocxDocumentParserStrategy implements DocumentParserStrategy {
                         }
                         int level = headingLevelOf(p);
                         if (level > NON_HEADING_LEVEL) {
-                            blocks.add(ParsedDocument.Block.heading(level, text));
+                            blocks.add(ParsedDocumentDTO.Block.heading(level, text));
                         } else {
-                            blocks.add(ParsedDocument.Block.paragraph(text));
+                            blocks.add(ParsedDocumentDTO.Block.paragraph(text));
                         }
                     }
                     case TABLE -> {
                         XWPFTable table = (XWPFTable) element;
-                        blocks.add(ParsedDocument.Block.tableText(renderTable(table)));
+                        blocks.add(ParsedDocumentDTO.Block.tableText(renderTable(table)));
                     }
                     default -> { /* 忽略其他元素类型 */ }
                 }
             }
         }
-        return new ParsedDocument(fileName, blocks);
+        return new ParsedDocumentDTO(fileName, blocks);
     }
 
     /** 表格第一行当表头，之后每行渲染成 "表头: 值 | 表头: 值" */

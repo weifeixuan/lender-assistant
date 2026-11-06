@@ -1,25 +1,25 @@
 package com.lender.assistant.rag.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.lender.assistant.conversation.model.ConversationRound;
+import com.lender.assistant.conversation.model.dto.ConversationRoundDTO;
 import com.lender.assistant.conversation.service.ConversationHistoryAssembler;
 import com.lender.assistant.conversation.service.ConversationLockRegistry;
 import com.lender.assistant.conversation.service.ConversationService;
-import com.lender.assistant.rag.plan.PlanAndExecuteService;
-import com.lender.assistant.rag.plan.StepListener;
-import com.lender.assistant.rag.plan.model.ExecutionPlan;
-import com.lender.assistant.rag.plan.model.PlanExecutionResult;
-import com.lender.assistant.rag.plan.model.PlanStep;
-import com.lender.assistant.rag.plan.model.StepOutcome;
-import com.lender.assistant.rag.plan.model.StepStatus;
-import com.lender.assistant.rag.routing.PreviousRouteResolver;
-import com.lender.assistant.rag.routing.QuestionRoutingService;
-import com.lender.assistant.rag.routing.model.QuestionRoute;
-import com.lender.assistant.rag.routing.model.RoutingDecision;
+import com.lender.assistant.rag.service.PlanAndExecuteService;
+import com.lender.assistant.rag.service.StepListener;
+import com.lender.assistant.rag.model.dto.ExecutionPlanDTO;
+import com.lender.assistant.rag.model.dto.PlanExecutionResultDTO;
+import com.lender.assistant.rag.model.dto.PlanStepDTO;
+import com.lender.assistant.rag.model.dto.StepOutcomeDTO;
+import com.lender.assistant.rag.model.dto.StepStatus;
+import com.lender.assistant.rag.service.PreviousRouteResolver;
+import com.lender.assistant.rag.service.QuestionRoutingService;
+import com.lender.assistant.rag.model.dto.QuestionRoute;
+import com.lender.assistant.rag.model.dto.RoutingDecisionDTO;
 import com.lender.assistant.rag.service.impl.QaServiceImpl;
-import com.lender.assistant.rag.strategy.AnswerGenerationRequest;
+import com.lender.assistant.rag.model.dto.AnswerGenerationRequestDTO;
 import com.lender.assistant.rag.strategy.AnswerGeneratorStrategy;
-import com.lender.assistant.rag.vo.response.SearchItemResponse;
+import com.lender.assistant.rag.model.response.SearchItemResponse;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -53,7 +53,7 @@ class QaSynthesisFlowTest {
     private QuestionRoutingService routing;
     private PlanAndExecuteService planning;
     private CapturingGenerator generator;
-    private ConversationRound round;
+    private ConversationRoundDTO round;
     private final SseRecordingEmitter emitter = new SseRecordingEmitter();
 
     @BeforeEach
@@ -64,10 +64,10 @@ class QaSynthesisFlowTest {
         conversationService = mock(ConversationService.class);
         ConversationHistoryAssembler historyAssembler = mock(ConversationHistoryAssembler.class);
         when(historyAssembler.assemble(anyString(), anyString()))
-                .thenReturn(List.of(new com.lender.assistant.rag.model.ChatTurn("USER", "上一轮问题")));
+                .thenReturn(List.of(new com.lender.assistant.rag.model.dto.ChatTurnDTO("USER", "上一轮问题")));
         when(historyAssembler.listRows(anyString())).thenReturn(List.of());
         routing = mock(QuestionRoutingService.class);
-        when(routing.route(any())).thenReturn(new RoutingDecision(QuestionRoute.PLAN, 0.9, "多步", "NONE"));
+        when(routing.route(any())).thenReturn(new RoutingDecisionDTO(QuestionRoute.PLAN, 0.9, "多步", "NONE"));
         planning = mock(PlanAndExecuteService.class);
         generator = new CapturingGenerator();
         qaService = new QaServiceImpl(searchService, generator,
@@ -81,14 +81,14 @@ class QaSynthesisFlowTest {
         ReflectionTestUtils.setField(qaService, "planningService", planning);
         ReflectionTestUtils.setField(qaService, "previousRouteResolver",
                 new PreviousRouteResolver(new ObjectMapper()));
-        round = new ConversationRound("conv-1", "round-1", "msg-user", "msg-assistant");
+        round = new ConversationRoundDTO("conv-1", "round-1", "msg-user", "msg-assistant");
     }
 
     @Test
     @DisplayName("PLAN 轮只调一次生成，历史为空，完成事件在 sources 之后")
     void planRoundGeneratesOnce() {
-        ExecutionPlan plan = twoStepPlan();
-        PlanExecutionResult result = new PlanExecutionResult(List.of(
+        ExecutionPlanDTO plan = twoStepPlan();
+        PlanExecutionResultDTO result = new PlanExecutionResultDTO(List.of(
                 outcome("s1", 1, "kb.search", StepStatus.DONE, List.of(source(1L)), "检索摘要"),
                 outcome("s2", 2, "customer.profile", StepStatus.DONE, List.of(), "客户摘要")),
                 false, 180_000);
@@ -112,8 +112,8 @@ class QaSynthesisFlowTest {
     @Test
     @DisplayName("零命中且无业务产物：不调生成，直接推无召回提示")
     void zeroHitWithoutBusinessOutputSkipsGeneration() {
-        ExecutionPlan plan = twoStepPlan();
-        PlanExecutionResult result = new PlanExecutionResult(List.of(
+        ExecutionPlanDTO plan = twoStepPlan();
+        PlanExecutionResultDTO result = new PlanExecutionResultDTO(List.of(
                 outcome("s1", 1, "kb.search", StepStatus.DEGRADED, List.of(), "资料中未提及"),
                 outcome("s2", 2, "kb.search", StepStatus.DEGRADED, List.of(), "资料中未提及")),
                 false, 180_000);
@@ -132,8 +132,8 @@ class QaSynthesisFlowTest {
     @Test
     @DisplayName("剩余预算耗尽：不发合成，推 error 并以 FAILED 落库")
     void zeroRemainingBudgetFailsRound() {
-        ExecutionPlan plan = twoStepPlan();
-        PlanExecutionResult result = new PlanExecutionResult(List.of(
+        ExecutionPlanDTO plan = twoStepPlan();
+        PlanExecutionResultDTO result = new PlanExecutionResultDTO(List.of(
                 outcome("s1", 1, "kb.search", StepStatus.DONE, List.of(source(1L)), "检索摘要"),
                 outcome("s2", 2, "customer.profile", StepStatus.DONE, List.of(), "客户摘要")),
                 true, 0L);
@@ -144,9 +144,9 @@ class QaSynthesisFlowTest {
 
         assertEquals(0, generator.requests.size());
         assertTrue(emitter.eventNames().contains("event:error"));
-        org.mockito.ArgumentCaptor<com.lender.assistant.conversation.model.AssistantMessageCompletion>
+        org.mockito.ArgumentCaptor<com.lender.assistant.conversation.model.dto.AssistantMessageCompletionDTO>
                 captor = org.mockito.ArgumentCaptor.forClass(
-                com.lender.assistant.conversation.model.AssistantMessageCompletion.class);
+                com.lender.assistant.conversation.model.dto.AssistantMessageCompletionDTO.class);
         verify(conversationService).completeRound(captor.capture());
         assertEquals("FAILED", captor.getValue().status());
     }
@@ -154,8 +154,8 @@ class QaSynthesisFlowTest {
     @Test
     @DisplayName("合成异常：error + FAILED，保留已推正文，不出现 done")
     void synthesisFailureEmitsErrorAndFailed() {
-        ExecutionPlan plan = twoStepPlan();
-        PlanExecutionResult result = new PlanExecutionResult(List.of(
+        ExecutionPlanDTO plan = twoStepPlan();
+        PlanExecutionResultDTO result = new PlanExecutionResultDTO(List.of(
                 outcome("s1", 1, "kb.search", StepStatus.DONE, List.of(source(1L)), "检索摘要"),
                 outcome("s2", 2, "customer.profile", StepStatus.DONE, List.of(), "客户摘要")),
                 false, 180_000);
@@ -167,7 +167,7 @@ class QaSynthesisFlowTest {
 
         assertTrue(emitter.eventNames().contains("event:error"));
         assertFalse(emitter.eventNames().contains("event:done"));
-        com.lender.assistant.conversation.model.AssistantMessageCompletion completion = captured();
+        com.lender.assistant.conversation.model.dto.AssistantMessageCompletionDTO completion = captured();
         assertEquals("FAILED", completion.status());
         assertTrue(completion.content().contains("合成答案"), "已推正文必须保留");
     }
@@ -175,8 +175,8 @@ class QaSynthesisFlowTest {
     @Test
     @DisplayName("合成超时：取消后按 error + FAILED 收尾")
     void synthesisTimeoutEmitsErrorAndFailed() {
-        ExecutionPlan plan = twoStepPlan();
-        PlanExecutionResult result = new PlanExecutionResult(List.of(
+        ExecutionPlanDTO plan = twoStepPlan();
+        PlanExecutionResultDTO result = new PlanExecutionResultDTO(List.of(
                 outcome("s1", 1, "kb.search", StepStatus.DONE, List.of(source(1L)), "检索摘要"),
                 outcome("s2", 2, "customer.profile", StepStatus.DONE, List.of(), "客户摘要")),
                 false, 1L);
@@ -191,10 +191,10 @@ class QaSynthesisFlowTest {
         assertEquals("FAILED", captured().status());
     }
 
-    private com.lender.assistant.conversation.model.AssistantMessageCompletion captured() {
-        org.mockito.ArgumentCaptor<com.lender.assistant.conversation.model.AssistantMessageCompletion>
+    private com.lender.assistant.conversation.model.dto.AssistantMessageCompletionDTO captured() {
+        org.mockito.ArgumentCaptor<com.lender.assistant.conversation.model.dto.AssistantMessageCompletionDTO>
                 captor = org.mockito.ArgumentCaptor.forClass(
-                com.lender.assistant.conversation.model.AssistantMessageCompletion.class);
+                com.lender.assistant.conversation.model.dto.AssistantMessageCompletionDTO.class);
         verify(conversationService).completeRound(captor.capture());
         return captor.getValue();
     }
@@ -202,7 +202,7 @@ class QaSynthesisFlowTest {
     @Test
     @DisplayName("计划弃用：不发 step，退回 KNOWLEDGE 单次生成")
     void degradedPlanFallsBackToKnowledge() {
-        when(planning.plan(any(), any())).thenReturn(ExecutionPlan.invalid());
+        when(planning.plan(any(), any())).thenReturn(ExecutionPlanDTO.invalid());
 
         qaService.streamAnswer(emitter, "华信能放多少", 4, USER_ID, round, System.currentTimeMillis());
 
@@ -211,28 +211,28 @@ class QaSynthesisFlowTest {
         assertTrue(emitter.eventNames().contains("event:plan"));
     }
 
-    private void stubExecute(PlanExecutionResult result) {
+    private void stubExecute(PlanExecutionResultDTO result) {
         when(planning.execute(any(), anyInt(), any(), any())).thenAnswer(invocation -> {
             StepListener listener = invocation.getArgument(3);
-            for (StepOutcome step : result.steps()) {
-                listener.onStep(new com.lender.assistant.rag.plan.model.StepEvent(
+            for (StepOutcomeDTO step : result.steps()) {
+                listener.onStep(new com.lender.assistant.rag.model.dto.StepEventDTO(
                         step.stepId(), StepStatus.RUNNING, 0));
-                listener.onStep(new com.lender.assistant.rag.plan.model.StepEvent(
+                listener.onStep(new com.lender.assistant.rag.model.dto.StepEventDTO(
                         step.stepId(), step.status(), step.elapsedMillis()));
             }
             return result;
         });
     }
 
-    private static ExecutionPlan twoStepPlan() {
-        return ExecutionPlan.valid("华信额度", List.of(
-                new PlanStep("s1", 1, "检索", "kb.search", Map.of("query", "华信 限额")),
-                new PlanStep("s2", 2, "查客户", "customer.profile", Map.of("customerId", "C10001"))));
+    private static ExecutionPlanDTO twoStepPlan() {
+        return ExecutionPlanDTO.valid("华信额度", List.of(
+                new PlanStepDTO("s1", 1, "检索", "kb.search", Map.of("query", "华信 限额")),
+                new PlanStepDTO("s2", 2, "查客户", "customer.profile", Map.of("customerId", "C10001"))));
     }
 
-    private static StepOutcome outcome(String stepId, int order, String tool, StepStatus status,
+    private static StepOutcomeDTO outcome(String stepId, int order, String tool, StepStatus status,
                                        List<SearchItemResponse> sources, String summary) {
-        return new StepOutcome(stepId, order, "步骤", tool, Map.of(), status, 10,
+        return new StepOutcomeDTO(stepId, order, "步骤", tool, Map.of(), status, 10,
                 sources.stream().map(SearchItemResponse::chunkId).toList(), sources, summary, null);
     }
 
@@ -241,12 +241,12 @@ class QaSynthesisFlowTest {
     }
 
     static class CapturingGenerator implements AnswerGeneratorStrategy {
-        final List<AnswerGenerationRequest> requests = new ArrayList<>();
+        final List<AnswerGenerationRequestDTO> requests = new ArrayList<>();
         RuntimeException failure;
         long delayMillis;
 
         @Override
-        public void generate(AnswerGenerationRequest request) {
+        public void generate(AnswerGenerationRequestDTO request) {
             requests.add(request);
             if (delayMillis > 0) {
                 try {

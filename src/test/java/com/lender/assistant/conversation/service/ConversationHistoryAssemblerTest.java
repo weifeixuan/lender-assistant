@@ -3,7 +3,7 @@ package com.lender.assistant.conversation.service;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lender.assistant.conversation.mapper.MessageMapper;
 import com.lender.assistant.conversation.model.entity.MessageEntity;
-import com.lender.assistant.rag.model.ChatTurn;
+import com.lender.assistant.rag.model.dto.ChatTurnDTO;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -38,9 +38,9 @@ class ConversationHistoryAssemblerTest {
                 row(CURRENT_ROUND, "USER", "当前问题", "DONE"),
                 row(CURRENT_ROUND, "ASSISTANT", "当前回答", "DONE")));
 
-        List<ChatTurn> history = assembler.assemble(CONVERSATION_ID, CURRENT_ROUND);
+        List<ChatTurnDTO> history = assembler.assemble(CONVERSATION_ID, CURRENT_ROUND);
 
-        assertEquals(List.of(new ChatTurn("USER", "问题一"), new ChatTurn("ASSISTANT", "回答一")),
+        assertEquals(List.of(new ChatTurnDTO("USER", "问题一"), new ChatTurnDTO("ASSISTANT", "回答一")),
                 history);
     }
 
@@ -52,7 +52,7 @@ class ConversationHistoryAssemblerTest {
                 row("r1", "ASSISTANT", "半截回答", "STOPPED"),
                 row("r2", "USER", "问题二", "DONE")));
 
-        List<ChatTurn> history = assembler.assemble(CONVERSATION_ID, CURRENT_ROUND);
+        List<ChatTurnDTO> history = assembler.assemble(CONVERSATION_ID, CURRENT_ROUND);
 
         assertEquals(List.of(), history);
     }
@@ -67,7 +67,7 @@ class ConversationHistoryAssemblerTest {
         }
         when(messageMapper.listByConversation(CONVERSATION_ID)).thenReturn(rows);
 
-        List<ChatTurn> history = assembler.assemble(CONVERSATION_ID, CURRENT_ROUND);
+        List<ChatTurnDTO> history = assembler.assemble(CONVERSATION_ID, CURRENT_ROUND);
 
         assertEquals(12, history.size());
         assertEquals("问题3", history.get(0).content());
@@ -87,7 +87,7 @@ class ConversationHistoryAssemblerTest {
 
         ConversationHistoryAssembler limited =
                 new ConversationHistoryAssembler(messageMapper, new ObjectMapper(), 6, 200);
-        List<ChatTurn> history = limited.assemble(CONVERSATION_ID, CURRENT_ROUND);
+        List<ChatTurnDTO> history = limited.assemble(CONVERSATION_ID, CURRENT_ROUND);
 
         assertEquals(4, history.size(), "丢弃最旧一轮后剩两轮");
         assertEquals("c".repeat(50), history.get(0).content());
@@ -97,9 +97,9 @@ class ConversationHistoryAssemblerTest {
     @Test
     @DisplayName("最近一条历史用户正文用于检索 query")
     void lastUserContentReturnsMostRecentUser() {
-        List<ChatTurn> history = List.of(
-                new ChatTurn("USER", "问题一"), new ChatTurn("ASSISTANT", "回答一"),
-                new ChatTurn("USER", "问题二"), new ChatTurn("ASSISTANT", "回答二"));
+        List<ChatTurnDTO> history = List.of(
+                new ChatTurnDTO("USER", "问题一"), new ChatTurnDTO("ASSISTANT", "回答一"),
+                new ChatTurnDTO("USER", "问题二"), new ChatTurnDTO("ASSISTANT", "回答二"));
 
         assertEquals("问题二", ConversationHistoryAssembler.lastUserContent(history));
         assertEquals(null, ConversationHistoryAssembler.lastUserContent(List.of()));
@@ -118,9 +118,9 @@ class ConversationHistoryAssemblerTest {
                 new MessageEntity("msg-4", CONVERSATION_ID, "r2", "ASSISTANT", "回答", "DONE",
                         "[]", "mock", 0, null, "2026-11-01 10:00:03", null, null)));
 
-        List<ChatTurn> history = assembler.assemble(CONVERSATION_ID, CURRENT_ROUND);
+        List<ChatTurnDTO> history = assembler.assemble(CONVERSATION_ID, CURRENT_ROUND);
 
-        assertEquals(List.of(new ChatTurn("USER", "单笔限额"), new ChatTurn("ASSISTANT", "回答")),
+        assertEquals(List.of(new ChatTurnDTO("USER", "单笔限额"), new ChatTurnDTO("ASSISTANT", "回答")),
                 history);
         assertEquals("单笔限额", ConversationHistoryAssembler.lastUserContent(history));
     }
@@ -137,7 +137,7 @@ class ConversationHistoryAssemblerTest {
                           {"stepId":"s2","order":2,"tool":"customer.profile","status":"DONE"}]}
                         """)));
 
-        List<ChatTurn> history = assembler.assemble(CONVERSATION_ID, CURRENT_ROUND);
+        List<ChatTurnDTO> history = assembler.assemble(CONVERSATION_ID, CURRENT_ROUND);
 
         assertEquals("华信币种和 C10001 额度", history.get(0).content(), "USER 轮不得被改写");
         assertEquals(content + "\n[上一轮回答包含业务工具数据：customer.profile，非知识库文档]",
@@ -155,7 +155,7 @@ class ConversationHistoryAssemblerTest {
                           {"stepId":"s2","order":2,"tool":"kb.search","status":"DONE"}]}
                         """)));
 
-        List<ChatTurn> history = assembler.assemble(CONVERSATION_ID, CURRENT_ROUND);
+        List<ChatTurnDTO> history = assembler.assemble(CONVERSATION_ID, CURRENT_ROUND);
 
         assertEquals("单笔限额 500 万元", history.get(1).content());
     }
@@ -169,7 +169,7 @@ class ConversationHistoryAssemblerTest {
                         {"degraded":true,"degradedReason":"计划校验失败","steps":[]}
                         """)));
 
-        List<ChatTurn> history = assembler.assemble(CONVERSATION_ID, CURRENT_ROUND);
+        List<ChatTurnDTO> history = assembler.assemble(CONVERSATION_ID, CURRENT_ROUND);
 
         assertEquals("单笔限额 500 万元", history.get(1).content());
     }

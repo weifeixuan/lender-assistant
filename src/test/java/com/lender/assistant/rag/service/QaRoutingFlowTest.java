@@ -1,16 +1,16 @@
 package com.lender.assistant.rag.service;
 
-import com.lender.assistant.conversation.model.ConversationRound;
+import com.lender.assistant.conversation.model.dto.ConversationRoundDTO;
 import com.lender.assistant.conversation.service.ConversationHistoryAssembler;
 import com.lender.assistant.conversation.service.ConversationLockRegistry;
 import com.lender.assistant.conversation.service.ConversationService;
-import com.lender.assistant.rag.routing.QuestionRoutingService;
-import com.lender.assistant.rag.routing.model.QuestionRoute;
-import com.lender.assistant.rag.routing.model.RoutingDecision;
+import com.lender.assistant.rag.service.QuestionRoutingService;
+import com.lender.assistant.rag.model.dto.QuestionRoute;
+import com.lender.assistant.rag.model.dto.RoutingDecisionDTO;
 import com.lender.assistant.rag.service.impl.QaServiceImpl;
-import com.lender.assistant.rag.strategy.AnswerGenerationRequest;
+import com.lender.assistant.rag.model.dto.AnswerGenerationRequestDTO;
 import com.lender.assistant.rag.strategy.AnswerGeneratorStrategy;
-import com.lender.assistant.rag.vo.response.SearchItemResponse;
+import com.lender.assistant.rag.model.response.SearchItemResponse;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -42,12 +42,12 @@ class QaRoutingFlowTest {
     private ConversationService conversationService;
     private ConversationHistoryAssembler historyAssembler;
     private QuestionRoutingService routing;
-    private ConversationRound round;
+    private ConversationRoundDTO round;
     private final RecordingEmitter emitter = new RecordingEmitter();
 
     static class FixedGenerator implements AnswerGeneratorStrategy {
         @Override
-        public void generate(AnswerGenerationRequest request) {
+        public void generate(AnswerGenerationRequestDTO request) {
             request.onDelta().accept("答案");
         }
 
@@ -76,14 +76,14 @@ class QaRoutingFlowTest {
         ReflectionTestUtils.setField(qaService, "chatProvider", "openai");
         ReflectionTestUtils.setField(qaService, "routingService", routing);
         ReflectionTestUtils.setField(qaService, "previousRouteResolver",
-                new com.lender.assistant.rag.routing.PreviousRouteResolver(new com.fasterxml.jackson.databind.ObjectMapper()));
-        round = new ConversationRound("conv-1", "round-1", "msg-user", "msg-assistant");
+                new com.lender.assistant.rag.service.PreviousRouteResolver(new com.fasterxml.jackson.databind.ObjectMapper()));
+        round = new ConversationRoundDTO("conv-1", "round-1", "msg-user", "msg-assistant");
     }
 
     @Test
     @DisplayName("无关问题：meta → route → sources([]) → delta → done，provider=rule 且不检索")
     void irrelevantRoundSendsFixedReply() {
-        when(routing.route(any())).thenReturn(new RoutingDecision(
+        when(routing.route(any())).thenReturn(new RoutingDecisionDTO(
                 QuestionRoute.IRRELEVANT, 0.95, "问候", "SMALL_TALK"));
 
         qaService.streamAnswer(emitter, "你好", 4, USER_ID, round, System.currentTimeMillis());
@@ -99,7 +99,7 @@ class QaRoutingFlowTest {
     @Test
     @DisplayName("知识库问题：多一个 route 事件，其余与现状一致")
     void knowledgeRoundAddsRouteEvent() {
-        when(routing.route(any())).thenReturn(new RoutingDecision(
+        when(routing.route(any())).thenReturn(new RoutingDecisionDTO(
                 QuestionRoute.KNOWLEDGE, 0.9, "资料问答", "NONE"));
 
         qaService.streamAnswer(emitter, "单笔代收限额", 4, USER_ID, round, System.currentTimeMillis());

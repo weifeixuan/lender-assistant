@@ -3,8 +3,8 @@ package com.lender.assistant.extract.strategy;
 import com.lender.assistant.extract.model.entity.FieldMappingEntity;
 import com.lender.assistant.extract.service.InternalFieldCatalog;
 import com.lender.assistant.extract.strategy.impl.MockExtractGeneratorStrategy;
-import com.lender.assistant.rag.model.DocChunkLine;
-import com.lender.assistant.rag.model.DocContent;
+import com.lender.assistant.rag.model.dto.DocChunkLineDTO;
+import com.lender.assistant.rag.model.dto.DocContentDTO;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -47,14 +47,14 @@ class MockExtractGeneratorStrategyTest {
             """;
 
     private List<FieldMappingEntity> extract(String title, String text) {
-        return generator.extract(new DocContent(title, text, List.of(new DocChunkLine(title, null, text))));
+        return generator.extract(new DocContentDTO(title, text, List.of(new DocChunkLineDTO(title, null, text))));
     }
 
     private Map<String, FieldMappingEntity> extractAsMap(String title, String text) {
-        return extractAsMap(new DocContent(title, text, List.of(new DocChunkLine(title, null, text))));
+        return extractAsMap(new DocContentDTO(title, text, List.of(new DocChunkLineDTO(title, null, text))));
     }
 
-    private Map<String, FieldMappingEntity> extractAsMap(DocContent doc) {
+    private Map<String, FieldMappingEntity> extractAsMap(DocContentDTO doc) {
         List<FieldMappingEntity> mappings = generator.extract(doc);
         return mappings.stream()
                 .collect(Collectors.toMap(FieldMappingEntity::internalFieldId, m -> m));
@@ -118,19 +118,19 @@ class MockExtractGeneratorStrategyTest {
     }
 
     @Test
-    @DisplayName("回归：章节标题来自 chunk 的 sectionPath（content 里没有标题），路径仍能按章节分类")
+    @DisplayName("回归：章节标题来自 ChunkDTO 的 sectionPath（content 里没有标题），路径仍能按章节分类")
     void apiPathClassifiedByChunkSectionPath() {
         // 真实数据形态：SectionChunkSplitterStrategy 把标题存进 section_path 而非 content
         String firstChapter = "瑞金租赁（虚构）资金对接采用 REST 风格，网关地址 https://fake-ruijin.example.com/openapi。";
         String secondChapter = "接口路径 /openapi/loan/order/create。用于合作机构向瑞金租赁发起单笔放款指令。";
-        DocContent crossChunk = new DocContent("瑞金租赁_资金对接接口文档_v1.0",
+        DocContentDTO crossChunk = new DocContentDTO("瑞金租赁_资金对接接口文档_v1.0",
                 firstChapter + "\n" + secondChapter,
-                List.of(new DocChunkLine("瑞金租赁_资金对接接口文档_v1.0",
+                List.of(new DocChunkLineDTO("瑞金租赁_资金对接接口文档_v1.0",
                                 "瑞金租赁 资金对接接口文档 > 一、接口总则", firstChapter),
-                        new DocChunkLine("瑞金租赁_资金对接接口文档_v1.0",
+                        new DocChunkLineDTO("瑞金租赁_资金对接接口文档_v1.0",
                                 "瑞金租赁 资金对接接口文档 > 二、放款指令接口", secondChapter)));
         Map<String, FieldMappingEntity> m = extractAsMap(crossChunk);
-        assertTrue(m.containsKey("payment_api"), "章节信息来自 chunk 的 sectionPath，路径必须归入 payment_api");
+        assertTrue(m.containsKey("payment_api"), "章节信息来自 ChunkDTO 的 sectionPath，路径必须归入 payment_api");
         assertEquals("/openapi/loan/order/create", m.get("payment_api").lenderValue());
     }
 

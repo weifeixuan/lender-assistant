@@ -28,7 +28,7 @@ class ToolIntentRouterTest {
     }
 
     @Test
-    @DisplayName("问某文档 chunk 数 → getDocChunkStats，参数是该 docId")
+    @DisplayName("问某文档 ChunkDTO 数 → getDocChunkStats，参数是该 docId")
     void routesToDocStats() {
         Optional<ToolIntentRouter.ToolIntent> intent = router.route("ruijin_api_v1 这个文档切了多少块", () -> DOCS);
         assertTrue(intent.isPresent());
@@ -43,7 +43,7 @@ class ToolIntentRouterTest {
     }
 
     @Test
-    @DisplayName("问 chunk 数但 docId 无效 → 不触发（参数拼不出来宁可不做）")
+    @DisplayName("问 ChunkDTO 数但 docId 无效 → 不触发（参数拼不出来宁可不做）")
     void statsWithoutValidDocIdNoTool() {
         assertTrue(router.route("这个文档切了多少块", () -> DOCS).isEmpty());
     }
