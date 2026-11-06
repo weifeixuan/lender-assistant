@@ -38,7 +38,7 @@ import static org.mockito.Mockito.verify;
  * 时不包 ParamMap），再交给 {@link DefaultParameterHandler} 在 mock 的 PreparedStatement
  * 上取值——XML 写 {@code #{message.xxx}} 而方法参数没有 {@code @Param("message")} 时这里会红。
  */
-class MapperXmlContractTest {
+class ConversationMapperXmlContractTest {
 
     private static final String CONVERSATION_MAPPER =
             "mapper/ConversationMapper.xml";
