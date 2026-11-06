@@ -44,6 +44,20 @@ com.lender.assistant
 - 禁止平行单类包、近义包（`extract` vs `extraction` 出过事故）、空包、死代码。
 - 可替换策略统一进 `strategy/`（接口 + `impl/`）；只有运行期按参数选实现才加 `factory/`。
 
+### 0.3 模型类归类与后缀对照
+
+拿到模型类按顺序判定：HTTP 入参/出参 → `request`/`response`；Mapper 直接读写且字段与表列 1:1 → `entity`；其余跨层载体 → `dto`。
+
+| 角色 | 包 | 后缀 | 判定要点 |
+|---|---|---|---|
+| DB 行对象 | `model/entity/` | `*Entity` | Mapper / XML `resultMap` 直接消费，字段与表列 1:1 |
+| 领域内跨层数据 | `model/dto/` | `*DTO`（枚举保留原名） | service↔mapper、service↔service、SSE 载荷、JSONB 快照 |
+| HTTP 入参 | `model/request/` | `*Request` | 只被 controller 与 service 引用 |
+| HTTP 出参 | `model/response/` | `*Response` | 只被 controller 与 service 引用；SSE 出口载荷同此 |
+
+- `model/` 根下禁止直接放类；`request/response` 不得被 mapper / strategy import。
+- 枚举随其主数据载体所在包；同领域凑满 2 个枚举再独立 `<domain>/enums/`。
+
 ## 1. 分层职责与依赖
 
 | 层 | 允许 | 禁止 |
@@ -155,6 +169,7 @@ com.lender.assistant
 
 - [ ] 已搜过并复用现有公共方法 / SQL 片段
 - [ ] 新类已归位（领域 + 层），未建平行 / 近义包
+- [ ] 模型类落在正确的四分包子包，后缀与角色一致（`Entity` / `DTO` / `Request` / `Response`）
 - [ ] 入参有校验与兜底；异常走全局处理，无吞异常
 - [ ] 非原子写有事务；线程池走工厂且可关闭；SSE 立即 return
 

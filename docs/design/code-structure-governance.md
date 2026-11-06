@@ -1,6 +1,6 @@
 # 代码结构治理规范 · 包结构与类命名重构
 
-> 状态：草案 v0.4（2026-11-06 阶段 2 决策：保留 ADR-0012 的边界结论，只改命名——`tools/` → `aitools/`，`rag/tool/` → `rag/context/` 且包内类统一补 `ContextBuilder` 后缀；不再主张收编）
+> 状态：草案 v0.4（2026-11-06 阶段 2 决策：保留 ADR-0012 的边界结论，只改命名——`tools/` → `aitools/`，`rag/tool/` → `rag/context/` 且包内类统一补 `ContextBuilder` 后缀；不再主张收编。阶段 2/3 已执行，阶段 1 的 1.1–1.7 均已完成）
 > 关联文档：`docs/agents/coding-standards.md` §0（包结构）/ §2（命名）、`GLOSSARY.md`
 > 日期：2026-11-06
 > 原则：**本次治理只做"归类与改名"，不改任何业务逻辑**。每一步迁移后必须编译 + 全量测试通过才进入下一步。
@@ -348,9 +348,9 @@ rag/context/              # 编排层计划工具（类名统一以 ContextBuild
 
 ### 阶段 3：防复发
 
-1. coding-standards §0 增补：`model/` 必须四分子包、后缀对照表（§3.1）；
-2. 后续新类的 code review 检查项加一条："模型类是否落在正确的四分包子包且后缀正确"；
-3. 可选：写一个 ArchUnit 规则锁住结构（`model..` 下不允许出现非 `*Entity/*Request/*Response/*DTO` 后缀的类），放入 `architecture` 测试包。
+1. 已完成：`docs/agents/coding-standards.md` §0.3 增补四分包判定与后缀对照表（Entity / DTO / Request / Response，§3.1）；
+2. 已完成：§10「提交前自检」增加一条「模型类是否落在正确四分包子包且后缀正确」；
+3. **不做**（2026-11-06 决策）：暂不引入 ArchUnit 规则——新增测试依赖违背「新增依赖能不加就不加」，且后缀规则对枚举 / 接口 / 工具类不成立，规范 + 自检已覆盖。
 
 ---
 
