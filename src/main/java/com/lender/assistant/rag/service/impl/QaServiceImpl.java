@@ -105,20 +105,26 @@ public class QaServiceImpl implements QaService {
             用简体中文回答，简洁直接。
             """;
 
-    private final SearchService searchService;
-    private final AnswerGeneratorStrategy generator;
-    private final com.lender.assistant.resilience.ResilientLlmExecutor executor;
-    private final ConversationService conversationService;
-    private final ConversationLockRegistry lockRegistry;
-    private final ConversationHistoryAssembler historyAssembler;
+    @Autowired
+    private SearchService searchService;
+    @Autowired
+    private AnswerGeneratorStrategy generator;
+    @Autowired
+    private com.lender.assistant.resilience.ResilientLlmExecutor executor;
+    @Autowired
+    private ConversationService conversationService;
+    @Autowired
+    private ConversationLockRegistry lockRegistry;
+    @Autowired
+    private ConversationHistoryAssembler historyAssembler;
 
     /**
      * SSE 工作线程池：检索+生成+send 必须脱离请求线程执行，否则 Spring 会把事件缓冲到
      * 控制器返回时才一次性 flush（假流式 + Chrome net::ERR_ABORTED），详见 answer()。
-     * 经 ThreadPoolFactory 装配：命名 daemon 线程 + 有界队列 + 明确拒绝策略（§8.1）；
-     * 生命周期（应用关停时关闭）不交给工厂，留在本类 @PreDestroy。
+     * 由无参构造器经 ThreadPoolFactory 装配（非 Bean，字段注入拿不到）；生命周期
+     * （应用关停时关闭）不交给工厂，留在本类 @PreDestroy。
      */
-    private final ThreadPoolExecutor streamExecutor;
+    private ThreadPoolExecutor streamExecutor;
 
     /** 合成超时计时器：只做一次定时取消，单线程守护线程，不参与业务执行 */
     private final ScheduledExecutorService timeoutScheduler =
@@ -153,7 +159,16 @@ public class QaServiceImpl implements QaService {
     @Autowired(required = false)
     private ObjectMapper objectMapper = new ObjectMapper();
 
-    @Autowired
+    /**
+     * Spring 装配入口：默认构造器 + 字段注入。类内还有测试构造器，必须显式保留无参构造器，
+     * 否则 Spring 会把唯一/最匹配的那个构造器当作注入入口（其参数含非 Bean 的线程池）而启动失败。
+     */
+    public QaServiceImpl() {
+        this.streamExecutor = ThreadPoolFactory.create(STREAM_POOL_SIZE, STREAM_POOL_SIZE,
+                STREAM_QUEUE_CAPACITY, STREAM_THREAD_KEEP_ALIVE_SECONDS, STREAM_THREAD_NAME_PREFIX);
+    }
+
+    /** 测试便捷重载：装配全部依赖并使用默认线程池（容器外 @Autowired 不生效，构造器直接赋值） */
     public QaServiceImpl(SearchService searchService, AnswerGeneratorStrategy generator,
                          com.lender.assistant.resilience.ResilientLlmExecutor executor,
                          ConversationService conversationService,
