@@ -9,10 +9,10 @@
 |---|---|---|
 | 资方（lender） | 提供资金的机构（银行 / 租赁公司）。本项目所有示例数据均为全脱敏虚构值 | `docs/gen_sample_docs.py` 生成的示例文档 |
 | docId | 一篇已入库文档的稳定标识（如 `huaxin_corp_api_v1`）；重复上传同 docId 即覆盖重建 | `DocumentAdminController`、`DocChunkMapper` |
-| chunk（分块） | 文档经解析、按章节切分后的最小检索单元，携带 sectionPath / 字符数 / 向量 | `rag/model/Chunk`、`ChunkRow` |
-| 召回（recall / hit） | 检索命中的 chunk。字段含 vectorDistance（向量距离）、keywordHits（关键词命中数）、bothChannels（双通道命中标记） | `SearchService`、`VectorHit` / `KeywordHit` |
+| chunk（分块） | 文档经解析、按章节切分后的最小检索单元，携带 sectionPath / 字符数 / 向量 | `rag/model/dto/ChunkDTO`、`rag/model/entity/ChunkEntity` |
+| 召回（recall / hit） | 检索命中的 chunk。字段含 vectorDistance（向量距离）、keywordHits（关键词命中数）、bothChannels（双通道命中标记） | `SearchService`、`VectorHitDTO` / `KeywordHitDTO` |
 | 混合检索（hybrid search） | 向量召回（pgvector HNSW）与关键词召回（pg_trgm trigram）合并排序；模式取值 `vector` / `keyword` / `hybrid` | `SearchService`、`EvalController`（mode 参数） |
-| 映射（mapping）/ 字段映射 | 资方接口文档字段 → 内部标准字段的对应关系。含 lenderFieldName / lenderValue / sourceQuote / confidence | `extract/model/FieldMapping`、`ExtractController` |
+| 映射（mapping）/ 字段映射 | 资方接口文档字段 → 内部标准字段的对应关系。含 lenderFieldName / lenderValue / sourceQuote / confidence | `extract/model/entity/FieldMappingEntity`、`ExtractController` |
 | 内部标准字段（internal field） | 本项目约定的内部字段目录，映射表的目标端 | `extract/service/InternalFieldCatalog` |
 | 映射状态 | `PENDING`（待确认）/ `CONFIRMED`（已确认）/ `CORRECTED`（已修正，人工改过值，留痕） | `ExtractController.confirm` |
 | 熔断（circuit breaker） | 模型连续失败后快速失败、降级为可读提示，不崩溃 | `resilience/ResilientLlmExecutor`、`QaServiceImpl` |
@@ -22,7 +22,7 @@
 
 | 词 | 含义 | 代码锚点 |
 |---|---|---|
-| 统一响应体（ApiResponse） | 所有普通接口的对外响应形状：`{code, msg, data}`。成功 `code=200`、`msg="ok"`；失败 `data` 为 null | `common/dto/ApiResponse` |
+| 统一响应体（ApiResponse） | 所有普通接口的对外响应形状：`{code, msg, data}`。成功 `code=200`、`msg="ok"`；失败 `data` 为 null | `common/web/ApiResponse` |
 | 响应包装（ApiResponseBodyAdvice） | 在消息转换器出站前把普通返回值包成统一响应体的 `ResponseBodyAdvice` | `common/web/ApiResponseBodyAdvice` |
 | 原始响应（@RawResponse） | 显式声明**跳过**统一包装的接口（SSE、`/health` 探针）。可标方法或类 | `common/annotation/RawResponse` |
 | 全局异常处理器（GlobalExceptionHandler） | 把异常统一转成 `ApiResponse` 的 `@RestControllerAdvice`；对外不暴露堆栈 / 内部类名 / SQL | `common/web/GlobalExceptionHandler` |

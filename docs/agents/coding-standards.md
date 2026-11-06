@@ -12,26 +12,32 @@
 com.lender.assistant
 ├── rag/              # RAG 领域
 │   ├── controller/   #   QaController / EvalController / DocumentAdminController
-│   ├── service/      #   QaService / EvalService / SearchService / DocumentService（+ impl/）
+│   ├── service/      #   编排（QaService / SearchService / PlanAndExecuteService / QuestionRoutingService；+ impl/）
+│   ├── client/       #   外部模型网关（PlannerModelClient / RoutingModelClient；+ impl/）
 │   ├── strategy/     #   可替换策略（+ impl/；factory/ 仅按文件格式分发用）
 │   ├── mapper/       #   DocChunkMapper（+ resources/mapper/DocChunkMapper.xml）
-│   ├── vo/request/   #   *Request（QaRequest / SearchRequest）
-│   ├── vo/response/  #   *Response（SearchItemResponse / UploadResponse）
-│   └── model/        #   领域内跨层 record（Chunk / DocContent / VectorHit / ParsedDocument）
-├── extract/          # controller / service(+impl) / mapper / vo(request,response) / model / strategy(+impl)
-├── draft/            # controller / service(+impl) / vo/response / strategy(+impl)
+│   ├── tool/         #   计划工具抽象（AgentTool / PlanToolRegistry；阶段二归入 tools/）
+│   └── model/
+│       ├── entity/   #     *Entity —— DB 行对象（XML resultMap 指向这里）
+│       ├── dto/      #     *DTO / 枚举 —— 领域内跨层数据（QuestionRoute、StepStatus 不加后缀）
+│       ├── request/  #     *Request —— HTTP 入参（QaRequest / SearchRequest）
+│       └── response/ #     *Response —— HTTP 出参（SearchItemResponse / UploadResponse）
+├── extract/          # controller / service(+impl) / mapper / strategy(+impl) / model(entity,request,response)
+├── draft/            # controller / service(+impl) / strategy(+impl) / model(response)
+├── conversation/     # controller / service(+impl) / mapper / model(entity,dto,response)
 ├── tools/            # Function Calling 工具（无 HTTP 入口）
-├── resilience/       # ResilientLlmExecutor / LlmCallLogger（+ mapper/ + model/）
+├── resilience/       # ResilientLlmExecutor / LlmCallLogger（+ mapper/ + model/entity）
 ├── ops/              # controller/HealthController（GET /health）
-├── common/           # annotation / constant / dto / exception / util / web
+├── common/           # annotation / constant / exception / util / web
 ├── config/           # @Configuration / @Bean
 └── LenderAssistantApplication.java
 ```
 
 ### 0.2 结构规则
 
-- 领域内分层 `controller` / `service` / `strategy` / `mapper` / `vo` / `model`；**顶层禁止建** `controller/` `service/` `mapper/` 技术包。
-- **对外契约一律进 `vo/`**：`vo/request/*Request`、`vo/response/*Response`；`model/` 只放领域内跨层 / 映射 record，两者不混用。
+- 领域内分层 `controller` / `service` / `client` / `strategy` / `mapper` / `model` / `tool`；**顶层禁止建** `controller/` `service/` `mapper/` 技术包。
+- **四分包规则（model/ 下不再直接放类）**：DB 行 → `model/entity/*Entity`；领域内跨层数据 → `model/dto/*DTO`（枚举保留原名）；HTTP 入参 → `model/request/*Request`；HTTP 出参 → `model/response/*Response`。禁止在 `model/` 根直接放类。
+- **外部模型网关一律进 `client/`（接口 + `impl/`）**，controller 不得直接调 `client/`。
 - 无 HTTP 入口的包（`tools` / `resilience` / `common`）不建 `controller/`；要访问 DB 才建 `mapper/`。
 - 新类定位顺序：领域 → 层 → 都定不了才进 `common/`，并在 commit message 说明理由。
 - 禁止平行单类包、近义包（`extract` vs `extraction` 出过事故）、空包、死代码。
@@ -43,12 +49,14 @@ com.lender.assistant
 |---|---|---|
 | `controller/` | 参数校验、调 service、组装响应、异常→状态码 | 业务逻辑、SQL、直接操作数据源 |
 | `service/` | 业务编排、事务边界、调 mapper / client / tools | 拼 SQL、拼响应细节 |
+| `client/` | 外部模型网关适配（重试、超时、留痕），只被 service 调用 | 业务编排、事务、直接操作 DB |
 | `mapper/` | 全部 SQL、行↔对象映射 | 业务判断、`@Transactional` |
-| `vo/` | 对外请求 / 响应 `record` | 业务逻辑、可变状态 |
-| `model/` | 领域内跨层 `record` | 业务逻辑、可变状态 |
+| `model/request` `model/response` | 对外请求 / 响应 `record` | 业务逻辑、可变状态 |
+| `model/dto` | 领域内跨层数据 `record`、枚举 | 持久化字段映射 |
+| `model/entity` | DB 行对象（XML `resultMap` 指向） | 业务判断、直接当 HTTP 出参 |
 | `common/util/` | 无状态静态方法 | 持有 Spring Bean、实例状态 |
 
-- 依赖方向 `controller → service → mapper`，禁止反向与跨层；跨领域只允许 service → 另一个领域的 service。
+- 依赖方向 `controller → service → mapper | client`，禁止反向与跨层；跨领域只允许 service → 另一个领域的 service。
 - 可替换实现必须接口 + `@ConditionalOnProperty` 切换（`EmbeddingStrategy` / `AnswerGeneratorStrategy` / `ExtractGeneratorStrategy` / `DraftGeneratorStrategy` / `DocumentParserStrategy` / `ChunkSplitterStrategy`）；实现选择交给 Spring 装配，**禁止业务代码 `if-else` 判 mock / deepseek**。
 - 编排型 Service 统一 `XxxService` + `service/impl/XxxServiceImpl`；策略接口以 `Strategy` 结尾，实现「策略名 + 接口名」放 `strategy/impl/`。
 - 跨层传值一律 `record`，禁止可变 DTO + setter。
