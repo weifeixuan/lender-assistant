@@ -3,7 +3,7 @@ package com.lender.assistant.common.web;
 import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
-import com.lender.assistant.common.dto.ApiResponse;
+import com.lender.assistant.common.web.ApiResponse;
 import org.aspectj.lang.ProceedingJoinPoint;
 import org.aspectj.lang.reflect.MethodSignature;
 import org.junit.jupiter.api.AfterEach;

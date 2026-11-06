@@ -1,6 +1,6 @@
 package com.lender.assistant.common.web;
 
-import com.lender.assistant.common.dto.ApiResponse;
+import com.lender.assistant.common.web.ApiResponse;
 import com.lender.assistant.common.exception.BizException;
 import com.lender.assistant.common.exception.ErrorCode;
 import org.slf4j.Logger;

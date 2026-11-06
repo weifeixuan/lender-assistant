@@ -1,7 +1,7 @@
 package com.lender.assistant.common.web;
 
 import com.lender.assistant.common.annotation.RawResponse;
-import com.lender.assistant.common.dto.ApiResponse;
+import com.lender.assistant.common.web.ApiResponse;
 import org.springframework.core.MethodParameter;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;

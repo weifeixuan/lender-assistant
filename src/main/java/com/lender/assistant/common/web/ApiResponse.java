@@ -1,4 +1,4 @@
-package com.lender.assistant.common.dto;
+package com.lender.assistant.common.web;
 
 import com.lender.assistant.common.exception.ErrorCode;
 

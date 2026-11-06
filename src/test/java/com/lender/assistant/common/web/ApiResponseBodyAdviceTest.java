@@ -1,7 +1,7 @@
 package com.lender.assistant.common.web;
 
 import com.lender.assistant.common.annotation.RawResponse;
-import com.lender.assistant.common.dto.ApiResponse;
+import com.lender.assistant.common.web.ApiResponse;
 import com.lender.assistant.common.exception.ErrorCode;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
