@@ -1,4 +1,4 @@
-package com.lender.assistant.conversation;
+package com.lender.assistant.conversation.mapper;
 
 import org.apache.ibatis.builder.xml.XMLMapperBuilder;
 import org.apache.ibatis.io.Resources;
@@ -13,7 +13,7 @@ import org.junit.jupiter.api.Test;
 
 import com.lender.assistant.conversation.mapper.ConversationMapper;
 import com.lender.assistant.conversation.mapper.MessageMapper;
-import com.lender.assistant.conversation.model.MessageInsert;
+import com.lender.assistant.conversation.model.dto.MessageInsertDTO;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -95,9 +95,9 @@ class MapperXmlContractTest {
     }
 
     @Test
-    @DisplayName("MessageInsert 的 record 组件可被 MyBatis 按属性名读取")
+    @DisplayName("MessageInsertDTO 的 record 组件可被 MyBatis 按属性名读取")
     void messageInsertExposesProperties() {
-        MessageInsert insert = new MessageInsert("conv-1", "round-1", "msg-1",
+        MessageInsertDTO insert = new MessageInsertDTO("conv-1", "round-1", "msg-1",
                 "ASSISTANT", "回答", "DONE", "[]", "mock", 10, null);
         assertEquals("conv-1",
                 SystemMetaObject.forObject(insert).getValue("conversationId"));
@@ -107,8 +107,8 @@ class MapperXmlContractTest {
     @Test
     @DisplayName("MessageMapper.insert 的参数按运行时包装规则可绑定")
     void messageInsertParametersBind() throws Exception {
-        Method method = MessageMapper.class.getMethod("insert", MessageInsert.class);
-        MessageInsert insert = new MessageInsert("conv-1", "round-1", "msg-1",
+        Method method = MessageMapper.class.getMethod("insert", MessageInsertDTO.class);
+        MessageInsertDTO insert = new MessageInsertDTO("conv-1", "round-1", "msg-1",
                 "ASSISTANT", "回答", "DONE", "[]", "mock", 10, null);
         assertParametersBind(MESSAGE_MAPPER,
                 "com.lender.assistant.conversation.mapper.MessageMapper.insert",

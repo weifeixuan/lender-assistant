@@ -5,16 +5,16 @@ import com.lender.assistant.common.exception.BizException;
 import com.lender.assistant.common.exception.ErrorCode;
 import com.lender.assistant.conversation.mapper.ConversationMapper;
 import com.lender.assistant.conversation.mapper.MessageMapper;
-import com.lender.assistant.conversation.model.AssistantMessageCompletion;
-import com.lender.assistant.conversation.model.ConversationRow;
-import com.lender.assistant.conversation.model.MessageRow;
-import com.lender.assistant.conversation.model.ConversationRound;
+import com.lender.assistant.conversation.model.dto.AssistantMessageCompletionDTO;
+import com.lender.assistant.conversation.model.entity.ConversationEntity;
+import com.lender.assistant.conversation.model.entity.MessageEntity;
+import com.lender.assistant.conversation.model.dto.ConversationRoundDTO;
 import com.lender.assistant.conversation.service.impl.ConversationServiceImpl;
-import com.lender.assistant.conversation.vo.response.ConversationMessagesResponse;
-import com.lender.assistant.conversation.vo.response.ConversationSummaryResponse;
-import com.lender.assistant.conversation.vo.response.DeleteConversationResponse;
-import com.lender.assistant.conversation.vo.response.MessageResponse;
-import com.lender.assistant.conversation.model.QaSourceSnapshot;
+import com.lender.assistant.conversation.model.response.ConversationMessagesResponse;
+import com.lender.assistant.conversation.model.response.ConversationSummaryResponse;
+import com.lender.assistant.conversation.model.response.DeleteConversationResponse;
+import com.lender.assistant.conversation.model.response.MessageResponse;
+import com.lender.assistant.conversation.model.dto.QaSourceSnapshotDTO;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -47,7 +47,7 @@ class ConversationServiceTest {
     @DisplayName("会话行映射为对外响应，字段一一对应")
     void mapsRowsToResponses() {
         when(conversationMapper.listActiveByUser(USER_ID)).thenReturn(List.of(
-                new ConversationRow(CONVERSATION_ID, USER_ID, "首套贷款成数上限",
+                new ConversationEntity(CONVERSATION_ID, USER_ID, "首套贷款成数上限",
                         "ACTIVE", "2026-11-02 20:00:00", "2026-11-02 20:05:00")));
 
         List<ConversationSummaryResponse> result = service.listConversations(USER_ID);
@@ -80,9 +80,9 @@ class ConversationServiceTest {
         when(conversationMapper.findActiveByConversationIdAndUser(CONVERSATION_ID, USER_ID))
                 .thenReturn(activeConversation());
         when(messageMapper.listByConversation(CONVERSATION_ID)).thenReturn(List.of(
-                new MessageRow("msg-user", CONVERSATION_ID, "round-1", "USER", "问题",
+                new MessageEntity("msg-user", CONVERSATION_ID, "round-1", "USER", "问题",
                         "DONE", null, null, null, null, "2026-11-02 20:00:00", null, null),
-                new MessageRow("msg-assistant", CONVERSATION_ID, "round-1", "ASSISTANT", "回答",
+                new MessageEntity("msg-assistant", CONVERSATION_ID, "round-1", "ASSISTANT", "回答",
                         "DONE", "[{\"idx\":1,\"docTitle\":\"资方接口文档\",\"chunkId\":123}]",
                         "deepseek-chat", 1234, null, "2026-11-02 20:00:01", null, null)));
 
@@ -144,7 +144,7 @@ class ConversationServiceTest {
         when(conversationMapper.insert(anyString(), eq(USER_ID), anyString())).thenReturn(1);
         when(messageMapper.insert(any())).thenReturn(1);
 
-        ConversationRound round = new ConversationRound("conv-new", "round-new",
+        ConversationRoundDTO round = new ConversationRoundDTO("conv-new", "round-new",
                 "msg-user-new", "msg-assistant-new");
         service.startNewRound(round, USER_ID, "首套贷款成数上限是多少");
 
@@ -166,7 +166,7 @@ class ConversationServiceTest {
         when(conversationMapper.insert(anyString(), eq(USER_ID), anyString())).thenReturn(1);
         when(messageMapper.insert(any())).thenReturn(1);
 
-        service.startNewRound(new ConversationRound("conv-new", "round-new",
+        service.startNewRound(new ConversationRoundDTO("conv-new", "round-new",
                 "msg-user-new", "msg-assistant-new"), USER_ID, question);
 
         verify(conversationMapper).insert(anyString(), eq(USER_ID), eq("一".repeat(20)));
@@ -178,12 +178,12 @@ class ConversationServiceTest {
         when(messageMapper.insert(any())).thenReturn(1);
         when(conversationMapper.touch(CONVERSATION_ID)).thenReturn(1);
 
-        service.completeRound(new AssistantMessageCompletion(CONVERSATION_ID, "round-1",
+        service.completeRound(new AssistantMessageCompletionDTO(CONVERSATION_ID, "round-1",
                 "msg-assistant", "回答正文", List.of(source()), "Mock", 1234, "DONE", null,
                 null, null));
 
-        ArgumentCaptor<com.lender.assistant.conversation.model.MessageInsert> insert =
-                ArgumentCaptor.forClass(com.lender.assistant.conversation.model.MessageInsert.class);
+        ArgumentCaptor<com.lender.assistant.conversation.model.dto.MessageInsertDTO> insert =
+                ArgumentCaptor.forClass(com.lender.assistant.conversation.model.dto.MessageInsertDTO.class);
         verify(messageMapper).insert(insert.capture());
         assertEquals("ASSISTANT", insert.getValue().role());
         assertEquals("DONE", insert.getValue().status());
@@ -198,7 +198,7 @@ class ConversationServiceTest {
         when(messageMapper.insert(any())).thenReturn(1);
         when(conversationMapper.touch(CONVERSATION_ID)).thenReturn(1);
 
-        service.completeRound(new AssistantMessageCompletion(CONVERSATION_ID, "round-1",
+        service.completeRound(new AssistantMessageCompletionDTO(CONVERSATION_ID, "round-1",
                 "msg-assistant", "未检索到", List.of(), "Mock", 10, "DONE", null,
                 null, null));
 
@@ -212,7 +212,7 @@ class ConversationServiceTest {
         when(messageMapper.insert(any())).thenReturn(1);
         when(conversationMapper.touch(CONVERSATION_ID)).thenReturn(1);
 
-        service.completeRound(new AssistantMessageCompletion(CONVERSATION_ID, "round-1",
+        service.completeRound(new AssistantMessageCompletionDTO(CONVERSATION_ID, "round-1",
                 "msg-assistant", "已生成的部分", List.of(), "Mock", 5, "FAILED", "模型超时",
                 null, null));
 
@@ -228,7 +228,7 @@ class ConversationServiceTest {
         when(messageMapper.insert(any())).thenReturn(1);
         when(conversationMapper.touch(CONVERSATION_ID)).thenReturn(1);
 
-        service.completeRound(new AssistantMessageCompletion(CONVERSATION_ID, "round-1",
+        service.completeRound(new AssistantMessageCompletionDTO(CONVERSATION_ID, "round-1",
                 "msg-assistant", "半截回答", List.of(source()), "Mock", 5, "STOPPED", null,
                 null, null));
 
@@ -244,7 +244,7 @@ class ConversationServiceTest {
         when(messageMapper.insert(any())).thenReturn(1);
         when(conversationMapper.touch(CONVERSATION_ID)).thenReturn(0);
 
-        service.completeRound(new AssistantMessageCompletion(CONVERSATION_ID, "round-1",
+        service.completeRound(new AssistantMessageCompletionDTO(CONVERSATION_ID, "round-1",
                 "msg-assistant", "回答", List.of(), "Mock", 10, "DONE", null,
                 null, null));
 
@@ -265,7 +265,7 @@ class ConversationServiceTest {
         when(messageMapper.insert(any())).thenReturn(1);
         when(conversationMapper.touch(CONVERSATION_ID)).thenReturn(1);
 
-        ConversationRound round = new ConversationRound(CONVERSATION_ID, "round-2",
+        ConversationRoundDTO round = new ConversationRoundDTO(CONVERSATION_ID, "round-2",
                 "msg-user-2", "msg-assistant-2");
         service.startFollowUpRound(round, USER_ID, "那二套呢");
 
@@ -284,7 +284,7 @@ class ConversationServiceTest {
         when(conversationMapper.findActiveByConversationIdAndUser(CONVERSATION_ID, USER_ID))
                 .thenReturn(null);
 
-        ConversationRound round = new ConversationRound(CONVERSATION_ID, "round-2",
+        ConversationRoundDTO round = new ConversationRoundDTO(CONVERSATION_ID, "round-2",
                 "msg-user-2", "msg-assistant-2");
         BizException exception = assertThrows(BizException.class,
                 () -> service.startFollowUpRound(round, USER_ID, "问题"));
@@ -293,8 +293,8 @@ class ConversationServiceTest {
         verify(messageMapper, org.mockito.Mockito.never()).insert(any());
     }
 
-    private static QaSourceSnapshot source() {
-        return new QaSourceSnapshot(1, "资方接口文档", "3 日末文件", 123L,
+    private static QaSourceSnapshotDTO source() {
+        return new QaSourceSnapshotDTO(1, "资方接口文档", "3 日末文件", 123L,
                 "切片正文", null, null, false, null);
     }
 
@@ -321,8 +321,8 @@ class ConversationServiceTest {
         assertEquals(ErrorCode.CONVERSATION_NOT_FOUND, exception.errorCode());
     }
 
-    private static ConversationRow activeConversation() {
-        return new ConversationRow(CONVERSATION_ID, USER_ID, "标题", "ACTIVE",
+    private static ConversationEntity activeConversation() {
+        return new ConversationEntity(CONVERSATION_ID, USER_ID, "标题", "ACTIVE",
                 "2026-11-02 20:00:00", "2026-11-02 20:05:00");
     }
 }

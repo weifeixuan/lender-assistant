@@ -7,7 +7,7 @@
 -->
 <mapper namespace="com.lender.assistant.conversation.mapper.ConversationMapper">
 
-    <resultMap id="conversationRowMap" type="com.lender.assistant.conversation.model.ConversationRow">
+    <resultMap id="conversationRowMap" type="com.lender.assistant.conversation.model.entity.ConversationEntity">
         <constructor>
             <arg column="conversation_id" javaType="java.lang.String"/>
             <arg column="user_id" javaType="java.lang.String"/>

@@ -2,7 +2,7 @@ package com.lender.assistant.conversation.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lender.assistant.conversation.mapper.MessageMapper;
-import com.lender.assistant.conversation.model.MessageRow;
+import com.lender.assistant.conversation.model.entity.MessageEntity;
 import com.lender.assistant.rag.model.ChatTurn;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -60,7 +60,7 @@ class ConversationHistoryAssemblerTest {
     @Test
     @DisplayName("最多保留最近 6 轮")
     void keepsOnlyLastSixRounds() {
-        List<MessageRow> rows = new ArrayList<>();
+        List<MessageEntity> rows = new ArrayList<>();
         for (int i = 1; i <= 8; i++) {
             rows.add(row("r" + i, "USER", "问题" + i, "DONE"));
             rows.add(row("r" + i, "ASSISTANT", "回答" + i, "DONE"));
@@ -109,13 +109,13 @@ class ConversationHistoryAssemblerTest {
     @DisplayName("provider=rule 的固定提示轮整轮跳过回放")
     void skipsRuleReplies() {
         when(messageMapper.listByConversation(CONVERSATION_ID)).thenReturn(List.of(
-                new MessageRow("msg-1", CONVERSATION_ID, "r1", "USER", "你好", "DONE",
+                new MessageEntity("msg-1", CONVERSATION_ID, "r1", "USER", "你好", "DONE",
                         null, null, 0, null, "2026-11-01 10:00:00", null, null),
-                new MessageRow("msg-2", CONVERSATION_ID, "r1", "ASSISTANT", "固定提示", "DONE",
+                new MessageEntity("msg-2", CONVERSATION_ID, "r1", "ASSISTANT", "固定提示", "DONE",
                         "[]", "rule", 0, null, "2026-11-01 10:00:01", null, null),
-                new MessageRow("msg-3", CONVERSATION_ID, "r2", "USER", "单笔限额", "DONE",
+                new MessageEntity("msg-3", CONVERSATION_ID, "r2", "USER", "单笔限额", "DONE",
                         null, null, 0, null, "2026-11-01 10:00:02", null, null),
-                new MessageRow("msg-4", CONVERSATION_ID, "r2", "ASSISTANT", "回答", "DONE",
+                new MessageEntity("msg-4", CONVERSATION_ID, "r2", "ASSISTANT", "回答", "DONE",
                         "[]", "mock", 0, null, "2026-11-01 10:00:03", null, null)));
 
         List<ChatTurn> history = assembler.assemble(CONVERSATION_ID, CURRENT_ROUND);
@@ -174,15 +174,15 @@ class ConversationHistoryAssemblerTest {
         assertEquals("单笔限额 500 万元", history.get(1).content());
     }
 
-    private static MessageRow assistantRow(String roundId, String content,
+    private static MessageEntity assistantRow(String roundId, String content,
                                            String routeJson, String planJson) {
-        return new MessageRow("msg-" + roundId + "-ASSISTANT", CONVERSATION_ID, roundId,
+        return new MessageEntity("msg-" + roundId + "-ASSISTANT", CONVERSATION_ID, roundId,
                 "ASSISTANT", content, "DONE", "[]", "deepseek-chat", 0, null,
                 "2026-11-01 10:00:01", routeJson, planJson);
     }
 
-    private static MessageRow row(String roundId, String role, String content, String status) {
-        return new MessageRow("msg-" + roundId + "-" + role, CONVERSATION_ID, roundId, role,
+    private static MessageEntity row(String roundId, String role, String content, String status) {
+        return new MessageEntity("msg-" + roundId + "-" + role, CONVERSATION_ID, roundId, role,
                 content, status, null, null, null, null, "2026-11-01 10:00:00", null, null);
     }
 }

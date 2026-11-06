@@ -1,4 +1,4 @@
-package com.lender.assistant.conversation.model;
+package com.lender.assistant.conversation.model.dto;
 
 import java.util.List;
 
@@ -9,8 +9,8 @@ import java.util.List;
  * error 仅在 FAILED 时非空；sources 是生成时的快照（未召回时为空数组）。
  * routeJson / executionPlanJson 为已序列化的 JSON 文本，非 PLAN 轮或未路由时为 null。
  */
-public record AssistantMessageCompletion(String conversationId, String roundId, String messageId,
-                                         String content, List<QaSourceSnapshot> sources,
+public record AssistantMessageCompletionDTO(String conversationId, String roundId, String messageId,
+                                         String content, List<QaSourceSnapshotDTO> sources,
                                          String provider, long elapsedMillis,
                                          String status, String error,
                                          String routeJson, String executionPlanJson) {

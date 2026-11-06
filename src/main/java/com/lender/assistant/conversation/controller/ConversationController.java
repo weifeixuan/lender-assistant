@@ -2,9 +2,9 @@ package com.lender.assistant.conversation.controller;
 
 import com.lender.assistant.common.web.UserIdInterceptor;
 import com.lender.assistant.conversation.service.ConversationService;
-import com.lender.assistant.conversation.vo.response.ConversationMessagesResponse;
-import com.lender.assistant.conversation.vo.response.ConversationSummaryResponse;
-import com.lender.assistant.conversation.vo.response.DeleteConversationResponse;
+import com.lender.assistant.conversation.model.response.ConversationMessagesResponse;
+import com.lender.assistant.conversation.model.response.ConversationSummaryResponse;
+import com.lender.assistant.conversation.model.response.DeleteConversationResponse;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;

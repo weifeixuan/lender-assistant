@@ -1,4 +1,4 @@
-package com.lender.assistant.conversation.model;
+package com.lender.assistant.conversation.model.dto;
 
 /**
  * 助手消息 sources 的 JSONB 快照元素。
@@ -7,7 +7,7 @@ package com.lender.assistant.conversation.model;
  * JSON 序列化结果一致，因此历史接口与 SSE 契约不变。
  * 单独定义是为了让 conversation 包不依赖 rag 包，断开 conversation ↔ rag 的包级依赖环。
  */
-public record QaSourceSnapshot(Integer idx, String docTitle, String sectionPath,
+public record QaSourceSnapshotDTO(Integer idx, String docTitle, String sectionPath,
                                Long chunkId, String content, Double vectorDistance,
                                Integer keywordHits, Boolean bothChannels, String rrfScore) {
 }

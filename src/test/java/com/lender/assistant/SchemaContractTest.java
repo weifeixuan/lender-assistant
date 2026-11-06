@@ -1,4 +1,4 @@
-package com.lender.assistant.conversation;
+package com.lender.assistant;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;

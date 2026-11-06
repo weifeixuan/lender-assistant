@@ -8,17 +8,17 @@ import com.lender.assistant.common.exception.BizException;
 import com.lender.assistant.common.exception.ErrorCode;
 import com.lender.assistant.conversation.mapper.ConversationMapper;
 import com.lender.assistant.conversation.mapper.MessageMapper;
-import com.lender.assistant.conversation.model.AssistantMessageCompletion;
-import com.lender.assistant.conversation.model.ConversationRound;
-import com.lender.assistant.conversation.model.ConversationRow;
-import com.lender.assistant.conversation.model.MessageInsert;
-import com.lender.assistant.conversation.model.MessageRow;
-import com.lender.assistant.conversation.model.QaSourceSnapshot;
+import com.lender.assistant.conversation.model.dto.AssistantMessageCompletionDTO;
+import com.lender.assistant.conversation.model.dto.ConversationRoundDTO;
+import com.lender.assistant.conversation.model.entity.ConversationEntity;
+import com.lender.assistant.conversation.model.dto.MessageInsertDTO;
+import com.lender.assistant.conversation.model.entity.MessageEntity;
+import com.lender.assistant.conversation.model.dto.QaSourceSnapshotDTO;
 import com.lender.assistant.conversation.service.ConversationService;
-import com.lender.assistant.conversation.vo.response.ConversationMessagesResponse;
-import com.lender.assistant.conversation.vo.response.ConversationSummaryResponse;
-import com.lender.assistant.conversation.vo.response.DeleteConversationResponse;
-import com.lender.assistant.conversation.vo.response.MessageResponse;
+import com.lender.assistant.conversation.model.response.ConversationMessagesResponse;
+import com.lender.assistant.conversation.model.response.ConversationSummaryResponse;
+import com.lender.assistant.conversation.model.response.DeleteConversationResponse;
+import com.lender.assistant.conversation.model.response.MessageResponse;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -30,7 +30,7 @@ import java.util.List;
 @Service
 public class ConversationServiceImpl implements ConversationService {
 
-    private static final TypeReference<List<QaSourceSnapshot>> SOURCES_TYPE =
+    private static final TypeReference<List<QaSourceSnapshotDTO>> SOURCES_TYPE =
             new TypeReference<>() {
             };
 
@@ -55,7 +55,7 @@ public class ConversationServiceImpl implements ConversationService {
 
     @Override
     public ConversationMessagesResponse getMessages(String conversationId, String userId) {
-        ConversationRow conversation =
+        ConversationEntity conversation =
                 conversationMapper.findActiveByConversationIdAndUser(conversationId, userId);
         if (conversation == null) {
             throw new BizException(ErrorCode.CONVERSATION_NOT_FOUND);
@@ -84,18 +84,18 @@ public class ConversationServiceImpl implements ConversationService {
 
     @Override
     @Transactional(rollbackFor = Exception.class)
-    public void startNewRound(ConversationRound round, String userId, String question) {
+    public void startNewRound(ConversationRoundDTO round, String userId, String question) {
         conversationMapper.insert(round.conversationId(), userId, titleOf(question));
-        messageMapper.insert(new MessageInsert(round.conversationId(), round.roundId(),
+        messageMapper.insert(new MessageInsertDTO(round.conversationId(), round.roundId(),
                 round.userMessageId(), MessageConstants.ROLE_USER, question,
                 MessageConstants.STATUS_DONE, null, null, null, null));
     }
 
     @Override
     @Transactional(rollbackFor = Exception.class)
-    public void startFollowUpRound(ConversationRound round, String userId, String question) {
+    public void startFollowUpRound(ConversationRoundDTO round, String userId, String question) {
         validateOwnership(round.conversationId(), userId);
-        messageMapper.insert(new MessageInsert(round.conversationId(), round.roundId(),
+        messageMapper.insert(new MessageInsertDTO(round.conversationId(), round.roundId(),
                 round.userMessageId(), MessageConstants.ROLE_USER, question,
                 MessageConstants.STATUS_DONE, null, null, null, null));
         conversationMapper.touch(round.conversationId());
@@ -103,11 +103,11 @@ public class ConversationServiceImpl implements ConversationService {
 
     @Override
     @Transactional(rollbackFor = Exception.class)
-    public void completeRound(AssistantMessageCompletion completion) {
+    public void completeRound(AssistantMessageCompletionDTO completion) {
         // 消息与会话无级联关系：流式期间会话被删，助手消息照常落库；
         // touch 自带 status='ACTIVE'，已删会话的时间线不会被推后。
         int elapsedMs = (int) Math.min(Integer.MAX_VALUE, completion.elapsedMillis());
-        messageMapper.insert(new MessageInsert(completion.conversationId(), completion.roundId(),
+        messageMapper.insert(new MessageInsertDTO(completion.conversationId(), completion.roundId(),
                 completion.messageId(), MessageConstants.ROLE_ASSISTANT, completion.content(),
                 completion.status(), writeSources(completion.sources()), completion.provider(),
                 elapsedMs, completion.error()));
@@ -127,7 +127,7 @@ public class ConversationServiceImpl implements ConversationService {
         return trimmed.substring(0, trimmed.offsetByCodePoints(0, 20));
     }
 
-    private String writeSources(List<QaSourceSnapshot> sources) {
+    private String writeSources(List<QaSourceSnapshotDTO> sources) {
         try {
             return objectMapper.writeValueAsString(sources);
         } catch (JsonProcessingException e) {
@@ -135,14 +135,14 @@ public class ConversationServiceImpl implements ConversationService {
         }
     }
 
-    private MessageResponse toMessage(MessageRow row) {
+    private MessageResponse toMessage(MessageEntity row) {
         return new MessageResponse(row.messageId(), row.roundId(), row.role(), row.content(),
                 row.status(), parseSources(row.sourcesJson()), row.provider(),
                 row.elapsedMs(), row.errorMsg(), row.createTime());
     }
 
     /** USER 消息的 sourcesJson 为 null，对外同样为 null；助手未召回时是空数组 */
-    private List<QaSourceSnapshot> parseSources(String sourcesJson) {
+    private List<QaSourceSnapshotDTO> parseSources(String sourcesJson) {
         if (sourcesJson == null) {
             return null;
         }
@@ -153,7 +153,7 @@ public class ConversationServiceImpl implements ConversationService {
         }
     }
 
-    private static ConversationSummaryResponse toSummary(ConversationRow row) {
+    private static ConversationSummaryResponse toSummary(ConversationEntity row) {
         return new ConversationSummaryResponse(row.conversationId(), row.title(),
                 row.createTime(), row.updateTime());
     }

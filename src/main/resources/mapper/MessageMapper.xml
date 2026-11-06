@@ -8,7 +8,7 @@
 -->
 <mapper namespace="com.lender.assistant.conversation.mapper.MessageMapper">
 
-    <resultMap id="messageRowMap" type="com.lender.assistant.conversation.model.MessageRow">
+    <resultMap id="messageRowMap" type="com.lender.assistant.conversation.model.entity.MessageEntity">
         <constructor>
             <arg column="message_id" javaType="java.lang.String"/>
             <arg column="conversation_id" javaType="java.lang.String"/>

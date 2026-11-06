@@ -1,10 +1,10 @@
 package com.lender.assistant.conversation.service;
 
-import com.lender.assistant.conversation.model.AssistantMessageCompletion;
-import com.lender.assistant.conversation.model.ConversationRound;
-import com.lender.assistant.conversation.vo.response.ConversationMessagesResponse;
-import com.lender.assistant.conversation.vo.response.ConversationSummaryResponse;
-import com.lender.assistant.conversation.vo.response.DeleteConversationResponse;
+import com.lender.assistant.conversation.model.dto.AssistantMessageCompletionDTO;
+import com.lender.assistant.conversation.model.dto.ConversationRoundDTO;
+import com.lender.assistant.conversation.model.response.ConversationMessagesResponse;
+import com.lender.assistant.conversation.model.response.ConversationSummaryResponse;
+import com.lender.assistant.conversation.model.response.DeleteConversationResponse;
 
 import java.util.List;
 
@@ -29,14 +29,14 @@ public interface ConversationService {
      * 首问懒创建：同一事务内创建会话与用户消息。
      * 本轮的 conversationId / roundId / 两条 messageId 均由调用方（QaService）生成，本 Service 不自行生成。
      */
-    void startNewRound(ConversationRound round, String userId, String question);
+    void startNewRound(ConversationRoundDTO round, String userId, String question);
 
     /** 既有会话追问：归属校验后追加用户消息并刷新会话更新时间；不存在/已删除/非本人抛 404 */
-    void startFollowUpRound(ConversationRound round, String userId, String question);
+    void startFollowUpRound(ConversationRoundDTO round, String userId, String question);
 
     /**
      * 助手消息终态落库（DONE / FAILED / STOPPED）。
      * 会话在流式过程中被删除时助手消息照常落库（消息与会话无级联关系），但不刷新已删会话的 update_time。
      */
-    void completeRound(AssistantMessageCompletion completion);
+    void completeRound(AssistantMessageCompletionDTO completion);
 }

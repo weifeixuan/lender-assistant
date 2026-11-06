@@ -1,4 +1,4 @@
-package com.lender.assistant.conversation.vo.response;
+package com.lender.assistant.conversation.model.response;
 
 import java.util.List;
 

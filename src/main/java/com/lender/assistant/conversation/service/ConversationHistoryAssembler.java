@@ -4,7 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lender.assistant.common.constant.MessageConstants;
 import com.lender.assistant.conversation.mapper.MessageMapper;
-import com.lender.assistant.conversation.model.MessageRow;
+import com.lender.assistant.conversation.model.entity.MessageEntity;
 import com.lender.assistant.rag.model.ChatTurn;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
@@ -50,16 +50,16 @@ public class ConversationHistoryAssembler {
     }
 
     /** 会话内按 id 升序的原始消息行；供路由读取上一轮 route 用，不做回放过滤 */
-    public List<MessageRow> listRows(String conversationId) {
+    public List<MessageEntity> listRows(String conversationId) {
         return messageMapper.listByConversation(conversationId);
     }
 
     /** @param currentRoundId 本轮 id，装配时排除，避免把刚提问的用户消息当成历史 */
     public List<ChatTurn> assemble(String conversationId, String currentRoundId) {
-        List<MessageRow> rows = messageMapper.listByConversation(conversationId);
+        List<MessageEntity> rows = messageMapper.listByConversation(conversationId);
 
         Map<String, RoundMessages> rounds = new LinkedHashMap<>();
-        for (MessageRow row : rows) {
+        for (MessageEntity row : rows) {
             if (row.roundId().equals(currentRoundId)) {
                 continue;
             }
@@ -101,7 +101,7 @@ public class ConversationHistoryAssembler {
      * 让模型知道这段历史结论来自业务工具而非本轮召回资料。标注只存在于装配结果，
      * 库里的 content 与前端展示不受影响。
      */
-    private String assistantContent(MessageRow assistant) {
+    private String assistantContent(MessageEntity assistant) {
         List<String> tools = businessToolNames(assistant);
         if (tools.isEmpty()) {
             return assistant.content();
@@ -111,7 +111,7 @@ public class ConversationHistoryAssembler {
     }
 
     /** 从 execution_plan 快照里取非 kb.search 的工具名（去重、保序）；弃用计划没有工具产物 */
-    private List<String> businessToolNames(MessageRow assistant) {
+    private List<String> businessToolNames(MessageEntity assistant) {
         String json = assistant.executionPlanJson();
         if (json == null || json.isBlank()) {
             return List.of();
@@ -154,8 +154,8 @@ public class ConversationHistoryAssembler {
     }
 
     private static final class RoundMessages {
-        private MessageRow user;
-        private MessageRow assistant;
+        private MessageEntity user;
+        private MessageEntity assistant;
         private boolean ruleReply;
     }
 }

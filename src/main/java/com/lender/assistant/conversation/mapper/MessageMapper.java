@@ -1,7 +1,7 @@
 package com.lender.assistant.conversation.mapper;
 
-import com.lender.assistant.conversation.model.MessageInsert;
-import com.lender.assistant.conversation.model.MessageRow;
+import com.lender.assistant.conversation.model.dto.MessageInsertDTO;
+import com.lender.assistant.conversation.model.entity.MessageEntity;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
@@ -16,10 +16,10 @@ import java.util.List;
 public interface MessageMapper {
 
     /** 插入一条消息；sourcesJson 可为 null（用户消息） */
-    int insert(@Param("message") MessageInsert message);
+    int insert(@Param("message") MessageInsertDTO message);
 
     /** 按会话读取全部消息，id ASC 即会话内稳定时序 */
-    List<MessageRow> listByConversation(@Param("conversationId") String conversationId);
+    List<MessageEntity> listByConversation(@Param("conversationId") String conversationId);
 
     /** 助手消息终态回填路由与计划快照；两个 JSON 文本可为 null */
     int updateRouteAndPlan(@Param("conversationId") String conversationId,

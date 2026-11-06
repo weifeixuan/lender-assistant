@@ -1,4 +1,4 @@
-package com.lender.assistant.conversation.vo.response;
+package com.lender.assistant.conversation.model.response;
 
 /**
  * 会话列表条目（GET /api/conversations）。
