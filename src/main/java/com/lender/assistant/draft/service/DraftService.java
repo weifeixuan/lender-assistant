@@ -1,6 +1,6 @@
 package com.lender.assistant.draft.service;
 
-import com.lender.assistant.draft.vo.response.DraftResponse;
+import com.lender.assistant.draft.model.response.DraftResponse;
 
 /**
  * 代码草稿生成编排：加载映射表 → 经韧性执行器调生成器 → 附人工复核声明。

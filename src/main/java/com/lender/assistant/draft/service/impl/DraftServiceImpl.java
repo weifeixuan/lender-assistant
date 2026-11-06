@@ -5,7 +5,7 @@ import com.lender.assistant.common.exception.BizException;
 import com.lender.assistant.common.exception.ErrorCode;
 import com.lender.assistant.draft.service.DraftService;
 import com.lender.assistant.draft.strategy.DraftGeneratorStrategy;
-import com.lender.assistant.draft.vo.response.DraftResponse;
+import com.lender.assistant.draft.model.response.DraftResponse;
 import com.lender.assistant.extract.model.entity.FieldMappingEntity;
 import com.lender.assistant.extract.service.ExtractService;
 import com.lender.assistant.resilience.ResilientLlmExecutor;

@@ -33,7 +33,7 @@ public class MockDraftGeneratorStrategy implements DraftGeneratorStrategy {
      * 加载失败属于部署错误，直接抛出去——渲染没有可降级的正确形态。
      */
     private static String loadSkeleton() {
-        try (InputStream in = MockDraftGeneratorStrategy.class.getResourceAsStream("/draft/ExampleLenderHandler.java")) {
+        try (InputStream in = MockDraftGeneratorStrategy.class.getResourceAsStream("/templates/draft/ExampleLenderHandler.java.tmpl")) {
             if (in == null) {
                 throw new IllegalStateException("classpath 缺少 draft/ExampleLenderHandler.java 骨架");
             }

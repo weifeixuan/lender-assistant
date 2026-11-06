@@ -1,4 +1,4 @@
-package com.lender.assistant.draft.vo.response;
+package com.lender.assistant.draft.model.response;
 
 /**
  * 代码草稿生成结果（对应 POST /api/draft/{docId} 的响应体）。

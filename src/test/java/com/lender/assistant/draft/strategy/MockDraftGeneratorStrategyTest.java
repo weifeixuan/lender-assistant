@@ -1,7 +1,7 @@
 package com.lender.assistant.draft.strategy;
 
 import com.lender.assistant.draft.strategy.impl.MockDraftGeneratorStrategy;
-import com.lender.assistant.extract.model.FieldMapping;
+import com.lender.assistant.extract.model.entity.FieldMappingEntity;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -13,7 +13,7 @@ import static org.junit.jupiter.api.Assertions.*;
 /**
  * Mock 草稿生成器测试：模板渲染的确定性契约。
  *
- * 渲染契约（骨架 resources/draft/ExampleLenderHandler.java 与本测试共同锁定）：
+ * 渲染契约（骨架 resources/templates/draft/ExampleLenderHandler.java.tmpl 与本测试共同锁定）：
  * - 映射表有的字段 → 值填进对应占位符，产物不含任何 {{...}} 残留
  * - 映射表缺的字段 → 占位符渲染成 "// TODO 人工补充"，宁缺勿编
  * - status_enum 是唯一需要代码整形的字段（值 → STATUS_MAP.put 行）
@@ -23,14 +23,14 @@ class MockDraftGeneratorStrategyTest {
     private final MockDraftGeneratorStrategy generator = new MockDraftGeneratorStrategy();
 
     /** ruijin 真实抽取结果的字段值（来自阶段4验收运行） */
-    private List<FieldMapping> ruijinMappings() {
+    private List<FieldMappingEntity> ruijinMappings() {
         return List.of(
-                new FieldMapping("lender_name", "资方名称", "资方", "瑞金租赁（虚构）", "瑞金租赁（虚构）", 0.9),
-                new FieldMapping("gateway_url", "生产网关地址", "网关地址",
+                new FieldMappingEntity("lender_name", "资方名称", "资方", "瑞金租赁（虚构）", "瑞金租赁（虚构）", 0.9),
+                new FieldMappingEntity("gateway_url", "生产网关地址", "网关地址",
                         "https://fake-ruijin.example.com/openapi", "网关地址 https://fake-ruijin.example.com/openapi", 0.9),
-                new FieldMapping("payment_api", "放款指令接口路径", "放款指令接口",
+                new FieldMappingEntity("payment_api", "放款指令接口路径", "放款指令接口",
                         "/openapi/loan/order/create", "接口路径 /openapi/loan/order/create", 0.9),
-                new FieldMapping("status_enum", "交易状态枚举", "交易状态",
+                new FieldMappingEntity("status_enum", "交易状态枚举", "交易状态",
                         "SUCCESS / FAILED / PROCESSING", "交易状态 SUCCESS / FAILED / PROCESSING", 0.7));
     }
 

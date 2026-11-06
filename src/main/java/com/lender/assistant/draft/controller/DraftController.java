@@ -1,7 +1,7 @@
 package com.lender.assistant.draft.controller;
 
 import com.lender.assistant.draft.service.DraftService;
-import com.lender.assistant.draft.vo.response.DraftResponse;
+import com.lender.assistant.draft.model.response.DraftResponse;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
