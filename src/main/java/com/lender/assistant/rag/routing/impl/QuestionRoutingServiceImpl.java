@@ -10,6 +10,7 @@ import com.lender.assistant.rag.routing.model.RoutingRequest;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
+import java.util.Locale;
 import java.util.Objects;
 
 /**
@@ -53,7 +54,8 @@ public class QuestionRoutingServiceImpl implements QuestionRoutingService {
             return fallback();
         }
         if (route == QuestionRoute.IRRELEVANT
-                && (previousRoute == QuestionRoute.KNOWLEDGE || previousRoute == QuestionRoute.PLAN)) {
+                && (previousRoute == QuestionRoute.KNOWLEDGE || previousRoute == QuestionRoute.PLAN)
+                && !isHighConfidenceSmallTalk(payload)) {
             return new RoutingDecision(QuestionRoute.KNOWLEDGE, payload.confidence(),
                     "追问保护：上一轮为 " + previousRoute.name(), CATEGORY_NONE);
         }
@@ -61,6 +63,19 @@ public class QuestionRoutingServiceImpl implements QuestionRoutingService {
                 ? payload.irrelevantCategory() : CATEGORY_NONE;
         return new RoutingDecision(route, payload.confidence(),
                 Objects.toString(payload.reason(), ""), category);
+    }
+
+    /**
+     * 追问保护只救「低置信或非闲聊类的无关判定」；明确的问候/闲聊即使上一轮是知识库问题，
+     * 也保持 IRRELEVANT，避免把闲聊拖进检索。置信度下限已在上面统一校验。
+     */
+    private boolean isHighConfidenceSmallTalk(ModelPayload payload) {
+        if (payload.confidence() == null || payload.confidence() < confidenceThreshold) {
+            return false;
+        }
+        String category = Objects.toString(payload.irrelevantCategory(), "").toUpperCase(Locale.ROOT);
+        return category.contains("SMALL_TALK") || category.contains("GREETING")
+                || category.contains("CHITCHAT");
     }
 
     private RoutingDecision fallback() {

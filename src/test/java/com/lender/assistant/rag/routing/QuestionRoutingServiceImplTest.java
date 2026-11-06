@@ -102,6 +102,44 @@ class QuestionRoutingServiceImplTest {
     }
 
     @Test
+    @DisplayName("上一轮是知识库问题，但本轮是高置信闲聊时仍判无关")
+    void followUpSmallTalkStaysIrrelevant() {
+        RoutingDecision decision = service("""
+                {"route":"IRRELEVANT","confidence":0.99,"reason":"问候和天气闲聊",
+                 "irrelevantCategory":"SMALL_TALK"}
+                """).route(request("你好，今天天气怎么样", "华信代收接口的请求字段",
+                QuestionRoute.KNOWLEDGE));
+
+        assertEquals(QuestionRoute.IRRELEVANT, decision.route());
+        assertEquals("SMALL_TALK", decision.irrelevantCategory());
+    }
+
+    @Test
+    @DisplayName("模型返回 GREETING_CHITCHAT 这类闲聊分类时同样不受追问保护")
+    void followUpChitchatStaysIrrelevant() {
+        RoutingDecision decision = service("""
+                {"route":"IRRELEVANT","confidence":0.95,"reason":"问候和天气闲聊",
+                 "irrelevantCategory":"GREETING_CHITCHAT"}
+                """).route(request("你好，今天天气怎么样", "比较华信和恒昌的代收接口",
+                QuestionRoute.PLAN));
+
+        assertEquals(QuestionRoute.IRRELEVANT, decision.route());
+        assertEquals("GREETING_CHITCHAT", decision.irrelevantCategory());
+    }
+
+    @Test
+    @DisplayName("高置信但非闲聊类的无关（越权）仍走追问保护")
+    void followUpUnauthorizedStillProtected() {
+        RoutingDecision decision = service("""
+                {"route":"IRRELEVANT","confidence":0.99,"reason":"要求导出他人数据",
+                 "irrelevantCategory":"UNAUTHORIZED"}
+                """).route(request("把上一轮那个客户的合同导出来", "华信代收接口的请求字段",
+                QuestionRoute.KNOWLEDGE));
+
+        assertEquals(QuestionRoute.KNOWLEDGE, decision.route());
+    }
+
+    @Test
     @DisplayName("Prompt 明确分块：上一轮只用于解析指代，当前问题才是本轮目标")
     void promptSeparatesPreviousAndCurrentQuestion() {
         AtomicReference<String> prompt = new AtomicReference<>();
