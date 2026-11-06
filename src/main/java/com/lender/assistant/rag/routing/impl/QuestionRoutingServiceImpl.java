@@ -7,6 +7,8 @@ import com.lender.assistant.rag.routing.RoutingModelClient;
 import com.lender.assistant.rag.routing.model.QuestionRoute;
 import com.lender.assistant.rag.routing.model.RoutingDecision;
 import com.lender.assistant.rag.routing.model.RoutingRequest;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
@@ -20,6 +22,7 @@ import java.util.Objects;
 @Service
 public class QuestionRoutingServiceImpl implements QuestionRoutingService {
 
+    private static final Logger log = LoggerFactory.getLogger(QuestionRoutingServiceImpl.class);
     private static final String CATEGORY_NONE = "NONE";
     private static final String FALLBACK_REASON = "路由失败，降级知识库";
     private static final String MARKDOWN_FENCE = "```";
@@ -41,7 +44,11 @@ public class QuestionRoutingServiceImpl implements QuestionRoutingService {
         try {
             ModelPayload payload = objectMapper.readValue(
                     cleanModelText(client.complete(buildPrompt(request))), ModelPayload.class);
-            return decide(payload, request.previousRoute());
+            RoutingDecision decision = decide(payload, request.previousRoute());
+            log.info("路由判定: route={}, confidence={}, category={}, rawCategory={}, previousRoute={}, rawReason={}",
+                    decision.route(), decision.confidence(), decision.irrelevantCategory(),
+                    payload.irrelevantCategory(), request.previousRoute(), payload.reason());
+            return decision;
         } catch (Exception ex) {
             return fallback();
         }
@@ -55,9 +62,10 @@ public class QuestionRoutingServiceImpl implements QuestionRoutingService {
         }
         if (route == QuestionRoute.IRRELEVANT
                 && (previousRoute == QuestionRoute.KNOWLEDGE || previousRoute == QuestionRoute.PLAN)
-                && !isHighConfidenceSmallTalk(payload)) {
+                && isProtectedCategory(payload.irrelevantCategory())) {
             return new RoutingDecision(QuestionRoute.KNOWLEDGE, payload.confidence(),
-                    "追问保护：上一轮为 " + previousRoute.name(), CATEGORY_NONE);
+                    "追问保护：上一轮为 " + previousRoute.name(),
+                    Objects.toString(payload.irrelevantCategory(), CATEGORY_NONE));
         }
         String category = route == QuestionRoute.IRRELEVANT && payload.irrelevantCategory() != null
                 ? payload.irrelevantCategory() : CATEGORY_NONE;
@@ -66,16 +74,13 @@ public class QuestionRoutingServiceImpl implements QuestionRoutingService {
     }
 
     /**
-     * 追问保护只救「低置信或非闲聊类的无关判定」；明确的问候/闲聊即使上一轮是知识库问题，
-     * 也保持 IRRELEVANT，避免把闲聊拖进检索。置信度下限已在上面统一校验。
+     * 追问保护只认「分类明确的非闲聊类无关」（越权、越界评价）；低置信判定已在上面统一降级。
+     * 问候/闲聊、以及模型未给出分类（NONE）时一律尊重模型的 IRRELEVANT，
+     * 避免把「你好，今天天气怎么样」这类明确闲聊拖进检索。
      */
-    private boolean isHighConfidenceSmallTalk(ModelPayload payload) {
-        if (payload.confidence() == null || payload.confidence() < confidenceThreshold) {
-            return false;
-        }
-        String category = Objects.toString(payload.irrelevantCategory(), "").toUpperCase(Locale.ROOT);
-        return category.contains("SMALL_TALK") || category.contains("GREETING")
-                || category.contains("CHITCHAT");
+    private boolean isProtectedCategory(String category) {
+        String normalized = Objects.toString(category, "").toUpperCase(Locale.ROOT);
+        return normalized.contains("UNAUTHORIZED") || normalized.contains("OUT_OF_SCOPE");
     }
 
     private RoutingDecision fallback() {

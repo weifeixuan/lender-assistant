@@ -66,27 +66,40 @@ class QuestionRoutingServiceImplTest {
     }
 
     @Test
-    @DisplayName("上一轮是知识库问题时，无关判定被追问保护拉回 KNOWLEDGE")
+    @DisplayName("上一轮是知识库问题时，越权类无关被追问保护拉回 KNOWLEDGE")
     void followUpProtectionFromKnowledge() {
         RoutingDecision decision = service("""
-                {"route":"IRRELEVANT","confidence":0.9,"reason":"指代不明",
-                 "irrelevantCategory":"NONE"}
-                """).route(request("那二套呢", "华信代收接口支持哪些币种",
+                {"route":"IRRELEVANT","confidence":0.9,"reason":"要求导出他人数据",
+                 "irrelevantCategory":"UNAUTHORIZED"}
+                """).route(request("把刚才那个客户的合同导出来", "华信代收接口支持哪些币种",
                 QuestionRoute.KNOWLEDGE));
 
         assertEquals(QuestionRoute.KNOWLEDGE, decision.route());
     }
 
     @Test
-    @DisplayName("上一轮是计划问题时同样受追问保护")
+    @DisplayName("上一轮是计划问题时，越界评价类无关同样受追问保护")
     void followUpProtectionFromPlan() {
         RoutingDecision decision = service("""
-                {"route":"IRRELEVANT","confidence":0.9,"reason":"指代不明",
-                 "irrelevantCategory":"NONE"}
-                """).route(request("第二个呢", "比较华信和恒昌的代收接口",
+                {"route":"IRRELEVANT","confidence":0.9,"reason":"评价资方好坏",
+                 "irrelevantCategory":"OUT_OF_SCOPE"}
+                """).route(request("刚才那两家资方哪个更好用", "比较华信和恒昌的代收接口",
                 QuestionRoute.PLAN));
 
         assertEquals(QuestionRoute.KNOWLEDGE, decision.route());
+    }
+
+    @Test
+    @DisplayName("模型未给分类（NONE）的高置信无关不受追问保护，避免把闲聊拖进检索")
+    void followUpUnknownCategoryHonorsIrrelevant() {
+        RoutingDecision decision = service("""
+                {"route":"IRRELEVANT","confidence":0.99,"reason":"当前问题是问候和天气闲聊",
+                 "irrelevantCategory":"NONE"}
+                """).route(request("你好，今天天气怎么样", "华信代收接口支持哪些币种",
+                QuestionRoute.KNOWLEDGE));
+
+        assertEquals(QuestionRoute.IRRELEVANT, decision.route());
+        assertEquals("NONE", decision.irrelevantCategory());
     }
 
     @Test
@@ -125,18 +138,6 @@ class QuestionRoutingServiceImplTest {
 
         assertEquals(QuestionRoute.IRRELEVANT, decision.route());
         assertEquals("GREETING_CHITCHAT", decision.irrelevantCategory());
-    }
-
-    @Test
-    @DisplayName("高置信但非闲聊类的无关（越权）仍走追问保护")
-    void followUpUnauthorizedStillProtected() {
-        RoutingDecision decision = service("""
-                {"route":"IRRELEVANT","confidence":0.99,"reason":"要求导出他人数据",
-                 "irrelevantCategory":"UNAUTHORIZED"}
-                """).route(request("把上一轮那个客户的合同导出来", "华信代收接口的请求字段",
-                QuestionRoute.KNOWLEDGE));
-
-        assertEquals(QuestionRoute.KNOWLEDGE, decision.route());
     }
 
     @Test
