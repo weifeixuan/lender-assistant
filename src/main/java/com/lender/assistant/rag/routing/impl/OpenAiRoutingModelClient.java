@@ -1,7 +1,10 @@
 package com.lender.assistant.rag.routing.impl;
 
+import com.lender.assistant.common.constant.LlmScene;
 import com.lender.assistant.rag.routing.RoutingModelClient;
+import com.lender.assistant.resilience.ResilientLlmExecutor;
 import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 import reactor.core.publisher.Mono;
@@ -22,15 +25,27 @@ public class OpenAiRoutingModelClient implements RoutingModelClient {
     private static final Duration NON_STREAM_TIMEOUT = Duration.ofSeconds(10);
 
     private final ChatClient chatClient;
+    private final ResilientLlmExecutor executor;
+    private final String model;
 
-    public OpenAiRoutingModelClient(ChatClient.Builder builder) {
+    public OpenAiRoutingModelClient(ChatClient.Builder builder, ResilientLlmExecutor executor,
+                                    @Value("${spring.ai.openai.chat.options.model:openai}") String model) {
         this.chatClient = builder.build();
+        this.executor = executor;
+        this.model = model;
     }
 
+    /**
+     * 经 ResilientLlmExecutor 统一留痕/熔断（PRD §2.4）：scene=ROUTE，非流式允许重试。
+     * 包裹的是「原始模型调用」而不是整个 route()，这样模型异常会被记为 FAIL 并计入熔断，
+     * 上层 QuestionRoutingServiceImpl 仍按 fail-open 规则降级 KNOWLEDGE。
+     */
     @Override
     public String complete(String prompt) {
-        return Mono.fromCallable(() -> chatClient.prompt().user(prompt).call().content())
-                .timeout(NON_STREAM_TIMEOUT)
-                .block();
+        return executor.execute(LlmScene.ROUTE, model,
+                () -> Mono.fromCallable(() -> chatClient.prompt().user(prompt).call().content())
+                        .timeout(NON_STREAM_TIMEOUT)
+                        .block(),
+                true);
     }
 }
