@@ -2,10 +2,10 @@ package com.lender.assistant.rag.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lender.assistant.rag.model.dto.ExecutionPlanDTO;
-import com.lender.assistant.rag.context.AgentToolContextBuilder;
-import com.lender.assistant.rag.context.PlanToolRegistryContextBuilder;
-import com.lender.assistant.rag.context.ToolContextContextBuilder;
-import com.lender.assistant.rag.context.ToolResultContextBuilder;
+import com.lender.assistant.rag.tool.AgentTool;
+import com.lender.assistant.rag.tool.PlanToolRegistry;
+import com.lender.assistant.rag.tool.ToolContext;
+import com.lender.assistant.rag.tool.ToolResult;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -138,22 +138,22 @@ class PlanAndExecuteServiceTest {
     private static final String PREVIOUS = "恒昌代收接口的限额是多少";
 
     private PlanAndExecuteService service(com.lender.assistant.rag.client.PlannerModelClient client) {
-        PlanToolRegistryContextBuilder registry = new PlanToolRegistryContextBuilder(List.<AgentToolContextBuilder>of(
+        PlanToolRegistry registry = new PlanToolRegistry(List.<AgentTool>of(
                 fakeTool("kb.search"), fakeTool("customer.profile"), fakeTool("lender.product")));
         return new PlanAndExecuteService(client, new ObjectMapper(), registry,
                 new PlanSettings(2, 5, PlanSettings.TOOL_TIMEOUT_MILLIS));
     }
 
-    private static AgentToolContextBuilder fakeTool(String name) {
-        return new AgentToolContextBuilder() {
+    private static AgentTool fakeTool(String name) {
+        return new AgentTool() {
             @Override
             public String name() {
                 return name;
             }
 
             @Override
-            public ToolResultContextBuilder call(Map<String, Object> args, ToolContextContextBuilder context) {
-                return ToolResultContextBuilder.success("", List.of());
+            public ToolResult call(Map<String, Object> args, ToolContext context) {
+                return ToolResult.success("", List.of());
             }
         };
     }

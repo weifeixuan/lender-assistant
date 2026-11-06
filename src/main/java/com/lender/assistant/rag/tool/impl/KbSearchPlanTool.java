@@ -1,10 +1,10 @@
-package com.lender.assistant.rag.context.impl;
+package com.lender.assistant.rag.tool.impl;
 
 import com.lender.assistant.rag.service.SearchService;
-import com.lender.assistant.rag.context.AgentToolContextBuilder;
-import com.lender.assistant.rag.context.ToolContextContextBuilder;
-import com.lender.assistant.rag.context.ToolErrorCodeContextBuilder;
-import com.lender.assistant.rag.context.ToolResultContextBuilder;
+import com.lender.assistant.rag.tool.AgentTool;
+import com.lender.assistant.rag.tool.ToolContext;
+import com.lender.assistant.rag.tool.ToolErrorCode;
+import com.lender.assistant.rag.tool.ToolResult;
 import com.lender.assistant.rag.model.response.SearchItemResponse;
 import org.springframework.stereotype.Component;
 
@@ -19,7 +19,7 @@ import java.util.Map;
  * 因为计划器已把上一轮信息写进自包含 query，再拼一次会让指代实体重复。
  */
 @Component
-public class KbSearchPlanToolContextBuilder implements AgentToolContextBuilder {
+public class KbSearchPlanTool implements AgentTool {
 
     private static final String NAME = "kb.search";
     private static final int MAX_QUERY_LENGTH = 200;
@@ -28,7 +28,7 @@ public class KbSearchPlanToolContextBuilder implements AgentToolContextBuilder {
 
     private final SearchService searchService;
 
-    public KbSearchPlanToolContextBuilder(SearchService searchService) {
+    public KbSearchPlanTool(SearchService searchService) {
         this.searchService = searchService;
     }
 
@@ -38,17 +38,17 @@ public class KbSearchPlanToolContextBuilder implements AgentToolContextBuilder {
     }
 
     @Override
-    public ToolResultContextBuilder call(Map<String, Object> args, ToolContextContextBuilder context) {
+    public ToolResult call(Map<String, Object> args, ToolContext context) {
         String query = args.get("query") instanceof String text ? text.trim() : "";
         if (query.isEmpty() || query.length() > MAX_QUERY_LENGTH) {
-            return ToolResultContextBuilder.failure(ToolErrorCodeContextBuilder.ARGS_INVALID, "query 必须为 1–200 字");
+            return ToolResult.failure(ToolErrorCode.ARGS_INVALID, "query 必须为 1–200 字");
         }
         int topK = topKOf(args.get("topK"), context.defaultTopK());
         if (topK < 1 || topK > MAX_TOP_K) {
-            return ToolResultContextBuilder.failure(ToolErrorCodeContextBuilder.ARGS_INVALID, "topK 必须在 1–20");
+            return ToolResult.failure(ToolErrorCode.ARGS_INVALID, "topK 必须在 1–20");
         }
         List<SearchItemResponse> hits = searchService.hybridSearch(query, null, topK);
-        return ToolResultContextBuilder.success(summarize(hits), chunkIdsOf(hits), hits);
+        return ToolResult.success(summarize(hits), chunkIdsOf(hits), hits);
     }
 
     private static int topKOf(Object raw, int fallback) {

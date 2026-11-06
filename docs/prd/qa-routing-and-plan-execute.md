@@ -31,7 +31,7 @@ flowchart LR
     ROUTER -->|IRRELEVANT| IR["固定提示<br/>不检索不生成"]
     ROUTER -->|KNOWLEDGE| RAG["现有 RAG 链路"]
     ROUTER -->|PLAN| P["PlanAndExecuteService<br/>线性计划 2–5 步"]
-    P --> REG["PlanToolRegistryContextBuilder<br/>Map&lt;String, AgentToolContextBuilder&gt;"]
+    P --> REG["PlanToolRegistry<br/>Map&lt;String, AgentTool&gt;"]
     REG --> KB["kb.search"]
     REG --> CP["customer.profile（mock）"]
     REG --> LP["lender.product（mock）"]
@@ -64,7 +64,7 @@ sequenceDiagram
     participant Q as QaServiceImpl
     participant R as QuestionRoutingService
     participant P as PlanAndExecuteService
-    participant T as PlanToolRegistryContextBuilder
+    participant T as PlanToolRegistry
     participant G as AnswerGeneratorStrategy
 
     C->>Q: POST /api/qa
@@ -78,7 +78,7 @@ sequenceDiagram
     loop 每个步骤（按 order）
         Q-->>C: event: step（RUNNING）
         P->>T: get(tool).call(args, ctx)
-        T-->>P: ToolResultContextBuilder（不推 delta）
+        T-->>P: ToolResult（不推 delta）
         Q-->>C: event: step（DONE / DEGRADED / FAILED）
     end
     Q-->>C: event: sources（有 chunkIds 的步骤并集，去重后全局 idx）
@@ -201,8 +201,8 @@ flowchart TD
 | `lender.product` | 按产品编码返回费率、期限、放款条件、支持的接口类型 | `{productCode 必填}` | 文本摘要 | **mock** |
 
 - `kb.search` 执行时调用 `hybridSearch(args.query, null, topK)`：`query` 由 planner 结合上一轮问题写成**自包含**查询，不能再把 `previousQuestion` 二次拼进去（否则「恒昌」会被重复，向量与关键词召回都会偏）。
-- 两个 mock 工具读 `resources/mock/customer-profiles.json`、`resources/mock/lender-products.json`（本地假数据），**不发真实网络请求、不需要密钥**；实现类名带 `Mock`（`MockCustomerProfileToolContextBuilder` / `MockLenderProductToolContextBuilder`）。
-- 开关 `rag.plan.tools.mock-enabled` 默认 `false`（生产关闭）；开启后才注册进 `PlanToolRegistryContextBuilder`，计划 Prompt 里才会出现这两个工具。
+- 两个 mock 工具读 `resources/mock/customer-profiles.json`、`resources/mock/lender-products.json`（本地假数据），**不发真实网络请求、不需要密钥**；实现类名带 `Mock`（`MockCustomerProfileTool` / `MockLenderProductTool`）。
+- 开关 `rag.plan.tools.mock-enabled` 默认 `false`（生产关闭）；开启后才注册进 `PlanToolRegistry`，计划 Prompt 里才会出现这两个工具。
 - `args` 不合法 → 该步 `FAILED`（`errorCode=ARGS_INVALID`），不抛异常；超时 2s、不重试；`chunkIds` 为空，不影响 `sources` 并集。
 - 工具白名单 `rag.plan.allowed-tools` 默认 `kb.search`；开启 mock 后为 `kb.search,customer.profile,lender.product`。
 
@@ -275,30 +275,30 @@ flowchart TD
 只保留一个接口、一个结果 record、一个注册表，不建 Factory：
 
 ```java
-public interface AgentToolContextBuilder {
+public interface AgentTool {
     String name();
-    ToolResultContextBuilder call(Map<String, Object> args, ToolContextContextBuilder ctx);
+    ToolResult call(Map<String, Object> args, ToolContext ctx);
 }
 
-public record ToolResultContextBuilder(boolean ok, String content, List<Long> chunkIds, String errorCode) {
+public record ToolResult(boolean ok, String content, List<Long> chunkIds, String errorCode) {
 }
 
-public class PlanToolRegistryContextBuilder {
-    private final Map<String, AgentToolContextBuilder> tools;
+public class PlanToolRegistry {
+    private final Map<String, AgentTool> tools;
 
-    public PlanToolRegistryContextBuilder(List<AgentToolContextBuilder> tools) {
-        this.tools = tools.stream().collect(Collectors.toMap(AgentToolContextBuilder::name, t -> t));
+    public PlanToolRegistry(List<AgentTool> tools) {
+        this.tools = tools.stream().collect(Collectors.toMap(AgentTool::name, t -> t));
     }
 
-    public Optional<AgentToolContextBuilder> get(String name) {
+    public Optional<AgentTool> get(String name) {
         return Optional.ofNullable(tools.get(name));
     }
 }
 ```
 
-- `ToolContextContextBuilder` 只带必要字段（`conversationId`、`roundId`、`previousQuestion`、`topK`、`cancellation`）。
+- `ToolContext` 只带必要字段（`conversationId`、`roundId`、`previousQuestion`、`topK`、`cancellation`）。
 - 步骤执行器：`registry.get(step.tool())` 取工具，直接 `call(step.args(), ctx)`；查不到 → 该步 `FAILED`（`TOOL_NOT_FOUND`）。
-- 包落位：`AgentToolContextBuilder` / `ToolResultContextBuilder` / `PlanToolRegistryContextBuilder` 放 `rag/context`，实现放 `rag/context/impl`（`KbSearchPlanToolContextBuilder`、`MockCustomerProfileToolContextBuilder`、`MockLenderProductToolContextBuilder`）；mock 数据放 `resources/mock/customer-profiles.json`、`resources/mock/lender-products.json`。`aitools/` 包（`LenderQueryTools` / `ToolIntentRouter`）仍只承载模型可自主调用的 Function Calling 面，不放计划工具（ADR-0012）。
+- 包落位：`AgentTool` / `ToolResult` / `PlanToolRegistry` 放 `rag/tool`，实现放 `rag/tool/impl`（`KbSearchPlanTool`、`MockCustomerProfileTool`、`MockLenderProductTool`）；mock 数据放 `resources/mock/customer-profiles.json`、`resources/mock/lender-products.json`。`aitools/` 包（`LenderQueryTools` / `ToolIntentRouter`）仍只承载模型可自主调用的 Function Calling 面，不放计划工具（ADR-0012）。
 - 不给工具任何推流能力：没有 `mayStream`、没有 `deltaSink`，流式只发生在汇总合成。
 - `mock-enabled=false` 时 mock 工具不注册；计划里出现也不在白名单，整单降级。
 
@@ -423,7 +423,7 @@ ALTER TABLE message ADD COLUMN IF NOT EXISTS execution_plan JSONB;
 | 阶段 | 内容 |
 |---|---|
 | P1 | 路由（`IRRELEVANT` / `KNOWLEDGE`）、`route` 事件、固定提示、`message.route` 落库、追问保护、路由评估集 |
-| P2 | `PLAN` 判定、计划生成与整单校验、`PlanToolRegistryContextBuilder` + `kb.search`、`plan` / `step` 事件、执行、`sources` 并集、汇总合成、`execution_plan` 落库 |
+| P2 | `PLAN` 判定、计划生成与整单校验、`PlanToolRegistry` + `kb.search`、`plan` / `step` 事件、执行、`sources` 并集、汇总合成、`execution_plan` 落库 |
 | P3 | 两个 mock 业务工具（开关默认关）、工具级超时、预算收尾、失败说明增强 |
 | P4 | 路由/计划评估入口；**用路由评估集校准 `confidence-threshold`**（模型自报置信度不可直接当概率，需按评估集的准/误判分布选阈值），再调步骤上限与 `max-context-chars`；计划评估集补一类「指代型追问」用例（如「那恒昌呢」），验收动作为「计划不得引入与当前问题无关的步骤」 |
 | P5 | 前端进度展示、联调、端到端回归 |
@@ -441,7 +441,7 @@ P2 上线前 `PLAN` 一律按 `KNOWLEDGE` 处理。P3 未上线时 `allowed-tool
 7. `PLAN` 是否改用更便宜/更快的模型。
 8. 是否引入 JSON Schema 校验库统一校验 `args`；当前各工具手写。
 9. 是否支持工具参数的动态引用（如 `"${s1.output}"`）；第一版只允许字面量，支持它需要模板求值与二次校验。
-10. 是否把检索暴露为模型可调用的 `@Tool`；当前只做编排层 `AgentToolContextBuilder`。
+10. 是否把检索暴露为模型可调用的 `@Tool`；当前只做编排层 `AgentTool`。
 11. mock 工具的数据是否要覆盖更多资方与客户；当前各 5–10 条样例。
 12. `max-context-chars=6000` 是否够用；取消中间推理步后比较/汇总全压到一次合成，需实测。
 13. 指代跨两轮以上时只带上一轮用户问题不够；预期行为是路由回退 `KNOWLEDGE`（该链路有完整多轮历史），本版不解决，也不为 `PLAN` 扩历史。

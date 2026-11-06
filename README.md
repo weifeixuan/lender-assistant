@@ -32,7 +32,7 @@ docx/txt 上传 ─▶ 解析(POI) ─▶ 切分(按章节/固定) ─▶ 向量
                             LenderQueryTools（@Tool：查入库文件/chunk数，Function Calling）
 ```
 
-关键模块：`rag/`（检索问答）、`extract/`（抽取）、`draft/`（草稿）、`tools/`（Function Calling）、`resilience/`（熔断/重试/留痕）。
+关键模块：`rag/`（检索问答）、`extract/`（抽取）、`draft/`（草稿）、`aitools/`（Function Calling）、`resilience/`（熔断/重试/留痕）。
 
 ## 快速开始
 

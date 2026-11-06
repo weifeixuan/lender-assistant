@@ -1,7 +1,7 @@
-package com.lender.assistant.rag.context;
+package com.lender.assistant.rag.tool;
 
 import com.lender.assistant.rag.service.SearchService;
-import com.lender.assistant.rag.context.impl.KbSearchPlanToolContextBuilder;
+import com.lender.assistant.rag.tool.impl.KbSearchPlanTool;
 import com.lender.assistant.rag.model.response.SearchItemResponse;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -20,16 +20,16 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-class PlanToolRegistryContextBuilderTest {
+class PlanToolRegistryTest {
 
-    private static final ToolContextContextBuilder CONTEXT = new ToolContextContextBuilder(4);
-    private final PlanToolRegistryContextBuilder registry = new PlanToolRegistryContextBuilder(List.of(
-            new KbSearchPlanToolContextBuilder(mock(SearchService.class))));
+    private static final ToolContext CONTEXT = new ToolContext(4);
+    private final PlanToolRegistry registry = new PlanToolRegistry(List.of(
+            new KbSearchPlanTool(mock(SearchService.class))));
 
     @Test
     @DisplayName("按名字命中工具，未注册的名字返回空")
     void resolvesByName() {
-        Optional<AgentToolContextBuilder> tool = registry.get("kb.search");
+        Optional<AgentTool> tool = registry.get("kb.search");
 
         assertTrue(tool.isPresent());
         assertEquals("kb.search", tool.get().name());
@@ -37,17 +37,17 @@ class PlanToolRegistryContextBuilderTest {
     }
 }
 
-class KbSearchPlanToolContextBuilderTest {
+class KbSearchPlanToolTest {
 
-    private static final ToolContextContextBuilder CONTEXT = new ToolContextContextBuilder(4);
+    private static final ToolContext CONTEXT = new ToolContext(4);
 
     private SearchService searchService;
-    private KbSearchPlanToolContextBuilder tool;
+    private KbSearchPlanTool tool;
 
     @BeforeEach
     void setUp() {
         searchService = mock(SearchService.class);
-        tool = new KbSearchPlanToolContextBuilder(searchService);
+        tool = new KbSearchPlanTool(searchService);
     }
 
     @Test
@@ -57,7 +57,7 @@ class KbSearchPlanToolContextBuilderTest {
                 .thenReturn(List.of(hit(1L, "华信接口文档", "支持美元与人民币"),
                         hit(2L, "华信接口文档", "单笔限额说明")));
 
-        ToolResultContextBuilder result = tool.call(Map.of("query", "华信 币种"), CONTEXT);
+        ToolResult result = tool.call(Map.of("query", "华信 币种"), CONTEXT);
 
         assertTrue(result.ok());
         assertEquals(List.of(1L, 2L), result.chunkIds());
@@ -96,7 +96,7 @@ class KbSearchPlanToolContextBuilderTest {
     void zeroHitIsSuccessfulButEmpty() {
         when(searchService.hybridSearch(any(), any(), any(Integer.class))).thenReturn(List.of());
 
-        ToolResultContextBuilder result = tool.call(Map.of("query", "不存在的主题"), CONTEXT);
+        ToolResult result = tool.call(Map.of("query", "不存在的主题"), CONTEXT);
 
         assertTrue(result.ok());
         assertTrue(result.chunkIds().isEmpty());

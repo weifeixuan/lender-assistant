@@ -1,4 +1,4 @@
-package com.lender.assistant.rag.context;
+package com.lender.assistant.rag.tool;
 
 import org.springframework.stereotype.Component;
 
@@ -10,19 +10,19 @@ import java.util.Set;
 
 /** 工具注册表：按计划里的 tool 名字直接取实现，不建 Factory。 */
 @Component
-public class PlanToolRegistryContextBuilder {
+public class PlanToolRegistry {
 
-    private final Map<String, AgentToolContextBuilder> tools;
+    private final Map<String, AgentTool> tools;
 
-    public PlanToolRegistryContextBuilder(List<AgentToolContextBuilder> tools) {
-        Map<String, AgentToolContextBuilder> byName = new LinkedHashMap<>();
-        for (AgentToolContextBuilder tool : tools) {
+    public PlanToolRegistry(List<AgentTool> tools) {
+        Map<String, AgentTool> byName = new LinkedHashMap<>();
+        for (AgentTool tool : tools) {
             byName.put(tool.name(), tool);
         }
         this.tools = Map.copyOf(byName);
     }
 
-    public Optional<AgentToolContextBuilder> get(String name) {
+    public Optional<AgentTool> get(String name) {
         return Optional.ofNullable(tools.get(name));
     }
 

@@ -17,9 +17,9 @@
 保留原结论，补充限定条件：
 
 - **检索不注册为模型可自主调用的 Function Calling Tool**，不放进 `aitools/`。
-- **检索登记为编排层工具**：`kb.search`（`rag/context/impl/KbSearchPlanToolContextBuilder`），实现 `AgentToolContextBuilder`，由 `PlanToolRegistryContextBuilder` 管理，调用方是 `PlanAndExecuteService`（ADR-0014）。同层的 `customer.profile` / `lender.product` 只是 mock 业务工具（`mock-enabled` 默认关），与检索同样不进入 `aitools/`。
+- **检索登记为编排层工具**：`kb.search`（`rag/tool/impl/KbSearchPlanTool`），实现 `AgentTool`，由 `PlanToolRegistry` 管理，调用方是 `PlanAndExecuteService`（ADR-0014）。同层的 `customer.profile` / `lender.product` 只是 mock 业务工具（`mock-enabled` 默认关），与检索同样不进入 `aitools/`。
 - 检索的唯一实现仍是 `SearchService.hybridSearch`；`kb.search` 只是适配器，不新增检索实现。
-- 原 ADR 设想的 `PlanStepExecutorStrategy`（知识 / 推理两个实现 + factory）**被 ADR-0014 的 `AgentToolContextBuilder` + `PlanToolRegistryContextBuilder` 取代**：步骤的单元从「类型」变成「工具名」。
+- 原 ADR 设想的 `PlanStepExecutorStrategy`（知识 / 推理两个实现 + factory）**被 ADR-0014 的 `AgentTool` + `PlanToolRegistry` 取代**：步骤的单元从「类型」变成「工具名」。
 - `aitools/` 保持现状，不承载计划步骤的工具。
 
 ## 理由
@@ -41,5 +41,5 @@
 本次仅做命名消歧，**不改本 ADR 的决策与上述三条理由**：
 
 - 模型可自主调用的 Function Calling 面：`tools/` → `aitools/`（`LenderQueryTools`、`ToolIntentRouter` 类名不变）。
-- 编排层计划工具 SPI：`rag/tool/` → `rag/context/`，包内类统一以 `ContextBuilder` 结尾（如 `AgentToolContextBuilder`、`ToolResultContextBuilder`、`PlanToolRegistryContextBuilder`、`rag/context/impl/KbSearchPlanToolContextBuilder`）。
+- 编排层计划工具 SPI：**维持 `rag/tool/` 与 `*Tool` 类名**（`AgentTool`、`ToolContext`、`ToolResult`、`ToolErrorCode`、`PlanToolRegistry`、`rag/tool/impl/KbSearchPlanTool` 等）。曾短暂改用 `rag/context/` + `ContextBuilder` 后缀，因与类实际职责不符（这些类是按计划执行一次工具调用并返回结果，不构建上下文）已回退。
 - 边界保持：两类工具仍分属不同包，编排层工具不进入 `aitools/`。
