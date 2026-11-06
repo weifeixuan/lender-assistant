@@ -40,6 +40,8 @@ com.lender.assistant
 - **外部模型网关一律进 `client/`（接口 + `impl/`）**，controller 不得直接调 `client/`。
 - 无 HTTP 入口的包（`aitools` / `resilience` / `common`）不建 `controller/`；要访问 DB 才建 `mapper/`。
 - **两类工具面不混放**：`aitools/` 只放模型可自主调用的 `@Tool`（Function Calling）；编排层按计划执行的工具放 `rag/tool/`，类名沿用 `*Tool`（见 [ADR-0012](../adr/0012-retrieval-as-plan-step-capability.md)）。
+- **领域内不建子域包**（如 `plan/`、`routing/`）：编排族按层平铺 `service/`，模型网关进 `client/`，靠 `Plan*` / `Routing*` 语义前缀区分即可。
+- `src/main/resources/` **不放 `.java`**：模板素材用 `*.java.tmpl` 放 `templates/<用途>/`，读取方路径在同一 commit 同步。
 - 新类定位顺序：领域 → 层 → 都定不了才进 `common/`，并在 commit message 说明理由。
 - 禁止平行单类包、近义包（`extract` vs `extraction` 出过事故）、空包、死代码。
 - 可替换策略统一进 `strategy/`（接口 + `impl/`）；只有运行期按参数选实现才加 `factory/`。
@@ -157,6 +159,7 @@ com.lender.assistant
 5. bug 修复先补能复现的 RED 测试再修绿。
 6. 新增 / 修改公共方法必须补或改单测；**改签名 / 改同步异步契约必须同步 `src/test`，改完 `mvn test` 全绿**。
 7. Mapper / DB 链路不写 `@SpringBootTest` 真库冒烟测试，由起服务后手工验证覆盖；改 Mapper / `<resultMap>` / starter 依赖必须真机走一遍（见 [ADR-0006](../adr/0006-testing-and-schema-source-of-truth.md)）。
+8. 测试与 `src/main/java` **同包镜像**：单元测试 `<被测类>Test`、流程测试 `<场景>FlowTest`、契约测试 `<被测对象>ContractTest`，均与被测类/被测对象同包；全局事实源契约测试（如读 `docs/schema.sql` 的 `SchemaContractTest`）放根包 `com.lender.assistant`；`src/test/java` 禁止出现 main 中不存在的平行顶层包（公共测试基建除外，需要时才建 `testutil/`）。
 
 ## 10. 提交纪律与自检
 
