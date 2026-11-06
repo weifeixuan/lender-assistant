@@ -1,6 +1,6 @@
 package com.lender.assistant.resilience.mapper;
 
-import com.lender.assistant.resilience.model.LlmCallLogRecord;
+import com.lender.assistant.resilience.model.entity.LlmCallLogEntity;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
@@ -11,5 +11,5 @@ import org.apache.ibatis.annotations.Param;
 @Mapper
 public interface LlmCallLogMapper {
 
-    int insert(@Param("log") LlmCallLogRecord log);
+    int insert(@Param("log") LlmCallLogEntity log);
 }

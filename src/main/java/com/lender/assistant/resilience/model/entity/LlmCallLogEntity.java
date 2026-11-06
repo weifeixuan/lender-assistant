@@ -1,4 +1,4 @@
-package com.lender.assistant.resilience.model;
+package com.lender.assistant.resilience.model.entity;
 
 /**
  * 一次模型调用的留痕行（llm_call_log）。
@@ -7,7 +7,7 @@ package com.lender.assistant.resilience.model;
  * 留痕字段天然是一组整体，收敛为 record 同时让 Mapper 传参稳定。
  * token 可为 null——Mock 调用没有真实计量，诚实留空比编数字好。
  */
-public record LlmCallLogRecord(
+public record LlmCallLogEntity(
         String scene,
         String provider,
         Integer durationMs,

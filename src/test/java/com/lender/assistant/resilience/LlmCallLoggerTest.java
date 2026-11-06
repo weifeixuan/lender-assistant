@@ -2,7 +2,7 @@ package com.lender.assistant.resilience;
 
 import com.lender.assistant.common.constant.LlmScene;
 import com.lender.assistant.resilience.mapper.LlmCallLogMapper;
-import com.lender.assistant.resilience.model.LlmCallLogRecord;
+import com.lender.assistant.resilience.model.entity.LlmCallLogEntity;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -36,9 +36,9 @@ class LlmCallLoggerTest {
         String result = logger.record(LlmScene.EXTRACT, "Mock", () -> "抽取结果");
 
         assertEquals("抽取结果", result);
-        ArgumentCaptor<LlmCallLogRecord> args = ArgumentCaptor.forClass(LlmCallLogRecord.class);
+        ArgumentCaptor<LlmCallLogEntity> args = ArgumentCaptor.forClass(LlmCallLogEntity.class);
         verify(mapper).insert(args.capture());
-        LlmCallLogRecord row = args.getValue();
+        LlmCallLogEntity row = args.getValue();
         assertEquals("extract", row.scene());
         assertEquals("Mock", row.provider());
         assertEquals("OK", row.status());
@@ -55,9 +55,9 @@ class LlmCallLoggerTest {
                 () -> logger.record(LlmScene.QA, "DeepSeek", () -> { throw boom; }));
 
         assertSame(boom, thrown, "必须透传原始异常，不能吞掉换壳");
-        ArgumentCaptor<LlmCallLogRecord> args = ArgumentCaptor.forClass(LlmCallLogRecord.class);
+        ArgumentCaptor<LlmCallLogEntity> args = ArgumentCaptor.forClass(LlmCallLogEntity.class);
         verify(mapper).insert(args.capture());
-        LlmCallLogRecord row = args.getValue();
+        LlmCallLogEntity row = args.getValue();
         assertEquals("qa", row.scene());
         assertEquals("FAIL", row.status());
         assertTrue(row.errorMsg().contains("502"));
@@ -67,7 +67,7 @@ class LlmCallLoggerTest {
     @DisplayName("留痕本身失败不反噬业务：日志写库异常不影响调用结果")
     void loggingFailureDoesNotBreakBusiness() {
         doThrow(new RuntimeException("log 表写不进去"))
-                .when(mapper).insert(any(LlmCallLogRecord.class));
+                .when(mapper).insert(any(LlmCallLogEntity.class));
 
         String result = assertDoesNotThrow(() -> logger.record(LlmScene.QA, "Mock", () -> "业务结果"));
         assertEquals("业务结果", result, "留痕是旁路，不能挡住主链路");
@@ -78,6 +78,6 @@ class LlmCallLoggerTest {
     void manualRecordWithTokens() {
         logger.recordUsage(LlmScene.QA, "DeepSeek", 1200, 350, 156, "OK", null);
 
-        verify(mapper).insert(any(LlmCallLogRecord.class));
+        verify(mapper).insert(any(LlmCallLogEntity.class));
     }
 }

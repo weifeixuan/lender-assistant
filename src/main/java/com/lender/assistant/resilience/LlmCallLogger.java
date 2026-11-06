@@ -2,7 +2,7 @@ package com.lender.assistant.resilience;
 
 import com.lender.assistant.common.constant.LlmScene;
 import com.lender.assistant.resilience.mapper.LlmCallLogMapper;
-import com.lender.assistant.resilience.model.LlmCallLogRecord;
+import com.lender.assistant.resilience.model.entity.LlmCallLogEntity;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Repository;
@@ -58,7 +58,7 @@ public class LlmCallLogger {
     private void write(LlmScene scene, String provider, int durationMs, Integer promptTokens,
                        Integer completionTokens, String status, String errorMsg) {
         try {
-            mapper.insert(new LlmCallLogRecord(scene.code(), provider, durationMs,
+            mapper.insert(new LlmCallLogEntity(scene.code(), provider, durationMs,
                     promptTokens, completionTokens, status, errorMsg));
         } catch (RuntimeException e) {
             // 留痕是旁路：log 表写不进去（没跑 docs/schema.sql 等）不允许拖垮问答/抽取主链路。
