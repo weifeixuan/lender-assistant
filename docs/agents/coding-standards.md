@@ -16,7 +16,7 @@ com.lender.assistant
 │   ├── client/       #   外部模型网关（PlannerModelClient / RoutingModelClient；+ impl/）
 │   ├── strategy/     #   可替换策略（+ impl/；factory/ 仅按文件格式分发用）
 │   ├── mapper/       #   DocChunkMapper（+ resources/mapper/DocChunkMapper.xml）
-│   ├── tool/         #   计划工具抽象（AgentTool / PlanToolRegistry；阶段二归入 tools/）
+│   ├── context/      #   编排层计划工具 SPI（AgentToolContextBuilder / PlanToolRegistryContextBuilder；与 aitools 的模型工具面分离，见 ADR-0012）
 │   └── model/
 │       ├── entity/   #     *Entity —— DB 行对象（XML resultMap 指向这里）
 │       ├── dto/      #     *DTO / 枚举 —— 领域内跨层数据（QuestionRoute、StepStatus 不加后缀）
@@ -25,7 +25,7 @@ com.lender.assistant
 ├── extract/          # controller / service(+impl) / mapper / strategy(+impl) / model(entity,request,response)
 ├── draft/            # controller / service(+impl) / strategy(+impl) / model(response)
 ├── conversation/     # controller / service(+impl) / mapper / model(entity,dto,response)
-├── tools/            # Function Calling 工具（无 HTTP 入口）
+├── aitools/          # 模型可自主调用的 Function Calling 工具（无 HTTP 入口）
 ├── resilience/       # ResilientLlmExecutor / LlmCallLogger（+ mapper/ + model/entity）
 ├── ops/              # controller/HealthController（GET /health）
 ├── common/           # annotation / constant / exception / util / web
@@ -35,10 +35,11 @@ com.lender.assistant
 
 ### 0.2 结构规则
 
-- 领域内分层 `controller` / `service` / `client` / `strategy` / `mapper` / `model` / `tool`；**顶层禁止建** `controller/` `service/` `mapper/` 技术包。
+- 领域内分层 `controller` / `service` / `client` / `strategy` / `mapper` / `model` / `context`；**顶层禁止建** `controller/` `service/` `mapper/` 技术包。
 - **四分包规则（model/ 下不再直接放类）**：DB 行 → `model/entity/*Entity`；领域内跨层数据 → `model/dto/*DTO`（枚举保留原名）；HTTP 入参 → `model/request/*Request`；HTTP 出参 → `model/response/*Response`。禁止在 `model/` 根直接放类。
 - **外部模型网关一律进 `client/`（接口 + `impl/`）**，controller 不得直接调 `client/`。
-- 无 HTTP 入口的包（`tools` / `resilience` / `common`）不建 `controller/`；要访问 DB 才建 `mapper/`。
+- 无 HTTP 入口的包（`aitools` / `resilience` / `common`）不建 `controller/`；要访问 DB 才建 `mapper/`。
+- **两类工具面不混放**：`aitools/` 只放模型可自主调用的 `@Tool`（Function Calling）；编排层按计划执行的工具放 `rag/context/`，类名以 `ContextBuilder` 结尾（见 [ADR-0012](../adr/0012-retrieval-as-plan-step-capability.md)）。
 - 新类定位顺序：领域 → 层 → 都定不了才进 `common/`，并在 commit message 说明理由。
 - 禁止平行单类包、近义包（`extract` vs `extraction` 出过事故）、空包、死代码。
 - 可替换策略统一进 `strategy/`（接口 + `impl/`）；只有运行期按参数选实现才加 `factory/`。

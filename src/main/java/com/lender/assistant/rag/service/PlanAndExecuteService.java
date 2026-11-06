@@ -10,11 +10,11 @@ import com.lender.assistant.rag.model.dto.PlanStepDTO;
 import com.lender.assistant.rag.model.dto.StepEventDTO;
 import com.lender.assistant.rag.model.dto.StepOutcomeDTO;
 import com.lender.assistant.rag.model.dto.StepStatus;
-import com.lender.assistant.rag.tool.AgentTool;
-import com.lender.assistant.rag.tool.PlanToolRegistry;
-import com.lender.assistant.rag.tool.ToolContext;
-import com.lender.assistant.rag.tool.ToolErrorCode;
-import com.lender.assistant.rag.tool.ToolResult;
+import com.lender.assistant.rag.context.AgentToolContextBuilder;
+import com.lender.assistant.rag.context.PlanToolRegistryContextBuilder;
+import com.lender.assistant.rag.context.ToolContextContextBuilder;
+import com.lender.assistant.rag.context.ToolErrorCodeContextBuilder;
+import com.lender.assistant.rag.context.ToolResultContextBuilder;
 import jakarta.annotation.PreDestroy;
 import org.springframework.stereotype.Service;
 
@@ -53,7 +53,7 @@ public class PlanAndExecuteService {
 
     private final PlannerModelClient client;
     private final ObjectMapper objectMapper;
-    private final PlanToolRegistry registry;
+    private final PlanToolRegistryContextBuilder registry;
     private final PlanSettings settings;
 
     /**
@@ -63,7 +63,7 @@ public class PlanAndExecuteService {
     private final ThreadPoolExecutor toolExecutor;
 
     public PlanAndExecuteService(PlannerModelClient client, ObjectMapper objectMapper,
-                                 PlanToolRegistry registry, PlanSettings settings) {
+                                 PlanToolRegistryContextBuilder registry, PlanSettings settings) {
         this.client = client;
         this.objectMapper = objectMapper;
         this.registry = registry;
@@ -194,7 +194,7 @@ public class PlanAndExecuteService {
     private StepOutcomeDTO runStep(PlanStepDTO step, int topK, StepListener listener) {
         listener.onStep(new StepEventDTO(step.stepId(), StepStatus.RUNNING, 0));
         long startedAt = System.currentTimeMillis();
-        ToolResult result = invoke(step, topK);
+        ToolResultContextBuilder result = invoke(step, topK);
         long elapsedMillis = System.currentTimeMillis() - startedAt;
         StepStatus status = statusOf(step, result);
         listener.onStep(new StepEventDTO(step.stepId(), status, elapsedMillis));
@@ -204,41 +204,41 @@ public class PlanAndExecuteService {
     }
 
     /** 工具调用：白名单取缺失 → TOOL_NOT_FOUND；同步工具用 Future.get 施加 TOOL_TIMEOUT */
-    private ToolResult invoke(PlanStepDTO step, int topK) {
-        Optional<AgentTool> tool = registry.get(step.tool());
+    private ToolResultContextBuilder invoke(PlanStepDTO step, int topK) {
+        Optional<AgentToolContextBuilder> tool = registry.get(step.tool());
         if (tool.isEmpty()) {
-            return ToolResult.failure(ToolErrorCode.TOOL_NOT_FOUND, "工具不存在：" + step.tool());
+            return ToolResultContextBuilder.failure(ToolErrorCodeContextBuilder.TOOL_NOT_FOUND, "工具不存在：" + step.tool());
         }
-        Future<ToolResult> future = null;
+        Future<ToolResultContextBuilder> future = null;
         try {
-            future = toolExecutor.submit(() -> tool.get().call(step.args(), new ToolContext(topK)));
+            future = toolExecutor.submit(() -> tool.get().call(step.args(), new ToolContextContextBuilder(topK)));
             return future.get(settings.toolTimeoutMillis(), TimeUnit.MILLISECONDS);
         } catch (TimeoutException ex) {
             future.cancel(true);
-            return ToolResult.failure(ToolErrorCode.TOOL_TIMEOUT, "工具执行超时");
+            return ToolResultContextBuilder.failure(ToolErrorCodeContextBuilder.TOOL_TIMEOUT, "工具执行超时");
         } catch (InterruptedException ex) {
             Thread.currentThread().interrupt();
-            return ToolResult.failure(ToolErrorCode.TOOL_FAILED, "工具执行被中断");
+            return ToolResultContextBuilder.failure(ToolErrorCodeContextBuilder.TOOL_FAILED, "工具执行被中断");
         } catch (ExecutionException ex) {
-            return ToolResult.failure(ToolErrorCode.TOOL_FAILED, messageOf(ex.getCause()));
+            return ToolResultContextBuilder.failure(ToolErrorCodeContextBuilder.TOOL_FAILED, messageOf(ex.getCause()));
         } catch (RejectedExecutionException ex) {
-            return ToolResult.failure(ToolErrorCode.TOOL_FAILED, "工具执行队列已满");
+            return ToolResultContextBuilder.failure(ToolErrorCodeContextBuilder.TOOL_FAILED, "工具执行队列已满");
         }
     }
 
     /** kb.search 零命中是"降级"而非失败：仍算正常结束，只是回答要说明资料缺口 */
-    private static StepStatus statusOf(PlanStepDTO step, ToolResult result) {
+    private static StepStatus statusOf(PlanStepDTO step, ToolResultContextBuilder result) {
         if (!result.ok()) {
-            return ToolErrorCode.TOOL_DEGRADED.name().equals(result.errorCode())
+            return ToolErrorCodeContextBuilder.TOOL_DEGRADED.name().equals(result.errorCode())
                     ? StepStatus.DEGRADED : StepStatus.FAILED;
         }
         return KB_SEARCH.equals(step.tool()) && result.chunkIds().isEmpty()
                 ? StepStatus.DEGRADED : StepStatus.DONE;
     }
 
-    private static String errorCodeOf(StepStatus status, ToolResult result) {
+    private static String errorCodeOf(StepStatus status, ToolResultContextBuilder result) {
         if (status == StepStatus.DEGRADED && result.ok()) {
-            return ToolErrorCode.TOOL_DEGRADED.name();
+            return ToolErrorCodeContextBuilder.TOOL_DEGRADED.name();
         }
         return result.errorCode();
     }

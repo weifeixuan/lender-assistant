@@ -1,11 +1,11 @@
-package com.lender.assistant.rag.tool.impl;
+package com.lender.assistant.rag.context.impl;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.lender.assistant.rag.tool.AgentTool;
-import com.lender.assistant.rag.tool.ToolContext;
-import com.lender.assistant.rag.tool.ToolErrorCode;
-import com.lender.assistant.rag.tool.ToolResult;
+import com.lender.assistant.rag.context.AgentToolContextBuilder;
+import com.lender.assistant.rag.context.ToolContextContextBuilder;
+import com.lender.assistant.rag.context.ToolErrorCodeContextBuilder;
+import com.lender.assistant.rag.context.ToolResultContextBuilder;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
@@ -18,11 +18,11 @@ import java.util.regex.Pattern;
  * customer.profile（mock）：按客户号返回授信与风险摘要。
  *
  * 本地固定数据、无网络请求、无密钥；chunkIds 恒为空，不参与 sources 并集。
- * 默认关闭，只有 rag.plan.tools.mock-enabled=true 时才注册进 PlanToolRegistry。
+ * 默认关闭，只有 rag.plan.tools.mock-enabled=true 时才注册进 PlanToolRegistryContextBuilder。
  */
 @Component
 @ConditionalOnProperty(name = "rag.plan.tools.mock-enabled", havingValue = "true")
-public class MockCustomerProfileTool implements AgentTool {
+public class MockCustomerProfileToolContextBuilder implements AgentToolContextBuilder {
 
     private static final String NAME = "customer.profile";
     private static final Pattern CUSTOMER_ID = Pattern.compile("C\\d{5}");
@@ -30,7 +30,7 @@ public class MockCustomerProfileTool implements AgentTool {
 
     private final JsonNode profiles;
 
-    public MockCustomerProfileTool(ObjectMapper objectMapper) {
+    public MockCustomerProfileToolContextBuilder(ObjectMapper objectMapper) {
         this.profiles = load(objectMapper);
     }
 
@@ -40,16 +40,16 @@ public class MockCustomerProfileTool implements AgentTool {
     }
 
     @Override
-    public ToolResult call(Map<String, Object> args, ToolContext context) {
+    public ToolResultContextBuilder call(Map<String, Object> args, ToolContextContextBuilder context) {
         String customerId = args.get("customerId") instanceof String text ? text.trim() : "";
         if (!CUSTOMER_ID.matcher(customerId).matches()) {
-            return ToolResult.failure(ToolErrorCode.ARGS_INVALID, "customerId 必须形如 C10001");
+            return ToolResultContextBuilder.failure(ToolErrorCodeContextBuilder.ARGS_INVALID, "customerId 必须形如 C10001");
         }
         JsonNode profile = profiles.get(customerId);
         if (profile == null) {
-            return ToolResult.failure(ToolErrorCode.TOOL_FAILED, "未找到客户 " + customerId);
+            return ToolResultContextBuilder.failure(ToolErrorCodeContextBuilder.TOOL_FAILED, "未找到客户 " + customerId);
         }
-        return ToolResult.success(summarize(customerId, profile), java.util.List.of());
+        return ToolResultContextBuilder.success(summarize(customerId, profile), java.util.List.of());
     }
 
     private static String summarize(String customerId, JsonNode profile) {

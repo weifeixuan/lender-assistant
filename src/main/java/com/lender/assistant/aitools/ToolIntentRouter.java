@@ -1,4 +1,4 @@
-package com.lender.assistant.tools;
+package com.lender.assistant.aitools;
 
 import org.springframework.stereotype.Component;
 

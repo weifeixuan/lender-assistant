@@ -1,11 +1,11 @@
-package com.lender.assistant.tools;
+package com.lender.assistant.aitools;
 
 import com.lender.assistant.rag.model.dto.DocSummaryDTO;
 import com.lender.assistant.rag.service.DocumentService;
 import com.lender.assistant.rag.strategy.impl.MockAnswerGeneratorStrategy;
 import com.lender.assistant.rag.model.response.SearchItemResponse;
-import com.lender.assistant.tools.LenderQueryTools;
-import com.lender.assistant.tools.ToolIntentRouter;
+import com.lender.assistant.aitools.LenderQueryTools;
+import com.lender.assistant.aitools.ToolIntentRouter;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;

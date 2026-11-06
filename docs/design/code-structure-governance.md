@@ -1,6 +1,6 @@
 # 代码结构治理规范 · 包结构与类命名重构
 
-> 状态：草案 v0.3（2026-11-06 评审修订：补四层边界规则、裁决 FieldMapping 三胞胎、rag 取消子域改拍平；v0.3 按真实代码核校基线数、枚举后缀与迁移清单）
+> 状态：草案 v0.4（2026-11-06 阶段 2 决策：保留 ADR-0012 的边界结论，只改命名——`tools/` → `aitools/`，`rag/tool/` → `rag/context/` 且包内类统一补 `ContextBuilder` 后缀；不再主张收编）
 > 关联文档：`docs/agents/coding-standards.md` §0（包结构）/ §2（命名）、`GLOSSARY.md`
 > 日期：2026-11-06
 > 原则：**本次治理只做"归类与改名"，不改任何业务逻辑**。每一步迁移后必须编译 + 全量测试通过才进入下一步。
@@ -14,7 +14,7 @@
 1. **model 包成为"垃圾抽屉"**：表投影、落库入参、领域对象、检索结果、HTTP 契约混在一个包里，命名后缀不统一（`Row` / `Insert` / `Raw` / 无后缀并存）。
 2. **对外契约包（`vo/`）与 `model/` 职责边界模糊**，且各领域的 vo 使用程度不一致。
 3. **rag 领域过大**，内部 plan / routing / tool / eval 各自成小王国，包结构与兄弟包不一致。
-4. **近义包**：顶层 `tools/` 与 `rag/tool/` 并存（违反 coding-standards §0.2"禁止近义包"）。
+4. **近义包**：顶层 `tools/` 与 `rag/tool/` 名字近似（阶段 2 以改名消歧：`aitools/` 与 `rag/context/`；边界按 ADR-0012 保留）。
 5. **测试类摆放错位**：部分测试类的包路径与被测类不一致，部分测试类名与被测类无对应关系。
 6. **resources 下存在 `.java` 文件**（草稿生成模板），容易被 IDE / 静态工具误认为源码。
 
@@ -31,10 +31,10 @@
 | P1 | model 包混放多角色对象，后缀 4 种风格并存 | `conversation/model/`：`ConversationRow`（表投影）/ `MessageInsert`（落库入参）/ `ConversationRound`（SSE 回传）/ `QaSourceSnapshot`（JSONB 快照）同包；`rag/model/`：`ChunkRow`/`ChunkItemRow`（表投影）与 `Chunk`/`DocContent`/`VectorHit`（领域/结果对象）同包 | 高 |
 | P2 | 对外契约与领域对象边界靠约定不靠结构 | `rag/vo/request`、`rag/vo/response` 存在，但 `rag/model/ChatTurn` 也进 prompt 组装链路；`conversation/vo/` 只有 response 半边 | 中 |
 | P3 | rag 领域内部子域结构不一致 | `rag/plan/` 自带 `model/`+`impl/`，service 类（`PlanAndExecuteService`、`PlanBudget`、`PlanClock` 等 8 个）平铺在包根；`rag/routing/` 同样模式 | 中 |
-| P4 | 近义包 | 顶层 `tools/`（`LenderQueryTools`、`ToolIntentRouter`）vs `rag/tool/`（`AgentTool`、`PlanToolRegistry`、`ToolResult` 等 8 个） | 高 |
+| P4 | 近义包 | 顶层 `tools/` 与 `rag/tool/` 名字近似 | 已解决（阶段 2 改名 `aitools/` / `rag/context/`，边界按 ADR-0012 保留） |
 | P5 | strategy 包混入非策略类 | `rag/strategy/AnswerCancellation`、`rag/strategy/AnswerGenerationRequest`——它们是数据对象不是策略 | 中 |
 | P6 | 三个近义类并存，语义重叠 | `extract/model/FieldMapping` / `FieldMappingRow` / `FieldMappingRaw` | 中 |
-| P7 | 测试包路径与被测类不一致 | `conversation/SchemaContractTest`、`conversation/MapperXmlContractTest` 堆在 conversation 包根；`rag/service/MockToolAnswerTest` 测的是 `rag/tool` 的内容 | 中 |
+| P7 | 测试包路径与被测类不一致 | `conversation/SchemaContractTest`、`conversation/MapperXmlContractTest` 堆在 conversation 包根；`rag/service/MockToolAnswerTest` 测的是 `rag/context` 的内容 | 中 |
 | P8 | resources 下的 `.java` 文件易混淆 | `src/main/resources/draft/LenderHandler.java`、`ExampleLenderHandler.java`（草稿生成模板素材，声明了 `package com.lender.draft.generated`，不参与编译） | 低 |
 | P9 | 横切包命名不统一 | `common/dto/ApiResponse`——`common` 包下出现 `dto`，与新规范的 dto 语义（层间传输对象）冲突；它是 web 层统一响应契约 | 低 |
 
@@ -100,7 +100,7 @@ com.lender.assistant
 ├── draft/           # 草稿生成领域
 ├── rag/             # RAG 领域（拍平决策见 §5）
 ├── resilience/      # 模型调用熔断与留痕
-├── tools/           # Function Calling 工具（收编 rag/tool，见 §5.3）
+├── aitools/         # 模型可自主调用的 Function Calling 工具（与 rag/context 分离，见 §5.3）
 ├── ops/             # 健康检查
 ├── common/          # annotation / constant / exception / util / web
 └── LenderAssistantApplication.java
@@ -186,7 +186,7 @@ com.lender.assistant
 
 消费者影响：已核实 `rag.plan` / `rag.routing` 在 rag 之外**无引用方**，引用仅来自 `QaServiceImpl`、`RoutingEvalServiceImpl` 与 `vo/response`（QaPlanResponse / QaStepResponse），import 随迁即可，拍平对外零影响。
 
-**rag/tool**：阶段一原地不动，阶段二随 §5.3 收编方案一并处理（避免两次挪动同一批类）。
+**rag/tool**：阶段一原地不动；阶段二按 §5.3 改名为 `rag/context/` 并统一补 `ContextBuilder` 后缀。
 
 ### 4.5 resilience / tools / common
 
@@ -194,8 +194,8 @@ com.lender.assistant
 |---|---|---|
 | `resilience/model/LlmCallLogRecord` | **`resilience/model/entity/LlmCallLogEntity`** | llm_call_log 表 |
 | `resilience/ResilientLlmExecutor`、`LlmCallLogger` | `resilience/` 根保留（仅 2 个顶层类，不强行造 service 层） | |
-| `tools/LenderQueryTools`、`ToolIntentRouter` | `tools/` 原地不动 | |
-| `rag/tool/AgentTool`、`ToolContext`、`ToolErrorCode`、`ToolResult`、`PlanToolRegistry`、`tool/impl/*`（3 类） | 阶段二迁至 `tools/`（见 §5.3） | |
+| `tools/LenderQueryTools`、`ToolIntentRouter` | **`aitools/`**（仅改包名，类名不变） | |
+| `rag/tool/AgentTool`、`ToolContext`、`ToolErrorCode`、`ToolResult`、`PlanToolRegistry`、`tool/impl/*`（3 类） | **`rag/context/`**：分别改名 `AgentToolContextBuilder`、`ToolContextContextBuilder`、`ToolErrorCodeContextBuilder`、`ToolResultContextBuilder`、`PlanToolRegistryContextBuilder`、`impl/*ContextBuilder`（见 §5.3） | |
 | `common/dto/ApiResponse` | **`common/web/ApiResponse`** | 见 §3.3 |
 | `common/*` 其余 | 不动 | |
 
@@ -232,6 +232,7 @@ rag/
 │                      #   + routing 族（QuestionRoutingService、PreviousRouteResolver）（+impl/）
 ├── client/            # 模型网关：PlannerModelClient / RoutingModelClient（+impl/，mock/openai）
 ├── mapper/            # DocChunkMapper
+├── context/           # 编排层计划工具 SPI（*ContextBuilder；与 aitools 的模型工具面分离，见 §5.3）
 ├── strategy/          # parser / splitter / embedding / answer 四维策略（+impl/ +factory/）
 └── model/
     ├── entity/        # ChunkEntity / ChunkItemEntity
@@ -242,23 +243,30 @@ rag/
 
 关于新增的 `client/` 层：`PlannerModelClient` / `RoutingModelClient` 是**模型网关**——封装对外部系统（LLM API）的访问，定位与 mapper（封装外部 DB）同级，不是业务 Service，也不是可替换算法的 strategy（它们没有"算法可替换"语义，只有"供应商可替换"）。放 `service/` 会与业务 Service 混淆，故单设技术层。这是**层**不是子域，符合"不要子域"的约束；若后续其他领域也出现模型网关，再上提为跨领域约定。
 
-### 5.3 tools 收编方案
+### 5.3 工具面命名：保留边界，改名消歧
 
-现状 `rag/tool/`（Plan 编排工具）与顶层 `tools/`（业务工具）是近义包，且两者本质同类：都是供模型 Function Calling 调用的工具。目标：
+（2026-11-06 阶段 2 决策：**不合并**。ADR-0012 的边界结论保留——`aitools/` 是模型可自主调用的 Function Calling 面，`rag/context/` 是编排层按计划执行的工具 SPI；本次只改名字，消除"近义包"。）
+
+目标结构：
 
 ```text
-tools/
-├── AgentTool            # 工具 SPI（接口）
-├── ToolContext
-├── ToolResult
-├── ToolErrorCode
-├── PlanToolRegistry     # 注册表
-├── ToolIntentRouter
+aitools/                  # 模型可自主调用（@Tool）
 ├── LenderQueryTools
-└── impl/                # KbSearchPlanTool / MockCustomerProfileTool / MockLenderProductTool
+└── ToolIntentRouter
+
+rag/context/              # 编排层计划工具（类名统一以 ContextBuilder 结尾）
+├── AgentToolContextBuilder
+├── ToolContextContextBuilder
+├── ToolResultContextBuilder
+├── ToolErrorCodeContextBuilder
+├── PlanToolRegistryContextBuilder
+└── impl/
+    ├── KbSearchPlanToolContextBuilder
+    ├── MockCustomerProfileToolContextBuilder
+    └── MockLenderProductToolContextBuilder
 ```
 
-判断依据：工具的消费者是**模型编排层**（plan/routing/qa 都会调），不是 rag 独有，放顶层符合 coding-standards §0.2"新类定位顺序：领域 → 层 → common"，它不属于任何单一领域。
+判断依据：两类工具的消费者不同——`aitools/` 由模型在 Function Calling 中自主调用，`rag/context/` 由 `PlanAndExecuteService` 按计划顺序调用；失败语义、超时与观测单位也不同（ADR-0012）。物理同包会弱化这条边界，因此保持两包分离，仅以命名区分；类名中的 `Tool` 词根保留，`ContextBuilder` 为本次统一后缀。
 
 ---
 
@@ -280,8 +288,8 @@ tools/
 |---|---|---|
 | 测试包路径 ≠ 被测类包路径 | `conversation/MapperXmlContractTest` 堆在 conversation 包根（已核实：只覆盖 ConversationMapper / MessageMapper 两个 XML） | 移到 `conversation/mapper/`（与 Mapper 接口同包），改名 `ConversationMapperXmlContractTest` |
 | 跨领域测试误挂单一领域 | `conversation/SchemaContractTest`——已核实它读的是全局 `docs/schema.sql`（覆盖 doc_chunk / field_mapping / llm_call_log / conversation / message 等跨领域表），不属于任何单一领域 | 移到测试根包 `com.lender.assistant`，类名 `SchemaContractTest` 保留；此类"全局事实源契约测试"今后都放根包 |
-| 测试类名与被测类无对应 | `rag/service/MockToolAnswerTest`（测的是 tool 相关行为，却挂在 service 包） | 挪到被测对象所在包，按被测类命名（`<被测类>Test`）；流程级测试保留 `*FlowTest` 后缀（`QaRoutingFlowTest` 这种命名是合格的） |
-| 测试目录里出现与 main 不对应的包 | 阶段二 tools 收编等结构调整后 | 测试目录同步镜像新包结构，迁移与主代码同一 commit |
+| 测试类名与被测类无对应 | `rag/service/MockToolAnswerTest`（历史：测的是工具相关行为，却挂在 service 包） | 已迁至 `aitools/`（与被测的 `LenderQueryTools` / `ToolIntentRouter` 同包）；今后按被测类命名（`<被测类>Test`），流程级测试保留 `*FlowTest` 后缀 |
+| 测试目录里出现与 main 不对应的包 | 阶段二工具面改名等结构调整后 | 测试目录同步镜像新包结构，迁移与主代码同一 commit |
 | 测试包随 plan/routing 拍平 | `rag/plan/*Test`（6 个）、`rag/routing/*Test`（2 个）留在已不存在的包 | 1.6 内随被测类迁到 `rag/service/`、`rag/service/impl/`、`rag/client/impl/`、`rag/model/dto/` 对应镜像包，测试类名不变 |
 
 ### 6.3 测试命名规范（汇总，与 coding-standards §2.5 对齐）
@@ -332,10 +340,10 @@ tools/
 - 迁移完成后 `grep -rn "\.model\.[A-Z]" src/main/java` 抽查是否有直接引用 `model` 根的残留 import；
 - **回滚口径**：每步一个 commit，红灯时 `git revert <该步 commit>` 回到上一步，禁止 `reset --hard`、禁止 amend 覆盖已推送历史以外的后续步。
 
-### 阶段 2：结构级调整（独立评审后再执行）
+### 阶段 2：结构级调整
 
-1. tools 收编 `rag/tool`（§5.3）；
-2. 测试目录同步镜像 + §6.2 三处错位修正；
+1. 已完成：`tools/` → `aitools/`，`rag/tool/` → `rag/context/` 并统一补 `ContextBuilder` 后缀（§5.3；2026-11-06 决策：保留 ADR-0012 边界，只改名不合并）；
+2. 测试目录同步镜像 + §6.2 错位修正（1.3 / 1.6 与本次改名已随迁完成，执行时复核）；
 3. 若 `rag/model/dto` 增长超过阈值（§3.2 补充规则），届时再评审包内分组；同领域枚举凑满 2 个时独立 `<domain>/enums/`。
 
 ### 阶段 3：防复发

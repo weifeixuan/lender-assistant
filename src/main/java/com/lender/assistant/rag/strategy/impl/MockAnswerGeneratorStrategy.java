@@ -4,7 +4,7 @@ import com.lender.assistant.rag.model.dto.AnswerCancellationDTO;
 import com.lender.assistant.rag.model.dto.AnswerGenerationRequestDTO;
 import com.lender.assistant.rag.strategy.AnswerGeneratorStrategy;
 import com.lender.assistant.rag.model.response.SearchItemResponse;
-import com.lender.assistant.tools.ToolIntentRouter.ToolIntent;
+import com.lender.assistant.aitools.ToolIntentRouter.ToolIntent;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -43,11 +43,11 @@ public class MockAnswerGeneratorStrategy implements AnswerGeneratorStrategy {
     /** Mock 摘要每条来源截取的前缀字符数——长段落只留开头，避免回答臃肿 */
     private static final int SUMMARY_PREVIEW_CHARS = 60;
 
-    private final com.lender.assistant.tools.LenderQueryTools lenderTools;
-    private final com.lender.assistant.tools.ToolIntentRouter toolRouter;
+    private final com.lender.assistant.aitools.LenderQueryTools lenderTools;
+    private final com.lender.assistant.aitools.ToolIntentRouter toolRouter;
 
-    public MockAnswerGeneratorStrategy(com.lender.assistant.tools.LenderQueryTools lenderTools,
-                                       com.lender.assistant.tools.ToolIntentRouter toolRouter) {
+    public MockAnswerGeneratorStrategy(com.lender.assistant.aitools.LenderQueryTools lenderTools,
+                                       com.lender.assistant.aitools.ToolIntentRouter toolRouter) {
         this.lenderTools = lenderTools;
         this.toolRouter = toolRouter;
     }

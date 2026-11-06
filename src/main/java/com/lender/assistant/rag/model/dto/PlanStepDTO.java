@@ -8,7 +8,7 @@ import java.util.Map;
  * @param stepId 步骤标识，固定为 s1–sN
  * @param order  执行顺序，从 1 连续递增
  * @param title  给人看的步骤名
- * @param tool   工具名，必须命中 {@code PlanToolRegistry} 白名单
+ * @param tool   工具名，必须命中 {@code PlanToolRegistryContextBuilder} 白名单
  * @param args   计划期字面量参数（不含运行时占位符）
  */
 public record PlanStepDTO(String stepId, int order, String title, String tool,

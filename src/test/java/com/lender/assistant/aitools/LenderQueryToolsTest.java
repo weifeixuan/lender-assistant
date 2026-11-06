@@ -1,4 +1,4 @@
-package com.lender.assistant.tools;
+package com.lender.assistant.aitools;
 
 import com.lender.assistant.rag.model.dto.DocSummaryDTO;
 import com.lender.assistant.rag.service.DocumentService;

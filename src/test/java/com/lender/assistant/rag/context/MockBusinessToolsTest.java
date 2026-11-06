@@ -1,8 +1,8 @@
-package com.lender.assistant.rag.tool;
+package com.lender.assistant.rag.context;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.lender.assistant.rag.tool.impl.MockCustomerProfileTool;
-import com.lender.assistant.rag.tool.impl.MockLenderProductTool;
+import com.lender.assistant.rag.context.impl.MockCustomerProfileToolContextBuilder;
+import com.lender.assistant.rag.context.impl.MockLenderProductToolContextBuilder;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -15,15 +15,15 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 /** 两个 mock 业务工具：参数校验、数据命中、无 chunkIds。数据来自 resources/mock 下的固定 JSON。 */
 class MockBusinessToolsTest {
 
-    private static final ToolContext CONTEXT = new ToolContext(4);
+    private static final ToolContextContextBuilder CONTEXT = new ToolContextContextBuilder(4);
     private final ObjectMapper mapper = new ObjectMapper();
-    private final MockCustomerProfileTool customerTool = new MockCustomerProfileTool(mapper);
-    private final MockLenderProductTool productTool = new MockLenderProductTool(mapper);
+    private final MockCustomerProfileToolContextBuilder customerTool = new MockCustomerProfileToolContextBuilder(mapper);
+    private final MockLenderProductToolContextBuilder productTool = new MockLenderProductToolContextBuilder(mapper);
 
     @Test
     @DisplayName("客户号命中返回额度与风险摘要，且不产生来源")
     void customerProfileReturnsSummary() {
-        ToolResult result = customerTool.call(Map.of("customerId", "C10001"), CONTEXT);
+        ToolResultContextBuilder result = customerTool.call(Map.of("customerId", "C10001"), CONTEXT);
 
         assertTrue(result.ok());
         assertTrue(result.content().contains("授信"));
@@ -43,7 +43,7 @@ class MockBusinessToolsTest {
     @Test
     @DisplayName("产品编码命中返回费率与期限摘要")
     void lenderProductReturnsSummary() {
-        ToolResult result = productTool.call(Map.of("productCode", "P001"), CONTEXT);
+        ToolResultContextBuilder result = productTool.call(Map.of("productCode", "P001"), CONTEXT);
 
         assertTrue(result.ok());
         assertTrue(result.content().contains("费率"));

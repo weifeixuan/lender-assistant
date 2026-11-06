@@ -10,7 +10,7 @@
 - 与项目无关的问候、闲聊、越权问题，不应进入检索与生成；
 - 需要多步比较、汇总、多跳的问题，单次检索 + 单次生成答不全。
 
-可选方案有三种：纯规则、纯 LLM 分类、规则前置 + LLM 兜底。项目里已有的 `tools/ToolIntentRouter` 是关键词规则，但它只服务于 Mock Function Calling 决策，不能证明语义分类能力。
+可选方案有三种：纯规则、纯 LLM 分类、规则前置 + LLM 兜底。项目里已有的 `aitools/ToolIntentRouter` 是关键词规则，但它只服务于 Mock Function Calling 决策，不能证明语义分类能力。
 
 ## 决策
 

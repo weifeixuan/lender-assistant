@@ -7,10 +7,10 @@ import com.lender.assistant.rag.model.dto.PlanStepDTO;
 import com.lender.assistant.rag.model.dto.StepEventDTO;
 import com.lender.assistant.rag.model.dto.StepOutcomeDTO;
 import com.lender.assistant.rag.model.dto.StepStatus;
-import com.lender.assistant.rag.tool.AgentTool;
-import com.lender.assistant.rag.tool.PlanToolRegistry;
-import com.lender.assistant.rag.tool.ToolContext;
-import com.lender.assistant.rag.tool.ToolResult;
+import com.lender.assistant.rag.context.AgentToolContextBuilder;
+import com.lender.assistant.rag.context.PlanToolRegistryContextBuilder;
+import com.lender.assistant.rag.context.ToolContextContextBuilder;
+import com.lender.assistant.rag.context.ToolResultContextBuilder;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -138,46 +138,46 @@ class PlanExecutionTest {
                         Map.of("customerId", "C10001"))));
     }
 
-    private static PlanAndExecuteService service(AgentTool... tools) {
-        PlanToolRegistry registry = new PlanToolRegistry(List.of(tools));
+    private static PlanAndExecuteService service(AgentToolContextBuilder... tools) {
+        PlanToolRegistryContextBuilder registry = new PlanToolRegistryContextBuilder(List.of(tools));
         return new PlanAndExecuteService(prompt -> "{}", new ObjectMapper(), registry,
                 new PlanSettings(2, 5, SHORT_TIMEOUT_MILLIS));
     }
 
-    private static AgentTool kbTool(List<Long> chunkIds) {
-        return new FixedTool("kb.search", ToolResult.success("命中内容", chunkIds));
+    private static AgentToolContextBuilder kbTool(List<Long> chunkIds) {
+        return new FixedTool("kb.search", ToolResultContextBuilder.success("命中内容", chunkIds));
     }
 
-    private static AgentTool profileTool() {
-        return new FixedTool("customer.profile", ToolResult.success("客户摘要", List.of()));
+    private static AgentToolContextBuilder profileTool() {
+        return new FixedTool("customer.profile", ToolResultContextBuilder.success("客户摘要", List.of()));
     }
 
-    private record FixedTool(String name, ToolResult result) implements AgentTool {
+    private record FixedTool(String name, ToolResultContextBuilder result) implements AgentToolContextBuilder {
 
         @Override
-        public ToolResult call(Map<String, Object> args, ToolContext context) {
+        public ToolResultContextBuilder call(Map<String, Object> args, ToolContextContextBuilder context) {
             return result;
         }
     }
 
-    private record ThrowingTool(String name) implements AgentTool {
+    private record ThrowingTool(String name) implements AgentToolContextBuilder {
 
         @Override
-        public ToolResult call(Map<String, Object> args, ToolContext context) {
+        public ToolResultContextBuilder call(Map<String, Object> args, ToolContextContextBuilder context) {
             throw new IllegalStateException("工具内部故障");
         }
     }
 
-    private record SlowTool(String name, long sleepMillis) implements AgentTool {
+    private record SlowTool(String name, long sleepMillis) implements AgentToolContextBuilder {
 
         @Override
-        public ToolResult call(Map<String, Object> args, ToolContext context) {
+        public ToolResultContextBuilder call(Map<String, Object> args, ToolContextContextBuilder context) {
             try {
                 Thread.sleep(sleepMillis);
             } catch (InterruptedException ex) {
                 Thread.currentThread().interrupt();
             }
-            return ToolResult.success("慢工具", List.of(1L));
+            return ToolResultContextBuilder.success("慢工具", List.of(1L));
         }
     }
 }

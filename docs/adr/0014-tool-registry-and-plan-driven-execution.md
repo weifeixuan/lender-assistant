@@ -18,12 +18,12 @@ Plan-and-Execute 需要定义「一步怎么执行」。可选模型：
 采用「编排层工具注册表 + 计划驱动执行」，并选择方案 3：
 
 - **步骤 = 一次确定性工具调用**：`{stepId, order, title, tool, args}`；计划里没有 `useKnowledge`，也没有 `llm.reason` 这类模型步。
-- **工具面最小化**：一个 `AgentTool` 接口（`name()` + `call(args, ctx)`）、一个 `ToolResult` record（`ok` / `content` / `chunkIds` / `errorCode`）、一个 `PlanToolRegistry`（`Map<String, AgentTool>` + `get(name)`）；步骤执行器按 `step.tool()` 直接取工具，不建 Factory、不再拆 `ToolSpec` / `ToolCall` / `ToolContext` 三件套。
+- **工具面最小化**：一个 `AgentToolContextBuilder` 接口（`name()` + `call(args, ctx)`）、一个 `ToolResultContextBuilder` record（`ok` / `content` / `chunkIds` / `errorCode`）、一个 `PlanToolRegistryContextBuilder`（`Map<String, AgentToolContextBuilder>` + `get(name)`）；步骤执行器按 `step.tool()` 直接取工具，不建 Factory、不再拆 `ToolSpec` / `ToolCall` / `ToolContext` 三件套。
 - **工具白名单** `rag.plan.allowed-tools`：`kb.search` 必选；`customer.profile` / `lender.product` 为 **mock 业务工具**，由 `rag.plan.tools.mock-enabled` 控制（默认 `false`，本地假数据、不发网络请求、无密钥）。
 - **参数计划期给定**：`args` 必须是字面量；`customerId` / `productCode` 由 planner 从问题中直接抽出，抽不出就不建该步。不支持 `"${s1.output}"` 动态引用。
 - **超时收敛为「单一整轮预算 + 常量」**：对外只暴露 `rag.plan.total-budget-ms`（90s）；`NON_STREAM_CALL_TIMEOUT`（10s，路由/计划）、`TOOL_TIMEOUT`（10s，每步工具）、`SYNTHESIS_RESERVE`（20s，停止开新步的剩余阈值）是代码常量。合成超时取 `min(现有问答流超时 60s, 剩余预算)`。代价是路由与合成不能单独调参；慢模型下路由超时会降级 `KNOWLEDGE`，方向安全。
 - **计划整单校验、原子弃用**：步数、白名单、`args`、至少一个 `kb.search`、`stepId` / `order` 合法性任一不满足 → 整单降级 `KNOWLEDGE`。
-- **只有汇总合成流式**：执行步只产出上下文，不推 `delta`；`ToolResult` 不包含流式能力，`sources` 在所有步骤结束后一次性发送（全局并集）。
+- **只有汇总合成流式**：执行步只产出上下文，不推 `delta`；`ToolResultContextBuilder` 不包含流式能力，`sources` 在所有步骤结束后一次性发送（全局并集）。
 - **最终正文** = `AnswerGeneratorStrategy` 的单次汇总输出。
 - **不做失败重规划**：某步 `FAILED` / `DEGRADED` 只记录，继续后续步骤；缺失信息在汇总回答里明确说明（用户已否决重新计划方案）。
 - **不采纳模型运行时自主 Function Calling**（agent 循环）：模型不能自行挑工具、不能自行加步。

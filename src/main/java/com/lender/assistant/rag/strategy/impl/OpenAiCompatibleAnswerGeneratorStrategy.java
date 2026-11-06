@@ -4,7 +4,7 @@ import com.lender.assistant.rag.model.dto.AnswerGenerationRequestDTO;
 import com.lender.assistant.rag.strategy.AnswerGeneratorStrategy;
 import com.lender.assistant.rag.model.dto.ChatTurnDTO;
 import com.lender.assistant.rag.model.response.SearchItemResponse;
-import com.lender.assistant.tools.LenderQueryTools;
+import com.lender.assistant.aitools.LenderQueryTools;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.messages.Message;
