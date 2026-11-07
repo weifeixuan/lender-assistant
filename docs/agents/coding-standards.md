@@ -82,7 +82,7 @@ com.lender.assistant
 
 1. 类 `UpperCamelCase`；方法 / 变量 `lowerCamelCase`；常量全大写下划线。
 2. 抽象类 `Abstract` / `Base` 前缀；异常 `Exception` 结尾；枚举成员全大写。
-3. Service 接口不加 `I` 前缀，实现类以 `Impl` 结尾；boolean 不加 `is` 前缀（序列化会丢）。
+3. Service 接口不加 `I` 前缀，实现类以 `Impl` 结尾；按轮 `new`、不注册 Spring Bean 的应用层协作类可用 `ServiceImpl` 结尾且不配接口（如 `RoundStateServiceImpl`）；boolean 不加 `is` 前缀（序列化会丢）。
 4. 禁止不表意命名：`data` / `result2` / `temp` / `flag` / 单字母（循环 `i/j/k` 除外）。
 5. 包名全小写、不用复数（`rag.strategy`）；测试类 = 被测类 + `Test`，方法表达行为 + `@DisplayName` 中文场景句。
 6. 4 空格缩进；单行 ≤ 120；单方法 ≤ 40 行；单类 ≤ 500 行；方法参数 ≤ 4 个（超出收 `record`）。
