@@ -2,6 +2,7 @@ package com.lender.assistant.rag.service.impl;
 
 import com.lender.assistant.common.constant.LlmScene;
 import com.lender.assistant.common.constant.MessageConstants;
+import com.lender.assistant.common.constant.QaPrompts;
 import com.lender.assistant.common.exception.BizException;
 import com.lender.assistant.common.exception.ErrorCode;
 import com.lender.assistant.common.util.ThreadPoolFactory;
@@ -87,23 +88,6 @@ public class QaServiceImpl implements QaService {
     private static final String STREAM_THREAD_NAME_PREFIX = "qa-sse-worker";
     /** 合成上限：实际取 min(60s, 剩余预算)（票 09） */
     private static final long SYNTHESIS_MAX_MILLIS = 60_000L;
-    /**
-     * 历史回答的效力约束：历史里的结论可能来自业务工具（如 customer.profile），
-     * 本轮召回资料覆盖不到它不得反向否定——只就当前问题说"资料中未提及"。
-     * 该句同时用于 KNOWLEDGE 与 SYNTHESIS 两个 system prompt。
-     */
-    private static final String HISTORY_ANSWER_CONSTRAINT =
-            "补充约束：不得评判、否定、撤回或质疑历史轮回答的有效性；资料不足时只就当前问题"
-                    + "说明\"资料中未提及\"，不得延伸到对历史回答的定性。";
-    private static final String SYNTHESIS_SYSTEM_PROMPT = """
-            你是融资租赁资金方对接场景的资料问答助手。请基于「本轮目标」和「步骤产物」给出最终回答。
-            铁律：
-            1. 只依据步骤产物与召回资料回答，不得使用资料之外的任何知识；
-            2. 资料不足以回答时，必须明确回答"资料中未提及"，禁止推测或编造；
-            3. 引用资料时标注来源编号，格式如【来源1】，编号与 sources 一致。
-            """ + HISTORY_ANSWER_CONSTRAINT + "\n" + """
-            用简体中文回答，简洁直接。
-            """;
 
     private final SearchService searchService;
     private final AnswerGeneratorStrategy generator;
@@ -414,7 +398,7 @@ public class QaServiceImpl implements QaService {
                                  List<SearchItemResponse> hits) {
         executor.execute(LlmScene.SYNTHESIS, generator.name(),
                 () -> {
-                    generator.generate(new AnswerGenerationRequestDTO(SYNTHESIS_SYSTEM_PROMPT, List.of(),
+                    generator.generate(new AnswerGenerationRequestDTO(QaPrompts.SYNTHESIS_SYSTEM_PROMPT, List.of(),
                             prompt, hits, token -> {
                                 if (stream.isDisconnected()) {
                                     return;
@@ -540,7 +524,8 @@ public class QaServiceImpl implements QaService {
                                    List<SearchItemResponse> hits, RoundStream stream) {
         executor.execute(LlmScene.QA, generator.name(),
                 () -> {
-                    generator.generate(new AnswerGenerationRequestDTO(systemPrompt(), history, question, hits,
+                    generator.generate(new AnswerGenerationRequestDTO(QaPrompts.KNOWLEDGE_SYSTEM_PROMPT, history,
+                            question, hits,
                             token -> {
                                 // 已断开（超时/客户端取消）时不再累积，也不再尝试推送
                                 if (stream.isDisconnected()) {
@@ -695,17 +680,6 @@ public class QaServiceImpl implements QaService {
                 return null;
             }
         }
-    }
-
-    private String systemPrompt() {
-        return """
-                你是融资租赁资金方对接场景的资料问答助手。严格遵守三条铁律：
-                1. 只依据下方提供的召回资料回答，不得使用资料之外的任何知识；
-                2. 召回资料不足以回答问题时，必须明确回答"资料中未提及"，禁止推测或编造；
-                3. 回答涉及具体字段、格式、规则时，引用原文表述，并在句末标注来源编号，格式如【来源1】。
-                """ + HISTORY_ANSWER_CONSTRAINT + "\n" + """
-                用简体中文回答，简洁直接。
-                """;
     }
 
     /** @return false 表示客户端已断开或已置位断开标志（调用方无需重复处理） */
