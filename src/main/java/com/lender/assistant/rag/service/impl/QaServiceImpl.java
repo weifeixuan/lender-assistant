@@ -279,14 +279,14 @@ public class QaServiceImpl implements QaService {
                 return;
             }
 
-            if (planOutcome != null) {
-                if (!synthesizePlan(emitter, request, planOutcome, hits)) {
-                    return;
-                }
-            } else if (hits.isEmpty()) {
+            if (planOutcome == null && hits.isEmpty()) {
                 events.noRecall(emitter, generator.name(), stream);
                 return;
-            } else {
+            }
+            if (planOutcome != null && !synthesizePlan(emitter, request, planOutcome, hits)) {
+                return;
+            }
+            if (planOutcome == null) {
                 streamModelAnswer(emitter, question, history, hits, stream);
             }
 
