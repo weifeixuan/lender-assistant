@@ -13,14 +13,12 @@ import com.lender.assistant.conversation.service.ConversationHistoryAssembler;
 import com.lender.assistant.conversation.service.ConversationLockRegistry;
 import com.lender.assistant.conversation.service.ConversationService;
 import com.lender.assistant.conversation.model.entity.MessageEntity;
-import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lender.assistant.rag.service.PlanAndExecuteService;
 import com.lender.assistant.rag.service.PlanBudget;
 import com.lender.assistant.rag.service.PlanSourceAggregator;
 import com.lender.assistant.rag.service.SynthesisPromptBuilder;
 import com.lender.assistant.rag.model.dto.ExecutionPlanDTO;
-import com.lender.assistant.rag.model.dto.ExecutionPlanSnapshotDTO;
 import com.lender.assistant.rag.model.dto.PlanExecutionResultDTO;
 import com.lender.assistant.rag.service.PreviousRouteResolver;
 import com.lender.assistant.rag.service.QuestionRoutingService;
@@ -234,7 +232,8 @@ public class QaServiceImpl implements QaService {
     /** SSE 推送主流程，运行在 streamExecutor 工作线程上；每个 send 都是即时 flush 的真流式。 */
     public void streamAnswer(SseEmitter emitter, String question, int topK, String userId,
                              ConversationRoundDTO round, long t0) {
-        RoundStream stream = new RoundStream(round, t0);
+        RoundStateServiceImpl stream = new RoundStateServiceImpl(round, t0,
+                generator.name(), conversationService, objectMapper);
         // 超时 / 连接异常 / 提前完成都置位"客户端已断开"并落 STOPPED；
         // 正常路径先落 DONE 再 complete，因此这些回调不会覆盖终态。
         emitter.onTimeout(stream::timeout);
@@ -353,7 +352,7 @@ public class QaServiceImpl implements QaService {
         }
         PlanExecutionResultDTO result = planningService.execute(plan, request.topK(), request.budget(),
                 event -> send(emitter, "step", QaStepResponse.of(event), request.stream()));
-        request.stream().ExecutionPlanDTO(plan, result);
+        request.stream().recordPlan(plan, result);
         // 所有步骤结束后一次性并集，按 chunkId 去重；全局 idx 由 pushSources 连续分配
         return new PlanRoundOutcome(PlanSourceAggregator.union(result.steps()), plan, result,
                 result.remainingBudgetMillis());
@@ -394,7 +393,7 @@ public class QaServiceImpl implements QaService {
     }
 
     /** 合成复用现有生成器，但只传合成上下文、空历史，scene 走 SYNTHESIS */
-    private void streamSynthesis(SseEmitter emitter, RoundStream stream, String prompt,
+    private void streamSynthesis(SseEmitter emitter, RoundStateServiceImpl stream, String prompt,
                                  List<SearchItemResponse> hits) {
         executor.execute(LlmScene.SYNTHESIS, generator.name(),
                 () -> {
@@ -417,11 +416,11 @@ public class QaServiceImpl implements QaService {
 
     /** 单轮请求参数：收敛参数个数，避免编排方法超过 4 个入参 */
     private record RoundRequest(String question, String lastUser, int topK,
-                                ConversationRoundDTO round, RoundStream stream, PlanBudget budget) {
+                                ConversationRoundDTO round, RoundStateServiceImpl stream, PlanBudget budget) {
     }
 
     /** 无关问题：固定提示不检索不生成，sources 为空，provider=rule */
-    private void emitIrrelevant(SseEmitter emitter, RoundStream stream) {
+    private void emitIrrelevant(SseEmitter emitter, RoundStateServiceImpl stream) {
         stream.sources(List.of());
         if (!send(emitter, "sources", List.of(), stream)) {
             return;
@@ -445,7 +444,7 @@ public class QaServiceImpl implements QaService {
     }
 
     /** 召回结果 → sources 事件；返回 false 表示客户端已断开（disconnected 已落 STOPPED） */
-    private boolean pushSources(SseEmitter emitter, List<SearchItemResponse> hits, RoundStream stream) {
+    private boolean pushSources(SseEmitter emitter, List<SearchItemResponse> hits, RoundStateServiceImpl stream) {
         List<QaSourceResponse> sources = hits.isEmpty() ? List.of() : buildSources(hits);
         // 落库用 conversation 包内的快照类型（JSON 同构），避免 conversation 反向依赖 rag 的响应 VO
         stream.sources(sources.stream().map(QaServiceImpl::toSnapshot).toList());
@@ -461,7 +460,7 @@ public class QaServiceImpl implements QaService {
     }
 
     /** 无召回分支：推送引导文案与 done 后正常结束 */
-    private void emitNoRecall(SseEmitter emitter, RoundStream stream) {
+    private void emitNoRecall(SseEmitter emitter, RoundStateServiceImpl stream) {
         String guidance = "资料库中没有检索到相关内容，请先在上方上传并入库文档。";
         stream.append(guidance);
         if (!send(emitter, "delta", guidance, stream)) {
@@ -478,7 +477,7 @@ public class QaServiceImpl implements QaService {
     /** 熔断打开：推送降级提示后断流，终态 FAILED；发送失败说明客户端已断开，不再重复收尾 */
     private void handleCircuitOpen(SseEmitter emitter,
                                    io.github.resilience4j.circuitbreaker.CallNotPermittedException e,
-                                   RoundStream stream) {
+                                   RoundStateServiceImpl stream) {
         // 熔断打开：连续失败触发保护，快速失败。降级而非崩溃（手册验收线）——
         // sources 已经推给前端，检索能力不受模型故障影响。
         // 记 WARN 不记 ERROR：这是熔断器的正常降级动作，但需有人从日志看到"模型在连续失败"
@@ -492,7 +491,7 @@ public class QaServiceImpl implements QaService {
     }
 
     /** 通用异常收尾：推送 error 事件后断流，保留已生成正文并按 FAILED 落库 */
-    private void handleFailure(SseEmitter emitter, String question, Exception e, RoundStream stream) {
+    private void handleFailure(SseEmitter emitter, String question, Exception e, RoundStateServiceImpl stream) {
         // 模型超时/网络异常/DB 异常统一走 error 事件——前端能拿到可读信息而非静默断流。
         // 必须带堆栈落 ERROR：SSE 已断流，这是排查链路上唯一的完整证据
         log.error("问答链路故障，已推送 error 事件并断流: question={}", question, e);
@@ -521,7 +520,7 @@ public class QaServiceImpl implements QaService {
      * allowRetry=false：SSE token 已推给用户，重试会导致内容重放。
      */
     private void streamModelAnswer(SseEmitter emitter, String question, List<ChatTurnDTO> history,
-                                   List<SearchItemResponse> hits, RoundStream stream) {
+                                   List<SearchItemResponse> hits, RoundStateServiceImpl stream) {
         executor.execute(LlmScene.QA, generator.name(),
                 () -> {
                     generator.generate(new AnswerGenerationRequestDTO(QaPrompts.KNOWLEDGE_SYSTEM_PROMPT, history,
@@ -538,152 +537,8 @@ public class QaServiceImpl implements QaService {
                 }, false);
     }
 
-    /** 单轮流式状态：累积正文与来源快照，并保证终态只落库一次 */
-    private final class RoundStream {
-
-        private final ConversationRoundDTO round;
-        private final long startedAt;
-        private final StringBuilder content = new StringBuilder();
-        private final AtomicBoolean finished = new AtomicBoolean(false);
-        /** 客户端断开标志：置位后不再累积正文、不再推送任何事件 */
-        private final AtomicBoolean disconnected = new AtomicBoolean(false);
-        /**
-         * 上游生成取消句柄：断开/超时的同一时刻 cancel，让模型侧停止消费 token，
-         * 而不是等 generate 自然结束（否则白烧 token，且会话锁要多占一整段生成时间）。
-         */
-        private final AnswerCancellationDTO cancellation = new AnswerCancellationDTO();
-        private List<QaSourceSnapshotDTO> sources = List.of();
-        private String providerName = QaServiceImpl.this.generator.name();
-        /** 本轮路由结果；mock 模式为 null */
-        private RoutingDecisionDTO routeDecision;
-        /** PLAN 轮的计划与执行快照；KNOWLEDGE / IRRELEVANT 轮为 null */
-        private ExecutionPlanDTO ExecutionPlanDTO;
-        private PlanExecutionResultDTO executionResult;
-        /** 合成上下文是否被 6000 字符截断（票 09） */
-        private boolean contextTruncated;
-
-        private RoundStream(ConversationRoundDTO round, long startedAt) {
-            this.round = round;
-            this.startedAt = startedAt;
-        }
-
-        long elapsedMillis() {
-            return System.currentTimeMillis() - startedAt;
-        }
-
-        void provider(String value) {
-            this.providerName = value;
-        }
-
-        synchronized void append(String token) {
-            if (!finished.get()) {
-                content.append(token);
-            }
-        }
-
-        synchronized void sources(List<QaSourceSnapshotDTO> value) {
-            this.sources = value;
-        }
-
-        synchronized void route(RoutingDecisionDTO decision) {
-            this.routeDecision = decision;
-        }
-
-        synchronized void ExecutionPlanDTO(ExecutionPlanDTO plan, PlanExecutionResultDTO result) {
-            this.ExecutionPlanDTO = plan;
-            this.executionResult = result;
-        }
-
-        synchronized void contextTruncated(boolean value) {
-            this.contextTruncated = value;
-        }
-
-        void done() {
-            persist(MessageConstants.STATUS_DONE, null);
-        }
-
-        boolean isDisconnected() {
-            return disconnected.get();
-        }
-
-        AnswerCancellationDTO cancellation() {
-            return cancellation;
-        }
-
-        /** 生命周期回调（断开/超时）与发送失败统一走这里：取消上游、落 STOPPED */
-        void disconnected() {
-            disconnected.set(true);
-            cancellation.cancel();
-            stopped();
-        }
-
-        void timeout() {
-            disconnected.set(true);
-            cancellation.cancel();
-            stopped();
-        }
-
-        void failed(String error) {
-            persist(MessageConstants.STATUS_FAILED, error);
-        }
-
-        void stopped() {
-            persist(MessageConstants.STATUS_STOPPED, null);
-        }
-
-        private void persist(String status, String error) {
-            if (!finished.compareAndSet(false, true)) {
-                return;
-            }
-            String text;
-            List<QaSourceSnapshotDTO> snapshot;
-            String routeJson;
-            String executionPlanJson;
-            synchronized (this) {
-                text = content.toString();
-                snapshot = sources;
-                routeJson = writeJson(routeDecision);
-                executionPlanJson = writeExecutionPlanJson();
-            }
-            conversationService.completeRound(new AssistantMessageCompletionDTO(
-                    round.conversationId(), round.roundId(), round.assistantMessageId(),
-                    text, snapshot, providerName, System.currentTimeMillis() - startedAt,
-                    status, error, routeJson, executionPlanJson));
-        }
-
-        /** execution_plan 快照：弃用计划只有头信息，执行过的计划带逐步结果 */
-        private String writeExecutionPlanJson() {
-            if (ExecutionPlanDTO == null) {
-                return null;
-            }
-            return writeJson(ExecutionPlanSnapshotDTO.of(ExecutionPlanDTO, executionResult,
-                    new ExecutionPlanSnapshotDTO.SnapshotContext(providerName, elapsedMillis(),
-                            contextTruncated, degradedReason())));
-        }
-
-        private String degradedReason() {
-            if (ExecutionPlanDTO.degraded()) {
-                return ExecutionPlanDTO.degradedReason();
-            }
-            return executionResult != null && executionResult.budgetExhausted()
-                    ? "BUDGET_EXHAUSTED" : null;
-        }
-
-        private String writeJson(Object value) {
-            if (value == null) {
-                return null;
-            }
-            try {
-                return objectMapper.writeValueAsString(value);
-            } catch (JsonProcessingException ex) {
-                log.warn("快照序列化失败，落库置空", ex);
-                return null;
-            }
-        }
-    }
-
     /** @return false 表示客户端已断开或已置位断开标志（调用方无需重复处理） */
-    private boolean send(SseEmitter emitter, String event, Object data, RoundStream stream) {
+    private boolean send(SseEmitter emitter, String event, Object data, RoundStateServiceImpl stream) {
         if (stream.isDisconnected()) {
             return false;
         }
