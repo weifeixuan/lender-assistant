@@ -239,7 +239,7 @@ meta 首事件 → 历史/预算组装 → 非 mock：路由（IRRELEVANT 提前
 
 ```java
 if (planOutcome == null && hits.isEmpty()) {
-    emitNoRecall(emitter, stream);
+    events.noRecall(emitter, generator.name(), stream);
     return;
 }
 if (planOutcome != null && !synthesizePlan(emitter, request, planOutcome, hits)) {
