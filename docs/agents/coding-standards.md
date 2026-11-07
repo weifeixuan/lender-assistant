@@ -40,7 +40,7 @@ com.lender.assistant
 - **外部模型网关一律进 `client/`（接口 + `impl/`）**，controller 不得直接调 `client/`。
 - 无 HTTP 入口的包（`aitools` / `resilience` / `common`）不建 `controller/`；要访问 DB 才建 `mapper/`。
 - **两类工具面不混放**：`aitools/` 只放模型可自主调用的 `@Tool`（Function Calling）；编排层按计划执行的工具放 `rag/tool/`，类名沿用 `*Tool`（见 [ADR-0012](../adr/0012-retrieval-as-plan-step-capability.md)）。
-- **领域内不建子域包**（如 `plan/`、`routing/`）：编排族按层平铺 `service/`，模型网关进 `client/`，靠 `Plan*` / `Routing*` 语义前缀区分即可。
+- **领域内不建子域包**：编排族按层平铺 `service/`，模型网关进 `client/`，靠 `Plan*` / `Routing*` 语义前缀区分即可。
 - `src/main/resources/` **不放 `.java`**：模板素材用 `*.java.tmpl` 放 `templates/<用途>/`，读取方路径在同一 commit 同步。
 - 新类定位顺序：领域 → 层 → 都定不了才进 `common/`，并在 commit message 说明理由。
 - 禁止平行单类包、近义包（`extract` vs `extraction` 出过事故）、空包、死代码。
