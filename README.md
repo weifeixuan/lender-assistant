@@ -14,8 +14,6 @@
 | 韧性与留痕            | 熔断 + 重试（编程式 Resilience4j）+ 每次模型调用留痕；熔断走人工降级 | chaos 演练：3次失败→OPEN→快速失败，系统不崩     |
 | 代码草稿生成           | 字段映射表 + 策略模式骨架 → Java 适配层草稿 + 人工复核声明        | 映射9条→草稿零占位残留                     |
 
-**诚实声明**：Mock 实现产生的是构造性结果，只证明链路正确；真实模型效果待接入 key 后复测（provider 开关一键切换）。
-
 ## 架构
 
 ```
@@ -94,13 +92,13 @@ LLM_BASE_URL=https://api.deepseek.com  LLM_MODEL=deepseek-chat
 
 | 决策                              | 理由                                                 | 详见                  |
 | ------------------------------- | -------------------------------------------------- | ------------------- |
-| RRF 融合替代"双通道优先"硬排序              | 硬排序让单一通道的宽泛命中挤掉双通道命中；RRF 按排名倒数求和，recall 94.7%→100% | docs/评估报告与阶段3记录     |
-| 全链路 Mock 先行（端口双实现）              | key 没到位也能开发、调试、验收链路本身；真实效果单独复测不混数据                 | docs/plan_phase4.md |
-| 编程式熔断（decorateSupplier）而非注解     | 单测不起容器即可驱动熔断状态机红绿循环                                | docs/阶段4_完成记录.md    |
-| CB 在外 Retry 在内                  | 重试的每次尝试计入熔断统计，避免重试掩盖故障导致熔断永不打开                     | 同上                  |
-| SSE 禁重试                         | token 已推给用户，重放即重复播报事故                              | 同上                  |
-| 抽取/草稿"宁缺勿编"                     | 缺失字段渲染 TODO 而非编造值；错误参数的调用比不调用更糟                    | docs/plan_phase5.md |
-| pgvector + JdbcTemplate（不用 JPA） | 需要大量 PG 扩展语法（HNSW/trigram/`<=>`），JPA 抽象反而挡路        | docs/阶段1 记录         |
+| RRF 融合替代"双通道优先"硬排序              | 硬排序让单一通道的宽泛命中挤掉双通道命中；RRF 按排名倒数求和，recall 94.7%→100% | `docs/eval/评估报告_baseline_v1.md` |
+| 全链路 Mock 先行（端口双实现）              | key 没到位也能开发、调试、验收链路本身；真实效果单独复测不混数据                 | 上方「诚实声明」 |
+| 编程式熔断（decorateSupplier）而非注解     | 单测不起容器即可驱动熔断状态机红绿循环                                | `docs/adr/0003-tech-stack-and-exclusions.md` |
+| CB 在外 Retry 在内                  | 重试的每次尝试计入熔断统计，避免重试掩盖故障导致熔断永不打开                     | `resilience/ResilientLlmExecutor.java` |
+| SSE 禁重试                         | token 已推给用户，重放即重复播报事故                              | `docs/adr/0005-streaming-and-error-semantics.md` |
+| 抽取/草稿"宁缺勿编"                     | 缺失字段渲染 TODO 而非编造值；错误参数的调用比不调用更糟                    | `extract/strategy/impl/OpenAiCompatibleExtractGeneratorStrategy.java` |
+| pgvector + MyBatis（不用 JPA） | 需要大量 PG 扩展语法（HNSW/trigram/`<=>`），JPA 抽象反而挡路        | `docs/adr/0004-data-access-mybatis-conventions.md` |
 
 ## 技术栈
 
@@ -108,7 +106,10 @@ Spring Boot 3.5 · Spring AI 1.1（ChatClient / @Tool）· PostgreSQL 16 + pgvec
 
 ## 项目文档
 
-- `docs/plan_phase4.md` / `docs/plan_phase5.md`：实施计划
-- `docs/阶段1~5_*.md`：各阶段完成记录（含验收数字、踩坑、设计决策）
+- `docs/adr/`：架构决策记录（技术选型、接口契约、数据访问、测试事实源）
+- `docs/agents/`：Agent 契约与编码规范
+- `docs/prd/multi-turn-backend.md`：多轮会话后端需求
+- `docs/prd/multi-turn-frontend.md`：多轮会话前端交互与展示约定
+- `docs/prd/qa-routing-and-plan-execute.md`：问答路由与计划执行 PRD
 - `docs/eval/`：评估集与基线报告
 - `docs/gen_sample_docs.py`：虚构脱敏样例文档生成脚本
