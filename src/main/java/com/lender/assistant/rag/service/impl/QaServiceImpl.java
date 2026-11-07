@@ -8,7 +8,6 @@ import com.lender.assistant.common.exception.ErrorCode;
 import com.lender.assistant.common.util.ThreadPoolFactory;
 import com.lender.assistant.conversation.model.dto.AssistantMessageCompletionDTO;
 import com.lender.assistant.conversation.model.dto.ConversationRoundDTO;
-import com.lender.assistant.conversation.model.dto.QaSourceSnapshotDTO;
 import com.lender.assistant.conversation.service.ConversationHistoryAssembler;
 import com.lender.assistant.conversation.service.ConversationLockRegistry;
 import com.lender.assistant.conversation.service.ConversationService;
@@ -36,7 +35,6 @@ import com.lender.assistant.rag.strategy.AnswerGeneratorStrategy;
 import com.lender.assistant.rag.model.dto.ChatTurnDTO;
 import com.lender.assistant.rag.model.response.QaDoneResponse;
 import com.lender.assistant.rag.model.response.QaMetaResponse;
-import com.lender.assistant.rag.model.response.QaSourceResponse;
 import com.lender.assistant.rag.model.response.SearchItemResponse;
 import jakarta.annotation.PreDestroy;
 import org.slf4j.Logger;
@@ -46,7 +44,6 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
-import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.Executors;
@@ -75,6 +72,9 @@ import java.util.concurrent.atomic.AtomicBoolean;
 public class QaServiceImpl implements QaService {
 
     private static final Logger log = LoggerFactory.getLogger(QaServiceImpl.class);
+
+    /** SSE 事件发射（无状态，内部 new） */
+    private final QaEventEmitter events = new QaEventEmitter();
 
     /** SSE 超时：覆盖"检索 + 模型生成全流程"，真实模型正常问答远快于这个值 */
     private static final long SSE_TIMEOUT_MILLIS = 120_000L;
@@ -242,7 +242,7 @@ public class QaServiceImpl implements QaService {
 
         try {
             // meta 必须首事件：前端靠它把本轮增量回答挂到正确的会话/轮次上
-            if (!send(emitter, "meta", new QaMetaResponse(round.conversationId(), round.roundId(),
+            if (!events.send(emitter, "meta", new QaMetaResponse(round.conversationId(), round.roundId(),
                     round.userMessageId(), round.assistantMessageId()), stream)) {
                 return;
             }
@@ -262,7 +262,7 @@ public class QaServiceImpl implements QaService {
                     return;
                 }
                 if (decision.route() == QuestionRoute.IRRELEVANT) {
-                    emitIrrelevant(emitter, stream);
+                    events.irrelevant(emitter, irrelevantReply, stream);
                     return;
                 }
                 if (decision.route() == QuestionRoute.PLAN) {
@@ -275,7 +275,7 @@ public class QaServiceImpl implements QaService {
             // PLAN 轮用多步并集命中；计划弃用或无计划服务时退回单次检索（KNOWLEDGE 兜底）
             List<SearchItemResponse> hits = planOutcome != null ? planOutcome.hits()
                     : searchService.hybridSearch(question, lastUser, topK);
-            if (!pushSources(emitter, hits, stream)) {
+            if (!events.sources(emitter, hits, stream)) {
                 return;
             }
 
@@ -284,7 +284,7 @@ public class QaServiceImpl implements QaService {
                     return;
                 }
             } else if (hits.isEmpty()) {
-                emitNoRecall(emitter, stream);
+                events.noRecall(emitter, generator.name(), stream);
                 return;
             } else {
                 streamModelAnswer(emitter, question, history, hits, stream);
@@ -292,15 +292,15 @@ public class QaServiceImpl implements QaService {
 
             long elapsedMillis = System.currentTimeMillis() - t0;
             stream.done();
-            if (!send(emitter, "done",
+            if (!events.send(emitter, "done",
                     new QaDoneResponse(generator.name(), elapsedMillis, hits.size()), stream)) {
                 return;
             }
             emitter.complete();
         } catch (io.github.resilience4j.circuitbreaker.CallNotPermittedException e) {
-            handleCircuitOpen(emitter, e, stream);
+            events.circuitOpen(emitter, e, stream);
         } catch (Exception e) {
-            handleFailure(emitter, question, e, stream);
+            events.failure(emitter, question, e, stream);
         }
     }
 
@@ -325,7 +325,7 @@ public class QaServiceImpl implements QaService {
             log.warn("路由失败，降级 KNOWLEDGE: {}", ex.getMessage());
             decision = new RoutingDecisionDTO(QuestionRoute.KNOWLEDGE, 0.0, "路由异常降级", "NONE");
         }
-        if (!send(emitter, "route",
+        if (!events.send(emitter, "route",
                 new QaRouteResponse(decision.route().name(), decision.confidence()), request.stream())) {
             return null;
         }
@@ -343,7 +343,7 @@ public class QaServiceImpl implements QaService {
             return null;
         }
         ExecutionPlanDTO plan = planningService.plan(request.question(), request.lastUser());
-        if (!send(emitter, "plan", QaPlanResponse.of(plan), request.stream())) {
+        if (!events.send(emitter, "plan", QaPlanResponse.of(plan), request.stream())) {
             return null;
         }
         if (plan.degraded()) {
@@ -351,7 +351,7 @@ public class QaServiceImpl implements QaService {
             return null;
         }
         PlanExecutionResultDTO result = planningService.execute(plan, request.topK(), request.budget(),
-                event -> send(emitter, "step", QaStepResponse.of(event), request.stream()));
+                event -> events.send(emitter, "step", QaStepResponse.of(event), request.stream()));
         request.stream().recordPlan(plan, result);
         // 所有步骤结束后一次性并集，按 chunkId 去重；全局 idx 由 pushSources 连续分配
         return new PlanRoundOutcome(PlanSourceAggregator.union(result.steps()), plan, result,
@@ -372,7 +372,7 @@ public class QaServiceImpl implements QaService {
                 request.question(), outcome.plan().goal(), outcome.result().steps());
         request.stream().contextTruncated(context.truncated());
         if (hits.isEmpty() && !context.businessOutput()) {
-            emitNoRecall(emitter, request.stream());
+            events.noRecall(emitter, generator.name(), request.stream());
             return false;
         }
         AtomicBoolean timedOut = new AtomicBoolean(false);
@@ -399,11 +399,7 @@ public class QaServiceImpl implements QaService {
                 () -> {
                     generator.generate(new AnswerGenerationRequestDTO(QaPrompts.SYNTHESIS_SYSTEM_PROMPT, List.of(),
                             prompt, hits, token -> {
-                                if (stream.isDisconnected()) {
-                                    return;
-                                }
-                                stream.append(token);
-                                send(emitter, "delta", token, stream);
+                                sendDeltaToken(emitter, token, stream);
                             }, stream.cancellation()));
                     return true;
                 }, false);
@@ -419,98 +415,9 @@ public class QaServiceImpl implements QaService {
                                 ConversationRoundDTO round, RoundStateServiceImpl stream, PlanBudget budget) {
     }
 
-    /** 无关问题：固定提示不检索不生成，sources 为空，provider=rule */
-    private void emitIrrelevant(SseEmitter emitter, RoundStateServiceImpl stream) {
-        stream.sources(List.of());
-        if (!send(emitter, "sources", List.of(), stream)) {
-            return;
-        }
-        stream.append(irrelevantReply);
-        if (!send(emitter, "delta", irrelevantReply, stream)) {
-            return;
-        }
-        stream.provider(MessageConstants.RULE_PROVIDER);
-        stream.done();
-        if (!send(emitter, "done", new QaDoneResponse(MessageConstants.RULE_PROVIDER,
-                stream.elapsedMillis(), 0), stream)) {
-            return;
-        }
-        emitter.complete();
-    }
-
     /** mock 只保证对话能走通：跳过路由/计划，事件序列与现状一致 */
     private boolean isMockMode() {
         return chatProvider == null || "mock".equalsIgnoreCase(chatProvider);
-    }
-
-    /** 召回结果 → sources 事件；返回 false 表示客户端已断开（disconnected 已落 STOPPED） */
-    private boolean pushSources(SseEmitter emitter, List<SearchItemResponse> hits, RoundStateServiceImpl stream) {
-        List<QaSourceResponse> sources = hits.isEmpty() ? List.of() : buildSources(hits);
-        // 落库用 conversation 包内的快照类型（JSON 同构），避免 conversation 反向依赖 rag 的响应 VO
-        stream.sources(sources.stream().map(QaServiceImpl::toSnapshot).toList());
-        // 来源列表先发；未召回时也发空数组，前端协议保持单一形态
-        return send(emitter, "sources", sources, stream);
-    }
-
-    /** SSE 响应元素 → 落库快照，字段逐项对应（QaSourceSnapshotDTO 与 QaSourceResponse 同构） */
-    private static QaSourceSnapshotDTO toSnapshot(QaSourceResponse source) {
-        return new QaSourceSnapshotDTO(source.idx(), source.docTitle(), source.sectionPath(),
-                source.chunkId(), source.content(), source.vectorDistance(),
-                source.keywordHits(), source.bothChannels(), source.rrfScore());
-    }
-
-    /** 无召回分支：推送引导文案与 done 后正常结束 */
-    private void emitNoRecall(SseEmitter emitter, RoundStateServiceImpl stream) {
-        String guidance = "资料库中没有检索到相关内容，请先在上方上传并入库文档。";
-        stream.append(guidance);
-        if (!send(emitter, "delta", guidance, stream)) {
-            return;
-        }
-        if (!send(emitter, "done",
-                new QaDoneResponse(generator.name(), stream.elapsedMillis(), 0), stream)) {
-            return;
-        }
-        stream.done();
-        emitter.complete();
-    }
-
-    /** 熔断打开：推送降级提示后断流，终态 FAILED；发送失败说明客户端已断开，不再重复收尾 */
-    private void handleCircuitOpen(SseEmitter emitter,
-                                   io.github.resilience4j.circuitbreaker.CallNotPermittedException e,
-                                   RoundStateServiceImpl stream) {
-        // 熔断打开：连续失败触发保护，快速失败。降级而非崩溃（手册验收线）——
-        // sources 已经推给前端，检索能力不受模型故障影响。
-        // 记 WARN 不记 ERROR：这是熔断器的正常降级动作，但需有人从日志看到"模型在连续失败"
-        log.warn("问答链路熔断打开，已降级为可读提示: {}", e.getMessage());
-        boolean sent = send(emitter, "error", "模型服务熔断中（连续失败已触发保护），已转人工流程兜底；"
-                + "上方召回来源仍可查看。模型恢复前请使用检索测试区块。", stream);
-        stream.failed("模型服务熔断中");
-        if (sent) {
-            emitter.completeWithError(e);
-        }
-    }
-
-    /** 通用异常收尾：推送 error 事件后断流，保留已生成正文并按 FAILED 落库 */
-    private void handleFailure(SseEmitter emitter, String question, Exception e, RoundStateServiceImpl stream) {
-        // 模型超时/网络异常/DB 异常统一走 error 事件——前端能拿到可读信息而非静默断流。
-        // 必须带堆栈落 ERROR：SSE 已断流，这是排查链路上唯一的完整证据
-        log.error("问答链路故障，已推送 error 事件并断流: question={}", question, e);
-        boolean sent = send(emitter, "error", "问答失败：" + e.getMessage(), stream);
-        stream.failed("问答失败：" + e.getMessage());
-        if (sent) {
-            emitter.completeWithError(e);
-        }
-    }
-
-    /** 召回结果 → 前端来源列表（idx 从 1 起，与【来源N】编号一致） */
-    private List<QaSourceResponse> buildSources(List<SearchItemResponse> hits) {
-        List<QaSourceResponse> sources = new ArrayList<>();
-        for (int i = 0; i < hits.size(); i++) {
-            SearchItemResponse hit = hits.get(i);
-            sources.add(new QaSourceResponse(i + 1, hit.docTitle(), hit.sectionPath(), hit.chunkId(),
-                    hit.content(), hit.vectorDistance(), hit.keywordHits(), hit.bothChannels(), hit.rrfScore()));
-        }
-        return sources;
     }
 
     /**
@@ -525,33 +432,18 @@ public class QaServiceImpl implements QaService {
                 () -> {
                     generator.generate(new AnswerGenerationRequestDTO(QaPrompts.KNOWLEDGE_SYSTEM_PROMPT, history,
                             question, hits,
-                            token -> {
-                                // 已断开（超时/客户端取消）时不再累积，也不再尝试推送
-                                if (stream.isDisconnected()) {
-                                    return;
-                                }
-                                stream.append(token);
-                                send(emitter, "delta", token, stream);
-                            }, stream.cancellation()));
+                            token -> sendDeltaToken(emitter, token, stream), stream.cancellation()));
                     return true;
                 }, false);
     }
 
-    /** @return false 表示客户端已断开或已置位断开标志（调用方无需重复处理） */
-    private boolean send(SseEmitter emitter, String event, Object data, RoundStateServiceImpl stream) {
+    /** 生成回调的 delta 推送：先累积正文、再发事件；顺序与重构前一致 */
+    private void sendDeltaToken(SseEmitter emitter, String token, RoundStateServiceImpl stream) {
         if (stream.isDisconnected()) {
-            return false;
+            return;
         }
-        try {
-            emitter.send(SseEmitter.event().name(event).data(data));
-            return true;
-        } catch (Exception e) {
-            // 客户端断开（用户关页面/取消）时 send 抛异常：置位断开、按 STOPPED 收尾，
-            // 后续 token 不再推送；DEBUG 留痕即可，正常取消不该刷 ERROR 日志
-            log.debug("SSE 事件发送失败，客户端可能已断开: event={}", event);
-            stream.disconnected();
-            return false;
-        }
+        stream.append(token);
+        events.send(emitter, "delta", token, stream);
     }
 
     @PreDestroy
