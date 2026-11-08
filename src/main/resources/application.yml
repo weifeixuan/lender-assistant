@@ -8,6 +8,8 @@ spring:
     username: ${PG_USER:postgres}
     password: ${PG_PASSWORD:lender123}
   ai:
+    retry:
+      max-attempts: 1        # 关闭 Spring AI 内置重试：重试只由 rag.resilience.max-attempts 单层负责
     openai:
       # OpenAI 兼容网关：换模型只改这三个环境变量，代码不用动。
       # 切换 DeepSeek 官方：LLM_BASE_URL=https://api.deepseek.com  LLM_MODEL=deepseek-chat

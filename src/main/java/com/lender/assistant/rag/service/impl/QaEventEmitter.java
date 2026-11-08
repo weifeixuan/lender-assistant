@@ -1,6 +1,7 @@
 package com.lender.assistant.rag.service.impl;
 
 import com.lender.assistant.common.constant.MessageConstants;
+import com.lender.assistant.common.util.ExceptionMessageUtils;
 import com.lender.assistant.conversation.model.dto.QaSourceSnapshotDTO;
 import com.lender.assistant.rag.model.response.QaDoneResponse;
 import com.lender.assistant.rag.model.response.QaSourceResponse;
@@ -101,8 +102,11 @@ final class QaEventEmitter {
         // 模型超时/网络异常/DB 异常统一走 error 事件——前端能拿到可读信息而非静默断流。
         // 必须带堆栈落 ERROR：SSE 已断流，这是排查链路上唯一的完整证据
         log.error("问答链路故障，已推送 error 事件并断流: question={}", question, e);
-        boolean sent = send(emitter, "error", "问答失败：" + e.getMessage(), state);
-        state.failed("问答失败：" + e.getMessage());
+        // 不能直接拼 e.getMessage()：框架包装异常可能返回 null，用户会看到「问答失败：null」，
+        // 落库的 error 字段同样失去意义——统一走 describe 取根因/类名兜底
+        String reason = "问答失败：" + ExceptionMessageUtils.describe(e);
+        boolean sent = send(emitter, "error", reason, state);
+        state.failed(reason);
         if (sent) {
             emitter.completeWithError(e);
         }

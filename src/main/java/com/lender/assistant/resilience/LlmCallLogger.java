@@ -1,6 +1,7 @@
 package com.lender.assistant.resilience;
 
 import com.lender.assistant.common.constant.LlmScene;
+import com.lender.assistant.common.util.ExceptionMessageUtils;
 import com.lender.assistant.resilience.mapper.LlmCallLogMapper;
 import com.lender.assistant.resilience.model.entity.LlmCallLogEntity;
 import org.slf4j.Logger;
@@ -41,7 +42,10 @@ public class LlmCallLogger {
             write(scene, provider, (int) (System.currentTimeMillis() - t0), null, null, "OK", null);
             return result;
         } catch (RuntimeException e) {
-            write(scene, provider, (int) (System.currentTimeMillis() - t0), null, null, "FAIL", e.getMessage());
+            // 失败行必须留下可读原因：框架包装异常的 message 可能为 null（原因在 cause 里），
+            // 直接写 e.getMessage() 会让 error_msg 变成空值，事后无法解释这次失败
+            write(scene, provider, (int) (System.currentTimeMillis() - t0), null, null,
+                    "FAIL", ExceptionMessageUtils.describe(e));
             throw e;
         }
     }
@@ -62,8 +66,9 @@ public class LlmCallLogger {
                     promptTokens, completionTokens, status, errorMsg));
         } catch (RuntimeException e) {
             // 留痕是旁路：log 表写不进去（没跑 docs/schema.sql 等）不允许拖垮问答/抽取主链路。
-            // 记 DEBUG：留痕失败不阻断业务，但留一条线索，便于排查"为什么没有调用记录"
-            log.debug("LLM 调用留痕写入失败（旁路，忽略）: scene={}, reason={}", scene.code(), e.getMessage());
+            // 但必须 WARN 可见，否则失败调用"没有记录"将无法解释
+            log.warn("LLM 调用留痕写入失败（旁路，不阻断业务）: scene={}, status={}, reason={}",
+                    scene.code(), status, e.getMessage(), e);
         }
     }
 }

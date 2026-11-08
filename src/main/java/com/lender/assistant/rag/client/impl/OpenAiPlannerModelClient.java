@@ -8,6 +8,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
 
 import java.time.Duration;
 
@@ -41,6 +42,7 @@ public class OpenAiPlannerModelClient implements PlannerModelClient {
     public String complete(String prompt) {
         return executor.execute(LlmScene.PLAN, model,
                 () -> Mono.fromCallable(() -> chatClient.prompt().user(prompt).call().content())
+                        .subscribeOn(Schedulers.boundedElastic())
                         .timeout(NON_STREAM_TIMEOUT)
                         .block(),
                 false);
