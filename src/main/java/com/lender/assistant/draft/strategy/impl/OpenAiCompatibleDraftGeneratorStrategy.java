@@ -2,7 +2,9 @@ package com.lender.assistant.draft.strategy.impl;
 
 import com.lender.assistant.draft.strategy.DraftGeneratorStrategy;
 import com.lender.assistant.extract.model.entity.FieldMappingEntity;
+import com.lender.assistant.resilience.LlmCallLogger;
 import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
@@ -31,11 +33,14 @@ public class OpenAiCompatibleDraftGeneratorStrategy implements DraftGeneratorStr
             """;
 
     private final ChatClient chatClient;
+    private final LlmCallLogger llmCallLogger;
     private final String model;
 
     public OpenAiCompatibleDraftGeneratorStrategy(ChatClient.Builder builder,
+                                                  LlmCallLogger llmCallLogger,
                                                   @Value("${spring.ai.openai.chat.options.model}") String model) {
         this.chatClient = builder.build();
+        this.llmCallLogger = llmCallLogger;
         this.model = model;
     }
 
@@ -68,11 +73,14 @@ public class OpenAiCompatibleDraftGeneratorStrategy implements DraftGeneratorStr
         }
         user.append("\n【文档标识】").append(docId)
             .append("\n请生成 ").append(docId).append(" 的适配层代码草稿。");
-        return chatClient.prompt()
+        ChatResponse response = chatClient.prompt()
                 .system(SYSTEM_PROMPT)
                 .user(user.toString())
                 .call()
-                .content();
+                .chatResponse();
+        // 非流式响应带 Usage：回填给外层 record() 落库；取不到则留 NULL
+        llmCallLogger.captureUsage(response);
+        return response.getResult().getOutput().getText();
     }
 
     @Override

@@ -74,10 +74,32 @@ class LlmCallLoggerTest {
     }
 
     @Test
-    @DisplayName("手动打点：DeepSeek 版拿得到 token 数时走带 token 的重载")
-    void manualRecordWithTokens() {
-        logger.recordUsage(LlmScene.QA, "DeepSeek", 1200, 350, 156, "OK", null);
+    @DisplayName("真实模型回填 token 后，同一次 record 落库带 prompt/completion token")
+    void capturedUsageIsPersistedWithRecord() {
+        String result = logger.record(LlmScene.QA, "DeepSeek", () -> {
+            logger.captureUsage(1200, 350);
+            return "业务结果";
+        });
 
-        verify(mapper).insert(any(LlmCallLogEntity.class));
+        assertEquals("业务结果", result);
+        ArgumentCaptor<LlmCallLogEntity> captor = ArgumentCaptor.forClass(LlmCallLogEntity.class);
+        verify(mapper).insert(captor.capture());
+        assertEquals(1200, captor.getValue().promptTokens());
+        assertEquals(350, captor.getValue().completionTokens());
+    }
+
+    @Test
+    @DisplayName("回填的 token 只作用于本次调用，不泄漏到下一次 record")
+    void usageDoesNotLeakAcrossCalls() {
+        logger.record(LlmScene.QA, "DeepSeek", () -> {
+            logger.captureUsage(1200, 350);
+            return "第一次";
+        });
+        logger.record(LlmScene.QA, "Mock", () -> "第二次");
+
+        ArgumentCaptor<LlmCallLogEntity> captor = ArgumentCaptor.forClass(LlmCallLogEntity.class);
+        verify(mapper, times(2)).insert(captor.capture());
+        assertNull(captor.getAllValues().get(1).promptTokens());
+        assertNull(captor.getAllValues().get(1).completionTokens());
     }
 }

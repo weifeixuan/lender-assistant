@@ -5,10 +5,12 @@ import com.lender.assistant.rag.strategy.AnswerGeneratorStrategy;
 import com.lender.assistant.rag.model.dto.ChatTurnDTO;
 import com.lender.assistant.rag.model.response.SearchItemResponse;
 import com.lender.assistant.aitools.LenderQueryTools;
+import com.lender.assistant.resilience.LlmCallLogger;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.messages.Message;
 import org.springframework.ai.chat.messages.UserMessage;
+import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
@@ -41,13 +43,16 @@ public class OpenAiCompatibleAnswerGeneratorStrategy implements AnswerGeneratorS
 
     private final ChatClient chatClient;
     private final LenderQueryTools lenderTools;
+    private final LlmCallLogger llmCallLogger;
     private final String model;
 
     public OpenAiCompatibleAnswerGeneratorStrategy(ChatClient.Builder builder,
                                                    LenderQueryTools lenderTools,
+                                                   LlmCallLogger llmCallLogger,
                                                    @Value("${spring.ai.openai.chat.options.model}") String model) {
         this.chatClient = builder.build();
         this.lenderTools = lenderTools;
+        this.llmCallLogger = llmCallLogger;
         this.model = model;
     }
 
@@ -67,17 +72,35 @@ public class OpenAiCompatibleAnswerGeneratorStrategy implements AnswerGeneratorS
         Sinks.One<Boolean> cancelled = Sinks.one();
         request.cancellation().onCancel(() -> cancelled.tryEmitValue(Boolean.TRUE));
 
-        Flux<String> flux = chatClient.prompt()
+        // 用 chatResponse 而不是 content：需要从响应元数据里取 token 计量，交给外层 LlmCallLogger 落库
+        Flux<ChatResponse> flux = chatClient.prompt()
                 .system(request.systemPrompt())
                 .messages(messages)
                 // Function Calling：把业务查询工具挂给模型，由模型按工具 description
                 // 自主决定是否调用（真 Function Calling）。Mock 版的规则模拟见 ToolIntentRouter。
                 .tools(lenderTools)
                 .stream()
-                .content()
+                .chatResponse()
                 .timeout(STREAM_TIMEOUT);
         // 同步流式：token 依次回调，流结束（或取消）才返回（QaService 依赖这个契约收尾 SSE）
-        flux.takeUntilOther(cancelled.asMono()).doOnNext(request.onDelta()::accept).blockLast();
+        flux.takeUntilOther(cancelled.asMono())
+                .doOnNext(response -> {
+                    String delta = textOf(response);
+                    if (!delta.isEmpty()) {
+                        request.onDelta().accept(delta);
+                    }
+                    // 流式通常只有末块带 Usage；每次回填取最新值，拿不到则留 NULL
+                    llmCallLogger.captureUsage(response);
+                })
+                .blockLast();
+    }
+
+    private static String textOf(ChatResponse response) {
+        if (response == null || response.getResult() == null) {
+            return "";
+        }
+        String text = response.getResult().getOutput().getText();
+        return text == null ? "" : text;
     }
 
     /** 把结构化召回结果按【来源N】拼成用户提示词，问题放在末尾 */

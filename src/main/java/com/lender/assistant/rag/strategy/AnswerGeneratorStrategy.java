@@ -34,4 +34,12 @@ public interface AnswerGeneratorStrategy {
 
     /** 实现标识，用于前端展示与日志（如 "Mock" / 实际模型名） */
     String name();
+
+    /**
+     * 是否为 Mock 实现：编排层据此跳过路由/计划（Mock 没有真实模型可调）。
+     * 默认 false，Mock 实现覆写为 true——避免按配置字符串判断导致「配置 openai 但 Bean 是 Mock」的分叉。
+     */
+    default boolean isMock() {
+        return false;
+    }
 }

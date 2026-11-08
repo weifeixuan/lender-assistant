@@ -36,6 +36,11 @@ public class MockAnswerGeneratorStrategy implements AnswerGeneratorStrategy {
 
     private static final Logger log = LoggerFactory.getLogger(MockAnswerGeneratorStrategy.class);
 
+    @Override
+    public boolean isMock() {
+        return true;
+    }
+
     /** 流式模拟：每片 delta 的字符数 */
     private static final int STREAM_DELTA_CHARS = 12;
     /** 流式模拟：片间间隔（ms），让前端真的走增量渲染路径而非"一次性大块" */
