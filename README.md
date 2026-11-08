@@ -4,6 +4,8 @@
 
 > **红线声明**：项目中所有资方（华信银行、瑞金租赁等）均为**虚构脱敏**素材，文档由脚本生成，不含任何真实机构信息；开发时间线真实。
 
+本仓库为后端服务；前端代码在独立仓库：[lender-assistant-frontend](https://github.com/weifeixuan/lender-assistant-frontend)。
+
 ## 核心能力
 
 | 能力               | 说明                                          | 验收数字                             |
