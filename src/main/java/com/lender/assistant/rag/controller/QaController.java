@@ -47,7 +47,7 @@ public class QaController {
                          @RequestAttribute(UserIdInterceptor.USER_ID_ATTRIBUTE) String userId) {
         String question = request.question();
         if (question == null || question.isBlank()) {
-            throw new IllegalArgumentException("question 不能为空");
+            throw new BizException(ErrorCode.PARAM_INVALID, "question 不能为空");
         }
         String conversationId = request.conversationId();
         if (conversationId != null && !UUID_PATTERN.matcher(conversationId).matches()) {

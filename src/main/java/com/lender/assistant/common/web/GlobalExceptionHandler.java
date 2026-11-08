@@ -12,6 +12,7 @@ import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
 import org.springframework.web.servlet.NoHandlerFoundException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
@@ -76,6 +77,17 @@ public class GlobalExceptionHandler {
         log.warn("请求报文/参数不合法: {}", e.getMessage());
         return ResponseEntity.badRequest()
                 .body(ApiResponse.fail(ErrorCode.PARAM_INVALID, ErrorCode.PARAM_INVALID.defaultMessage()));
+    }
+
+    /**
+     * 上传超过 multipart 限额：明确 413 + 可读文案，不落进兜底 500。
+     * 限额见 application.yml 的 spring.servlet.multipart。
+     */
+    @ExceptionHandler(MaxUploadSizeExceededException.class)
+    public ResponseEntity<ApiResponse<Void>> handleMaxUploadSize(MaxUploadSizeExceededException e) {
+        log.warn("上传文件超过大小限制: {}", e.getMessage());
+        return ResponseEntity.status(HttpStatus.PAYLOAD_TOO_LARGE)
+                .body(ApiResponse.fail(ErrorCode.PAYLOAD_TOO_LARGE, ErrorCode.PAYLOAD_TOO_LARGE.defaultMessage()));
     }
 
     @ExceptionHandler(Exception.class)

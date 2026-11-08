@@ -8,6 +8,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.MissingServletRequestParameterException;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -84,14 +85,14 @@ class GlobalExceptionHandlerTest {
     }
 
     @Test
-    @DisplayName("必填参数缺失（MissingServletRequestParameterException）：映射为 400 + 参数校验失败")
-    void handlesMissingRequiredParamAsBadRequest() {
-        ResponseEntity<ApiResponse<Void>> resp = handler.handleClientRequestError(
-                new MissingServletRequestParameterException("docId", "String"));
+    @DisplayName("上传超限（MaxUploadSizeExceededException）：映射为 413 + 明确文案，不落兜底 500")
+    void handlesMaxUploadSizeAsPayloadTooLarge() {
+        ResponseEntity<ApiResponse<Void>> resp = handler.handleMaxUploadSize(
+                new MaxUploadSizeExceededException(60L * 1024 * 1024));
 
-        assertEquals(400, resp.getStatusCode().value(), "报文/参数不合法是客户端错误，落 400 而非 500");
-        assertEquals(400, resp.getBody().code(), "code 取 PARAM_INVALID");
-        assertEquals("参数校验失败", resp.getBody().msg(), "不回显框架技术性异常信息");
-        assertNull(resp.getBody().data());
+        assertEquals(413, resp.getStatusCode().value(), "请求实体过大对应 HTTP 413");
+        assertEquals(413, resp.getBody().code(), "code 取 PAYLOAD_TOO_LARGE");
+        assertEquals("上传文件超过大小限制", resp.getBody().msg(), "给调用方明确可读文案");
+        assertNull(resp.getBody().data(), "失败响应不带 data");
     }
 }

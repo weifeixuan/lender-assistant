@@ -56,6 +56,17 @@ class QaControllerTest {
     }
 
     @Test
+    @DisplayName("question 为空白 → 400 PARAM_INVALID，普通 JSON 而非 500")
+    void blankQuestionReturns400() throws Exception {
+        mockMvc.perform(post("/api/qa")
+                        .header("X-User-Id", USER_ID)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"question\":\"   \"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(400));
+    }
+
+    @Test
     @DisplayName("追问的会话不可见 → 404 CONVERSATION_NOT_FOUND")
     void invisibleConversationReturns404() throws Exception {
         when(qaService.answer(eq("问题"), anyInt(), eq(CONVERSATION_ID), eq(USER_ID)))
