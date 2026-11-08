@@ -16,6 +16,31 @@
 | 韧性与留痕            | 熔断 + 重试（编程式 Resilience4j）+ 每次模型调用留痕；熔断走人工降级 | chaos 演练：3次失败→OPEN→快速失败，系统不崩     |
 | 代码草稿生成           | 字段映射表 + 策略模式骨架 → Java 适配层草稿 + 人工复核声明        | 映射9条→草稿零占位残留                     |
 
+## 问答请求处理流程（路由 + Plan-and-Execute）
+
+```mermaid
+flowchart TD
+    Q["用户提问 /api/qa（SSE）"] --> R["路由：1 次非流式 LLM 结构化判定<br/>输出 route + confidence<br/>→ SSE route 事件"]
+    R --> B{route}
+    B -->|IRRELEVANT| I["固定无关回复<br/>不检索、不生成模型调用"]
+    B -->|KNOWLEDGE| K["hybridSearch 单次检索<br/>向量 + 关键词 → RRF 融合"]
+    B -->|PLAN| P["计划：1 次非流式 LLM 输出 JSON<br/>goal + steps[]<br/>→ SSE plan 事件"]
+
+    P --> V{"整单校验：2–5 步 / order 连续<br/>stepId=s1..sN / 工具在白名单<br/>args 仅字面量 / 至少 1 个 kb.search"}
+    V -->|不通过，degraded=true| K
+    V -->|通过| X["按 order 串行执行<br/>每步 1 次工具调用<br/>kb.search / customer.profile / lender.product<br/>→ 每步 SSE step：RUNNING + 终态"]
+
+    X --> U["步骤来源并集<br/>按 chunkId 去重"]
+    K --> U
+    U --> G["唯一一次流式生成 / 合成<br/>SYNTHESIS 场景<br/>→ SSE delta"]
+    G --> D["SSE done"]
+    I --> D
+```
+
+- `IRRELEVANT` 直接固定回复，不检索、不调用生成模型；`KNOWLEDGE` 走一次混合检索（向量 + 关键词 → RRF 融合）后流式作答。
+- `PLAN` 先由计划模型产出步骤，再按 `order` 严格串行执行，每步一次工具调用（`kb.search` / `customer.profile` / `lender.product`）。
+- 所有步骤结束后统一做一次流式合成，中间步骤不输出正文，用户只看到一段流式回答。
+
 ## 架构
 
 ```
