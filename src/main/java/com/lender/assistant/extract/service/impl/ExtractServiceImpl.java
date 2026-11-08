@@ -88,11 +88,21 @@ public class ExtractServiceImpl implements ExtractService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void confirm(String docId, String internalFieldId, String correctedFieldName, String correctedValue) {
-        if (correctedValue != null && !correctedValue.isBlank()) {
-            mapper.confirmCorrected(docId, internalFieldId, correctedFieldName, correctedValue);
-        } else {
-            mapper.confirmAsIs(docId, internalFieldId);
+        // 只给了修正后的字段名却没给值：无法判断改哪个字段，静默按原样确认会丢掉用户输入
+        if (isBlank(correctedValue) && !isBlank(correctedFieldName)) {
+            throw new BizException(ErrorCode.PARAM_INVALID, "修正字段名时必须同时提供修正值");
         }
+        int affected = isBlank(correctedValue)
+                ? mapper.confirmAsIs(docId, internalFieldId)
+                : mapper.confirmCorrected(docId, internalFieldId, correctedFieldName, correctedValue);
+        // 0 行说明映射不存在（或 docId/字段不匹配）；确认必须命中唯一一行，否则是调用方传错了标识
+        if (affected != 1) {
+            throw new BizException(ErrorCode.NOT_FOUND, "映射不存在，无法确认: " + internalFieldId);
+        }
+    }
+
+    private static boolean isBlank(String value) {
+        return value == null || value.isBlank();
     }
 
     /** 字段目录查不到时回退为 id 本身——与旧 FieldMappingStore.listFieldMappings 行为一致 */

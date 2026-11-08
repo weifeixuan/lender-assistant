@@ -142,12 +142,37 @@ class ExtractServiceTest {
     @Test
     @DisplayName("确认/修正：带修正值走 CORRECTED，空修正值走 CONFIRMED（人工成果状态机）")
     void confirmBranchesByCorrectedValue() {
+        when(mapper.confirmCorrected("doc1", "gateway_url", "新标签", "https://new.example.com"))
+                .thenReturn(1);
+        when(mapper.confirmAsIs("doc1", "gateway_url")).thenReturn(1);
+
         service.confirm("doc1", "gateway_url", "新标签", "https://new.example.com");
         verify(mapper).confirmCorrected("doc1", "gateway_url", "新标签", "https://new.example.com");
         verify(mapper, never()).confirmAsIs(anyString(), anyString());
 
         service.confirm("doc1", "gateway_url", null, null);
         verify(mapper).confirmAsIs("doc1", "gateway_url");
+    }
+
+    @Test
+    @DisplayName("确认：映射不存在（0 行受影响）时抛 NOT_FOUND，不假装成功")
+    void confirmMissingMappingFails() {
+        when(mapper.confirmAsIs("doc1", "gateway_url")).thenReturn(0);
+
+        BizException e = assertThrows(BizException.class,
+                () -> service.confirm("doc1", "gateway_url", null, null));
+
+        assertEquals(ErrorCode.NOT_FOUND, e.errorCode());
+    }
+
+    @Test
+    @DisplayName("修正：只给字段名不给修正值 → PARAM_INVALID，不触达 Mapper")
+    void correctedNameWithoutValueRejected() {
+        BizException e = assertThrows(BizException.class,
+                () -> service.confirm("doc1", "gateway_url", "新标签", "  "));
+
+        assertEquals(ErrorCode.PARAM_INVALID, e.errorCode());
+        verifyNoInteractions(mapper);
     }
 
     @Test

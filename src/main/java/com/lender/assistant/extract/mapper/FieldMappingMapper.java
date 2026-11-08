@@ -26,9 +26,9 @@ public interface FieldMappingMapper {
 
     List<FieldMappingRaw> listForDraft(@Param("docId") String docId);
 
-    void confirmCorrected(@Param("docId") String docId, @Param("internalFieldId") String internalFieldId,
-                          @Param("correctedFieldName") String correctedFieldName,
-                          @Param("correctedValue") String correctedValue);
+    int confirmCorrected(@Param("docId") String docId, @Param("internalFieldId") String internalFieldId,
+                         @Param("correctedFieldName") String correctedFieldName,
+                         @Param("correctedValue") String correctedValue);
 
-    void confirmAsIs(@Param("docId") String docId, @Param("internalFieldId") String internalFieldId);
+    int confirmAsIs(@Param("docId") String docId, @Param("internalFieldId") String internalFieldId);
 }

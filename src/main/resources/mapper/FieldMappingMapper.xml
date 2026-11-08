@@ -82,12 +82,15 @@
         UPDATE field_mapping
         SET lender_value      = COALESCE(#{correctedValue}, lender_value),
             lender_field_name = COALESCE(#{correctedFieldName}, lender_field_name),
-            status            = 'CORRECTED'
+            status            = 'CORRECTED',
+            update_time       = CURRENT_TIMESTAMP
         WHERE doc_id = #{docId} AND internal_field_id = #{internalFieldId}
     </update>
 
     <update id="confirmAsIs">
-        UPDATE field_mapping SET status = 'CONFIRMED'
+        UPDATE field_mapping
+        SET status      = 'CONFIRMED',
+            update_time = CURRENT_TIMESTAMP
         WHERE doc_id = #{docId} AND internal_field_id = #{internalFieldId}
     </update>
 
