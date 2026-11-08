@@ -23,6 +23,10 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
@@ -171,7 +175,7 @@ class DocumentServiceTest {
     void ingestDeduplicatesSameContentUnderDifferentDocId() throws Exception {
         List<ChunkDTO> chunks = List.of(
                 new ChunkDTO("第1节", 0, "正文A", 3), new ChunkDTO("第2节", 1, "正文B", 3));
-        when(mapper.listDocuments()).thenReturn(List.of(
+        when(mapper.listDocumentsByShape(anyInt(), anyLong())).thenReturn(List.of(
                 new DocSummaryDTO("huaxin_corp_api_v1", "旧标题", "旧路径.docx", 2, 6L, "2026-10-29 22:50:21")));
         when(mapper.listChunkLines("huaxin_corp_api_v1")).thenReturn(List.of(
                 new DocChunkLineDTO("旧标题", "第1节", "正文A"),
@@ -187,11 +191,24 @@ class DocumentServiceTest {
     }
 
     @Test
+    @DisplayName("判重候选：形状筛选下推 SQL，不再读全库文档")
+    void dedupeCandidatesFilteredByShapeInSql() throws Exception {
+        List<ChunkDTO> chunks = List.of(new ChunkDTO("第1节", 0, "正文A", 3));
+        when(mapper.listDocumentsByShape(1, 3L)).thenReturn(List.of());
+        when(embeddingStrategy.embed(any())).thenReturn(new float[]{0.5f, 0.5f});
+
+        ingest("doc-x", "x.docx", chunks);
+
+        verify(mapper).listDocumentsByShape(1, 3L);
+        verify(mapper, never()).listDocuments();
+    }
+
+    @Test
     @DisplayName("ingestDocument：切片数/总字符数相同但内容不同，正常向量化并写入")
     void ingestInsertsWhenContentDiffers() throws Exception {
         List<ChunkDTO> chunks = List.of(
                 new ChunkDTO("第1节", 0, "正文A", 3), new ChunkDTO("第2节", 1, "正文C", 3));
-        when(mapper.listDocuments()).thenReturn(List.of(
+        when(mapper.listDocumentsByShape(anyInt(), anyLong())).thenReturn(List.of(
                 new DocSummaryDTO("huaxin_corp_api_v1", "旧标题", "旧路径.docx", 2, 6L, "2026-10-29 22:50:21")));
         when(mapper.listChunkLines("huaxin_corp_api_v1")).thenReturn(List.of(
                 new DocChunkLineDTO("旧标题", "第1节", "正文A"),
@@ -203,6 +220,62 @@ class DocumentServiceTest {
         assertEquals("new_doc_id", response.docId(), "内容不同则按新文档正常入库");
         assertEquals(2, response.chunkCount());
         verify(self).replaceDocument(eq("new_doc_id"), any(), eq("新文档.docx"), any());
+    }
+
+    @Test
+    @DisplayName("ingestDocument：并发同内容上传由条带锁串行化，只入库一次")
+    void concurrentSameContentIngestsOnce() throws Exception {
+        List<ChunkDTO> chunks = List.of(new ChunkDTO("第1节", 0, "正文A", 3));
+        AtomicBoolean stored = new AtomicBoolean(false);
+        DocSummaryDTO existing = new DocSummaryDTO(
+                "doc-existing", "标题", "a.docx", 1, 3L, "2026-11-08 10:00:00");
+        when(mapper.listDocumentsByShape(anyInt(), anyLong())).thenAnswer(invocation ->
+                stored.get() ? List.of(existing) : List.of());
+        when(mapper.listChunkLines("doc-existing")).thenReturn(List.of(
+                new DocChunkLineDTO("标题", "第1节", "正文A")));
+        CountDownLatch embedding = new CountDownLatch(1);
+        CountDownLatch releaseFirst = new CountDownLatch(1);
+        when(embeddingStrategy.embed(any())).thenAnswer(invocation -> {
+            embedding.countDown();
+            releaseFirst.await(5, TimeUnit.SECONDS);
+            return new float[]{0.5f, 0.5f};
+        });
+        doAnswer(invocation -> {
+            stored.set(true);
+            return null;
+        }).when(self).replaceDocument(any(), any(), any(), any());
+
+        ParsedDocumentDTO parsed = new ParsedDocumentDTO(
+                "a.docx", List.of(ParsedDocumentDTO.Block.paragraph("正文")));
+        DocumentParserStrategy parser = mock(DocumentParserStrategy.class);
+        when(parserFactory.resolve(anyString())).thenReturn(parser);
+        when(parser.parse(anyString(), any())).thenReturn(parsed);
+        when(splitter.split(parsed)).thenReturn(chunks);
+
+        AtomicReference<UploadResponse> first = new AtomicReference<>();
+        AtomicReference<UploadResponse> second = new AtomicReference<>();
+        Thread threadA = new Thread(() -> first.set(ingestUnchecked("doc-a", "a.docx")));
+        Thread threadB = new Thread(() -> second.set(ingestUnchecked("doc-b", "b.docx")));
+
+        threadA.start();
+        assertTrue(embedding.await(5, TimeUnit.SECONDS), "首个上传应已进入向量化并持有条带锁");
+        threadB.start();
+        releaseFirst.countDown();
+        threadA.join(10_000);
+        threadB.join(10_000);
+
+        assertEquals("doc-a", first.get().docId());
+        assertEquals("doc-existing", second.get().docId(), "第二个上传必须判中并复用既有文档");
+        verify(embeddingStrategy, times(1)).embed(any());
+        verify(self, times(1)).replaceDocument(any(), any(), any(), any());
+    }
+
+    private UploadResponse ingestUnchecked(String docId, String fileName) {
+        try {
+            return service.ingestDocument(docId, fileName, new byte[]{1});
+        } catch (Exception e) {
+            throw new IllegalStateException(e);
+        }
     }
 
     /** 走完 解析 → 切分 → 判重 的前半段，parser/splitter 用 mock 喂固定切片 */

@@ -2,6 +2,8 @@ package com.lender.assistant.rag.controller;
 
 import com.lender.assistant.common.exception.BizException;
 import com.lender.assistant.rag.mapper.DocChunkMapper;
+import com.lender.assistant.rag.model.dto.DocSummaryDTO;
+import com.lender.assistant.rag.model.response.DocSummaryResponse;
 import com.lender.assistant.rag.service.DocumentService;
 import com.lender.assistant.rag.service.SearchService;
 import com.lender.assistant.rag.service.impl.DocumentServiceImpl;
@@ -12,6 +14,9 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.util.List;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -41,5 +46,26 @@ class DocumentAdminControllerTest {
                 "非法 docId 必须快速失败");
 
         verifyNoInteractions(parserFactory, splitter, embeddingStrategy, mapper);
+    }
+
+    @Test
+    @DisplayName("list：服务端 DTO 映射为响应模型，字段一一对应")
+    void listMapsDtoToResponse() {
+        DocumentService documentService = mock(DocumentService.class);
+        when(documentService.listDocuments()).thenReturn(List.of(
+                new DocSummaryDTO("doc-1", "标题", "a.docx", 3, 120L, "2026-11-08 10:00:00")));
+        DocumentAdminController controller =
+                new DocumentAdminController(documentService, mock(SearchService.class));
+
+        List<DocSummaryResponse> list = controller.list();
+
+        assertEquals(1, list.size());
+        DocSummaryResponse item = list.get(0);
+        assertEquals("doc-1", item.docId());
+        assertEquals("标题", item.docTitle());
+        assertEquals("a.docx", item.sourcePath());
+        assertEquals(3, item.chunkCount());
+        assertEquals(120L, item.charCountTotal());
+        assertEquals("2026-11-08 10:00:00", item.updateTime());
     }
 }

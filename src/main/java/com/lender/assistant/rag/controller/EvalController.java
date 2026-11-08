@@ -13,6 +13,8 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.io.IOException;
+
 /**
  * 评估接口：POST /api/admin/eval/run {topK, mode}
  *
@@ -33,7 +35,7 @@ public class EvalController {
     }
 
     @PostMapping("/run")
-    public EvalRunResponse run(@RequestBody EvalRequest request) throws Exception {
+    public EvalRunResponse run(@RequestBody EvalRequest request) throws IOException {
         SearchMode mode = SearchMode.fromCode(request.mode());
         return evalService.run(TopKUtils.resolve(request.topK(), SearchConstants.DEFAULT_TOP_K), mode);
     }
@@ -43,7 +45,7 @@ public class EvalController {
      * 只输出当前阈值下的指标，不做阈值调优。
      */
     @PostMapping("/routing")
-    public RoutingEvalResponse runRouting() throws Exception {
+    public RoutingEvalResponse runRouting() throws IOException {
         return routingEvalService.run();
     }
 }

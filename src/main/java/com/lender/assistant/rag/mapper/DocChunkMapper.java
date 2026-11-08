@@ -33,6 +33,13 @@ public interface DocChunkMapper {
 
     List<DocSummaryDTO> listDocuments();
 
+    /**
+     * 判重候选：SQL 侧先按 (切片数, 总字符数) 收窄，只对形状一致的文档做内容逐行比对，
+     * 避免把全库文档和切片都读进内存（禁 SQL 锁，判重仍在代码内串行）。
+     */
+    List<DocSummaryDTO> listDocumentsByShape(@Param("chunkCount") int chunkCount,
+                                             @Param("charCountTotal") long charCountTotal);
+
     List<DocChunkLineDTO> listChunkLines(@Param("docId") String docId);
 
     /** 按 chunk_index 分页取切片（不含 embedding）；limit/offset 由 Service 归一后传入 */

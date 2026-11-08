@@ -24,12 +24,15 @@ import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.HexFormat;
 import java.util.List;
+import java.util.concurrent.locks.ReentrantLock;
+import java.util.function.Supplier;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
@@ -53,6 +56,11 @@ public class DocumentServiceImpl implements DocumentService {
     /** 切片分页页大小下限/上限：越界由 Service 夹取，避免超大响应与非法 LIMIT */
     private static final int MIN_PAGE_SIZE = 1;
     private static final int MAX_PAGE_SIZE = 100;
+    /**
+     * 判重条带锁数量：按内容哈希取模，保证同内容上传串行、不同内容仍可并行。
+     * 固定 64 条带避免为每个哈希建锁导致锁对象无界增长。
+     */
+    private static final int DUPLICATE_LOCK_STRIPES = 64;
 
     private final DocChunkMapper mapper;
     private final DocumentParserStrategyFactory parserFactory;
@@ -60,6 +68,8 @@ public class DocumentServiceImpl implements DocumentService {
     private final EmbeddingStrategy embeddingStrategy;
     /** 自身代理：类内直接调 replaceDocument 不经过 Spring 代理，@Transactional 会失效；经它调用才能保证删+插原子 */
     private final DocumentService self;
+    /** 条带锁：同一内容哈希的「判重 → 向量化 → 写库」在同一把锁内完成 */
+    private final ReentrantLock[] duplicateLocks = new ReentrantLock[DUPLICATE_LOCK_STRIPES];
 
     public DocumentServiceImpl(DocChunkMapper mapper, DocumentParserStrategyFactory parserFactory,
                                ChunkSplitterStrategy splitter, EmbeddingStrategy embeddingStrategy,
@@ -69,10 +79,13 @@ public class DocumentServiceImpl implements DocumentService {
         this.splitter = splitter;
         this.embeddingStrategy = embeddingStrategy;
         this.self = self;
+        for (int stripe = 0; stripe < duplicateLocks.length; stripe++) {
+            duplicateLocks[stripe] = new ReentrantLock();
+        }
     }
 
     @Override
-    public UploadResponse ingestDocument(String docId, String fileName, byte[] fileBytes) throws Exception {
+    public UploadResponse ingestDocument(String docId, String fileName, byte[] fileBytes) throws IOException {
         // 解析器按扩展名运行时分发，交给工厂选择（不支持的类型抛可读异常）
         DocumentParserStrategy parser = parserFactory.resolve(fileName);
 
@@ -85,12 +98,43 @@ public class DocumentServiceImpl implements DocumentService {
         long splitMillis = System.currentTimeMillis() - splitStart;
 
         // 内容判重放在切分之后、向量化之前：切片文本已确定，能判中"同内容不同文件名"；
-        // 且重复上传直接复用既有文档，省掉整轮向量化与写库
-        DocSummaryDTO duplicate = chunks.isEmpty() ? null : findDuplicateDocument(chunks);
+        // 且重复上传直接复用既有文档，省掉整轮向量化与写库。
+        // 空文档没有判重对象，直接走写库（replaceDocument 只删不插）。
+        if (chunks.isEmpty()) {
+            return embedAndStore(docId, fileName, parsed, chunks, parseMillis, splitMillis);
+        }
+        String hash = contentHash(chunks);
+        return withContentLock(hash, () -> ingestWithDedupe(docId, fileName, parsed, chunks, hash,
+                parseMillis, splitMillis));
+    }
+
+    /**
+     * 锁内完成判重 + 写入：否则两个并发上传在判重时都看不到对方，各写一份重复文档。
+     *
+     * 取舍：锁只在本 JVM 内生效——多实例部署时仍需数据库唯一约束兜底（ADR-0004 未引入 SQL 锁）。
+     */
+    private <T> T withContentLock(String hash, Supplier<T> action) {
+        ReentrantLock lock = duplicateLocks[Math.floorMod(hash.hashCode(), DUPLICATE_LOCK_STRIPES)];
+        lock.lock();
+        try {
+            return action.get();
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    private UploadResponse ingestWithDedupe(String docId, String fileName, ParsedDocumentDTO parsed,
+                                            List<ChunkDTO> chunks, String hash,
+                                            long parseMillis, long splitMillis) {
+        DocSummaryDTO duplicate = findDuplicateDocument(chunks, hash);
         if (duplicate != null) {
             return duplicateResponse(duplicate, parsed, parseMillis, splitMillis);
         }
+        return embedAndStore(docId, fileName, parsed, chunks, parseMillis, splitMillis);
+    }
 
+    private UploadResponse embedAndStore(String docId, String fileName, ParsedDocumentDTO parsed,
+                                         List<ChunkDTO> chunks, long parseMillis, long splitMillis) {
         long embedStart = System.currentTimeMillis();
         List<ChunkEntity> rows = embedChunks(chunks);
         long embedMillis = System.currentTimeMillis() - embedStart;
@@ -130,22 +174,15 @@ public class DocumentServiceImpl implements DocumentService {
     }
 
     /**
-     * 按内容找重复文档：先用概览里的切片数/总字符数做廉价预筛，避免每次上传都读全库正文；
-     * 预筛命中后再逐文档比对切片正文的 SHA-256。
+     * 按内容找重复文档：形状筛选 (切片数/总字符数) 交给 SQL 侧 HAVING 完成，
+     * 只对形状一致的候选文档读正文并比对 SHA-256；全库正文不再进内存。
      *
      * 哈希只取「章节 + 正文」的有序序列，不含 docId / 文件名 / doc_title，
      * 因此同一文件重复上传、内容相同但文件名不同，都能判中。
      */
-    private DocSummaryDTO findDuplicateDocument(List<ChunkDTO> chunks) {
-        String hash = contentHash(chunks);
+    private DocSummaryDTO findDuplicateDocument(List<ChunkDTO> chunks, String hash) {
         long totalChars = chunks.stream().mapToLong(ChunkDTO::charCount).sum();
-        for (DocSummaryDTO doc : mapper.listDocuments()) {
-            if (doc.chunkCount() == null || doc.charCountTotal() == null) {
-                continue;
-            }
-            if (doc.chunkCount() != chunks.size() || doc.charCountTotal() != totalChars) {
-                continue;
-            }
+        for (DocSummaryDTO doc : mapper.listDocumentsByShape(chunks.size(), totalChars)) {
             if (hash.equals(linesHash(mapper.listChunkLines(doc.docId())))) {
                 return doc;
             }

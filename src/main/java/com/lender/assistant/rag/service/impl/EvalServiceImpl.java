@@ -11,6 +11,7 @@ import com.lender.assistant.rag.model.response.SearchItemResponse;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.stereotype.Service;
 
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -52,7 +53,7 @@ public class EvalServiceImpl implements EvalService {
                                long hits, double recallAtK, double mrr, long avgMillis) {}
 
     @Override
-    public EvalRunResponse run(int topK, SearchMode mode) throws Exception {
+    public EvalRunResponse run(int topK, SearchMode mode) throws IOException {
         List<EvalItem> evalItems = loadEvalSet();
         List<EvalItemResponse> results = evaluate(evalItems, topK, mode);
         EvalSummary summary = summarize(mode.code(), topK, evalItems.size(), results);
@@ -103,7 +104,7 @@ public class EvalServiceImpl implements EvalService {
         return new EvalSummary(mode, topK, total, positive.size(), hits, recallAtK, mrr, avgMillis);
     }
 
-    private List<EvalItem> loadEvalSet() throws Exception {
+    private List<EvalItem> loadEvalSet() throws IOException {
         JsonNode root = objectMapper.readTree(
                 new ClassPathResource("eval/evalset.json").getInputStream());
         List<EvalItem> items = new ArrayList<>();

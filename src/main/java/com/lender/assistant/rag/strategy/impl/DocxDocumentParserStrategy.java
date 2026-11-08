@@ -13,6 +13,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 import java.io.ByteArrayInputStream;
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -45,7 +46,7 @@ public class DocxDocumentParserStrategy implements DocumentParserStrategy {
     }
 
     @Override
-    public ParsedDocumentDTO parse(String fileName, byte[] content) throws Exception {
+    public ParsedDocumentDTO parse(String fileName, byte[] content) throws IOException {
         List<ParsedDocumentDTO.Block> blocks = new ArrayList<>();
         try (XWPFDocument doc = new XWPFDocument(new ByteArrayInputStream(content))) {
             // bodyElements 按文档实际顺序返回段落和表格，不会打乱阅读顺序；

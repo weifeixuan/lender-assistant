@@ -2,6 +2,8 @@ package com.lender.assistant.rag.strategy;
 
 import com.lender.assistant.rag.model.dto.ParsedDocumentDTO;
 
+import java.io.IOException;
+
 /**
  * 文档解析策略：文件字节流 -> 带结构信息的 ParsedDocumentDTO。
  *
@@ -15,5 +17,5 @@ public interface DocumentParserStrategy {
     /** 是否支持该文件名（按扩展名判断） */
     boolean supports(String fileName);
 
-    ParsedDocumentDTO parse(String fileName, byte[] content) throws Exception;
+    ParsedDocumentDTO parse(String fileName, byte[] content) throws IOException;
 }

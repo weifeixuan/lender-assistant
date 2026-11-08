@@ -96,6 +96,18 @@
         ORDER BY doc_id
     </select>
 
+    <!-- 判重候选：先用 (切片数, 总字符数) 在 SQL 侧收窄，再逐候选比对内容；
+         避免把全库文档读进内存。判重的串行化由代码内条带锁保证，不使用 SQL 锁 -->
+    <select id="listDocumentsByShape" resultMap="docSummaryMap">
+        SELECT doc_id, MAX(doc_title) AS doc_title, MAX(source_path) AS source_path,
+               COUNT(*) AS chunk_count, SUM(char_count) AS char_count_total,
+               TO_CHAR(MAX(update_time), 'YYYY-MM-DD HH24:MI:SS') AS update_time
+        FROM doc_chunk
+        GROUP BY doc_id
+        HAVING COUNT(*) = #{chunkCount} AND SUM(char_count) = #{charCountTotal}
+        ORDER BY doc_id
+    </select>
+
     <select id="listChunkLines" resultMap="chunkLineMap">
         SELECT doc_title, section_path, content
         FROM doc_chunk

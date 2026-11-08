@@ -6,6 +6,7 @@ import com.lender.assistant.rag.model.dto.DocSummaryDTO;
 import com.lender.assistant.rag.model.response.ChunkPageResponse;
 import com.lender.assistant.rag.model.response.UploadResponse;
 
+import java.io.IOException;
 import java.util.List;
 
 /**
@@ -24,7 +25,7 @@ public interface DocumentService {
      * 判重语义：以 docId=X 上传内容 C、而 C 已在库中时，返回的是**既有内容的 docId**（可能不等于 X）；
      * 该 docId 对应的既有文档既不会被本调用创建、也不会被覆盖（向量化与写库都跳过）。
      */
-    UploadResponse ingestDocument(String docId, String fileName, byte[] fileBytes) throws Exception;
+    UploadResponse ingestDocument(String docId, String fileName, byte[] fileBytes) throws IOException;
 
     /** 先删旧块再插新块：同一 docId 重复入库幂等；删+插必须原子（事务在实现方法上） */
     void replaceDocument(String docId, String docTitle, String sourcePath, List<ChunkEntity> rows);
