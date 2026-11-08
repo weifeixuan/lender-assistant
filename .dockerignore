@@ -1,0 +1,9 @@
+# 构建产物与本地产物不进构建上下文：加快构建，也避免把密钥/日志打进镜像层
+target/
+logs/
+.git/
+.idea/
+.vscode/
+.scratch/
+*.iml
+.env

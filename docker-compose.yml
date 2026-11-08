@@ -1,7 +1,8 @@
 # 资方接入智能助手：一键起全套（应用 + pgvector 数据库）
 #
 # 用法：
-#   docker compose up -d          # 首次会构建应用镜像（约几分钟）
+#   docker compose up -d lender-pg   # 本地开发只起数据库（5432，复用现有卷 lender_pgdata）
+#   docker compose up -d             # 全容器部署：数据库 + 应用（首次会构建镜像，约几分钟）
 #   访问 http://localhost:8080/api/conversations（需 X-User-Id 请求头）
 #
 # 国内网络：构建前设置镜像前缀，如
@@ -10,13 +11,15 @@
 services:
   lender-pg:
     image: pgvector/pgvector:pg16
-    container_name: lender-pg-compose
+    container_name: lender-pg
+    restart: unless-stopped
     environment:
-      POSTGRES_PASSWORD: postgres
+      # 与 application.yml 的 ${PG_PASSWORD:lender123} 保持一致；对已初始化的卷不生效（密码存在库内）
+      POSTGRES_PASSWORD: ${PG_PASSWORD:-lender123}
       POSTGRES_DB: lender_assistant
     ports:
-      # 宿主机用 15432，避开本地开发容器可能占用的 5432
-      - "15432:5432"
+      # 只绑回环：数据库不暴露给局域网；本地开发默认端口 5432，全局只有这一套实例
+      - "127.0.0.1:5432:5432"
     volumes:
       # 首次初始化时自动建表（doc_chunk / field_mapping / llm_call_log）
       - ./docs/schema.sql:/docker-entrypoint-initdb.d/01_schema.sql:ro
@@ -26,19 +29,25 @@ services:
       interval: 5s
       timeout: 3s
       retries: 12
+    deploy:
+      resources:
+        limits:
+          cpus: "1"
+          memory: 1g
 
   app:
     build:
       context: .
       args:
         REGISTRY_PREFIX: ${REGISTRY_PREFIX:-}
+    restart: unless-stopped
     environment:
       # 数据库指向 compose 内部服务名，不依赖宿主机端口
       SPRING_DATASOURCE_URL: jdbc:postgresql://lender-pg:5432/lender_assistant
       SPRING_DATASOURCE_USERNAME: postgres
-      SPRING_DATASOURCE_PASSWORD: postgres
-      # 模型端口默认 Mock（无需任何 key 即可跑通全链路）；有 key 后在这里切
-      RAG_CHAT_PROVIDER: ${RAG_CHAT_PROVIDER:-mock}
+      SPRING_DATASOURCE_PASSWORD: ${PG_PASSWORD:-lender123}
+      # 默认与 application.yml 一致（openai）；没有 key 时运行期会降级并在 llm_call_log 留 FAIL
+      RAG_CHAT_PROVIDER: ${RAG_CHAT_PROVIDER:-openai}
       RAG_EMBEDDING_PROVIDER: ${RAG_EMBEDDING_PROVIDER:-hash}
       RAG_EXTRACT_PROVIDER: ${RAG_EXTRACT_PROVIDER:-mock}
       RAG_DRAFT_PROVIDER: ${RAG_DRAFT_PROVIDER:-mock}
@@ -48,13 +57,22 @@ services:
       LLM_MODEL: ${LLM_MODEL:-deepseek-chat}
       ZHIPU_API_KEY: ${ZHIPU_API_KEY:-fake-zhipu-api-key}
     ports:
-      - "8080:8080"
+      # 只绑回环：应用不对局域网开放
+      - "127.0.0.1:8080:8080"
     volumes:
       # 容器 WORKDIR=/app，日志写 /app/logs；挂回宿主 ./logs 后与本地 java -jar 落盘位置一致
       - ./logs:/app/logs
     depends_on:
       lender-pg:
         condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: "2"
+          memory: 2g
 
 volumes:
+  # 复用既有的本地卷，禁止 compose 新建平行卷（否则又会分叉出一份空库）
   pgdata:
+    external: true
+    name: lender_pgdata
