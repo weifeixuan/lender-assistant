@@ -37,7 +37,8 @@ flowchart TD
     I --> D
 ```
 
-- `IRRELEVANT` 直接固定回复，不检索、不调用生成模型；`KNOWLEDGE` 走一次混合检索（向量 + 关键词 → RRF 融合）后流式作答。
+- `IRRELEVANT` 直接固定回复，不检索、不调用生成模型。
+- `KNOWLEDGE` 走一次混合检索（向量 + 关键词 → RRF 融合）后流式作答。
 - `PLAN` 先由计划模型产出步骤，再按 `order` 严格串行执行，每步一次工具调用（`kb.search` / `customer.profile` / `lender.product`）。
 - 所有步骤结束后统一做一次流式合成，中间步骤不输出正文，用户只看到一段流式回答。
 
