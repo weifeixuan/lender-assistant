@@ -86,6 +86,32 @@ class SchemaContractTest {
     }
 
     @Test
+    @DisplayName("审计列统一为 create_time / update_time，存量库走幂等改名")
+    void auditColumnsAreUnified() {
+        assertTrue(SCHEMA.contains(
+                        "ALTER TABLE field_mapping RENAME COLUMN created_at TO create_time"),
+                "field_mapping 必须把存量 created_at 改名为 create_time");
+        assertTrue(SCHEMA.contains(
+                        "ALTER TABLE field_mapping ADD COLUMN IF NOT EXISTS update_time"),
+                "field_mapping 必须幂等补齐 update_time");
+        assertTrue(SCHEMA.contains(
+                        "ALTER TABLE llm_call_log RENAME COLUMN created_at TO create_time"),
+                "llm_call_log 必须把存量 created_at 改名为 create_time");
+        assertTrue(SCHEMA.contains(
+                        "idx_llm_call_log_create_time ON llm_call_log (create_time DESC)"),
+                "调用日志索引必须按新列名重建");
+    }
+
+    @Test
+    @DisplayName("llm_call_log.scene 注释列出实际取值")
+    void llmSceneCommentListsActualValues() {
+        assertTrue(SCHEMA.contains("COMMENT ON COLUMN llm_call_log.scene"),
+                "scene 缺少列注释");
+        assertTrue(SCHEMA.contains("qa / extract / draft / route / plan / synthesis"),
+                "scene 注释必须与 LlmScene 的实际取值一致");
+    }
+
+    @Test
     @DisplayName("两张新表都有 COMMENT ON TABLE")
     void tablesAreDocumented() {
         assertTrue(SCHEMA.contains("COMMENT ON TABLE conversation"),

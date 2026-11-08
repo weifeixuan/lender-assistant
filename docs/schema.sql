@@ -90,26 +90,56 @@ CREATE TABLE IF NOT EXISTS field_mapping (
     source_quote      TEXT,
     confidence        NUMERIC(4,3),
     status            TEXT NOT NULL DEFAULT 'PENDING',
-    created_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
+    create_time       TIMESTAMPTZ NOT NULL DEFAULT now(), -- 行创建时间
+    update_time       TIMESTAMPTZ NOT NULL DEFAULT now(), -- 最近一次状态变更（确认/修正）时间
     UNIQUE (doc_id, internal_field_id)
 );
+
+-- 阶段 8 迁移：审计列统一为 create_time / update_time（与 doc_chunk / conversation / message 同口径）。
+-- CREATE TABLE IF NOT EXISTS 不会给存量库改列名，故先改名再兜底补列。
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM information_schema.columns
+               WHERE table_schema = current_schema() AND table_name = 'field_mapping'
+                 AND column_name = 'created_at') THEN
+        ALTER TABLE field_mapping RENAME COLUMN created_at TO create_time;
+    END IF;
+END $$;
+ALTER TABLE field_mapping ADD COLUMN IF NOT EXISTS create_time TIMESTAMPTZ NOT NULL DEFAULT now();
+ALTER TABLE field_mapping ADD COLUMN IF NOT EXISTS update_time TIMESTAMPTZ NOT NULL DEFAULT now();
 
 -- 模型调用留痕：每次模型调用一行（耗时/token/成本/状态）
 -- token 为 NULL 表示 mock 调用（无真实计量）；cost_cny 默认 0，DeepSeek 版按价目折算
 CREATE TABLE IF NOT EXISTS llm_call_log (
     id                BIGSERIAL PRIMARY KEY,
-    scene             TEXT NOT NULL,              -- qa / extract
-    provider          TEXT NOT NULL,              -- Mock / DeepSeek
+    scene             TEXT NOT NULL,              -- 取值见 LlmScene：qa / extract / draft / route / plan / synthesis
+    provider          TEXT NOT NULL,              -- 策略名（如 deepseek-chat / mock）
     duration_ms       INTEGER,
     prompt_tokens     INTEGER,
     completion_tokens INTEGER,
     cost_cny          NUMERIC(10,6) NOT NULL DEFAULT 0,
     status            TEXT NOT NULL,              -- OK / FAIL
     error_msg         TEXT,
-    created_at        TIMESTAMPTZ NOT NULL DEFAULT now()
+    create_time       TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE INDEX IF NOT EXISTS idx_llm_call_log_created ON llm_call_log (created_at DESC);
+-- 阶段 8 迁移：审计列统一为 create_time（调用日志只追加、不更新，不设 update_time）。
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM information_schema.columns
+               WHERE table_schema = current_schema() AND table_name = 'llm_call_log'
+                 AND column_name = 'created_at') THEN
+        ALTER TABLE llm_call_log RENAME COLUMN created_at TO create_time;
+    END IF;
+END $$;
+ALTER TABLE llm_call_log ADD COLUMN IF NOT EXISTS create_time TIMESTAMPTZ NOT NULL DEFAULT now();
+-- 列改名后旧索引自动跟随新列，这里只把索引名对齐；再按新名幂等兜底建索引。
+ALTER INDEX IF EXISTS idx_llm_call_log_created RENAME TO idx_llm_call_log_create_time;
+CREATE INDEX IF NOT EXISTS idx_llm_call_log_create_time ON llm_call_log (create_time DESC);
+
+COMMENT ON TABLE llm_call_log IS '模型调用留痕：每次模型调用一行';
+COMMENT ON COLUMN llm_call_log.scene IS '模型调用场景：qa / extract / draft / route / plan / synthesis';
+COMMENT ON COLUMN llm_call_log.create_time IS '调用发生时间';
 
 -- ========== 多轮对话：会话与消息 ==========
 
