@@ -16,10 +16,10 @@ import java.util.List;
  * 优点：实现简单、块大小均匀，向量长度分布稳定；
  * 缺点：完全无视语义边界，一个字段表可能被拦腰斩断。
  *
- * overlap（重叠区）的作用：设 ChunkDTO-size=500、overlap=100，
+ * overlap（重叠区）的作用：设 chunk-size=500、overlap=100，
  * 第 2 块从第 1 块的第 400 字符开始——如果某个语义单元恰好被 400 处截断，
  * 第 2 块的开头会补全它的尾巴，不至于两边都检索不到完整语义。
- * 重叠是精度换覆盖率，太大（超过 ChunkDTO-size 一半）会造成大量冗余存储。
+ * 重叠是精度换覆盖率，太大（超过 chunk-size 一半）会造成大量冗余存储。
  */
 @Component
 @ConditionalOnProperty(name = "rag.split.strategy", havingValue = "fixed")
@@ -31,10 +31,10 @@ public class FixedSizeChunkSplitterStrategy implements ChunkSplitterStrategy {
     private final int chunkSize;
     private final int overlap;
 
-    public FixedSizeChunkSplitterStrategy(@Value("${rag.split.ChunkDTO-size}") int chunkSize,
+    public FixedSizeChunkSplitterStrategy(@Value("${rag.split.chunk-size}") int chunkSize,
                                           @Value("${rag.split.overlap}") int overlap) {
         if (overlap >= chunkSize) {
-            throw new IllegalArgumentException("overlap 必须小于 ChunkDTO-size，否则永远无法前进");
+            throw new IllegalArgumentException("overlap 必须小于 chunk-size，否则永远无法前进");
         }
         this.chunkSize = chunkSize;
         this.overlap = overlap;

@@ -16,7 +16,7 @@ import java.util.List;
  * 策略 B：按标题层级切分（结构感知）。
  *
  * 规则：一个 ChunkDTO = 一个"叶子小节"（相邻两个标题之间的所有内容），
- * 超长的小节内部再按 ChunkDTO-size 二次硬切（同样留 overlap）。
+ * 超长的小节内部再按 chunk-size 二次硬切（同样留 overlap）。
  *
  * 为什么对资方文档天然合适：接口文档是高度结构化的——
  * "3 日末文件 > 3.2 逾期文件格式 > 字段说明"这样的标题树就是语义边界，
@@ -33,12 +33,12 @@ public class SectionChunkSplitterStrategy implements ChunkSplitterStrategy {
     private final int chunkSize;
     private final int overlap;
 
-    public SectionChunkSplitterStrategy(@Value("${rag.split.ChunkDTO-size}") int chunkSize,
+    public SectionChunkSplitterStrategy(@Value("${rag.split.chunk-size}") int chunkSize,
                                         @Value("${rag.split.overlap}") int overlap) {
         // 与 FixedSizeChunkSplitterStrategy 同一条约束：二次切分步长 = chunkSize - overlap，
         // overlap >= chunkSize 时步长 <= 0，flush() 的循环将无法前进（死循环/OOM）。
         if (overlap >= chunkSize) {
-            throw new IllegalArgumentException("overlap 必须小于 ChunkDTO-size，否则二次切分永远无法前进");
+            throw new IllegalArgumentException("overlap 必须小于 chunk-size，否则二次切分永远无法前进");
         }
         this.chunkSize = chunkSize;
         this.overlap = overlap;
