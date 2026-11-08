@@ -71,20 +71,24 @@ cd lender-assistant
 # 国内网络先设镜像前缀（可选）
 export REGISTRY_PREFIX=docker.1ms.run/    # Windows PowerShell: $env:REGISTRY_PREFIX="docker.1ms.run/"
 
+# 首次运行先创建数据卷（compose 以 external 方式复用它，不会新建平行卷）
+docker volume create lender_pgdata
+
 docker compose up -d --build
-# 等待构建完成后打开 http://localhost:8080
+# 等待构建完成后验证：curl -s localhost:8080/health 返回 status=UP
+# 文档列表：curl -s localhost:8080/api/admin/documents
 ```
 
-compose 会自动：建库建表（schema SQL 挂载到初始化目录）→ 数据库健康检查 → 启动应用（等它 ready 再对外）。
+compose 首次启动会自动建库建表（schema SQL 挂载到初始化目录，已有数据的卷不会重复初始化）→ 数据库健康检查 → 启动应用（等它 ready 再对外）。
 
 ### 方式二：手动起
 
 前置：JDK 21、Maven 3.8+、Docker（跑数据库）。
 
 ```bash
-# 1. 起数据库（pgvector）
-docker run -d --name lender-pg -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=lender_assistant \
-  -p 5432:5432 pgvector/pgvector:pg16
+# 1. 起数据库（pgvector，卷与 compose 共用，密码与 application.yml 默认值一致）
+docker run -d --name lender-pg -e POSTGRES_PASSWORD=lender123 -e POSTGRES_DB=lender_assistant \
+  -v lender_pgdata:/var/lib/postgresql/data -p 5432:5432 pgvector/pgvector:pg16
 
 # 2. 建表
 docker exec -i lender-pg psql -U postgres -d lender_assistant < docs/schema.sql
@@ -94,7 +98,7 @@ mvn package -DskipTests
 java -jar target/lender-assistant-0.1.0-SNAPSHOT.jar --server.port=8080
 ```
 
-后端对外提供 REST + SSE 接口：会话列表 `/api/conversations`、历史 `/api/conversations/{id}/messages`、问答 `/api/qa`（SSE）。所有业务接口需携带 `X-User-Id`，首问不带 `conversationId` 时由服务端懒创建并通过 SSE 首个 `meta` 事件回传。交互原型见 [docs/requirements/multi-turn-ui-prototype.html](docs/requirements/multi-turn-ui-prototype.html)。
+后端对外提供 REST + SSE 接口：会话列表 `/api/conversations`、历史 `/api/conversations/{id}/messages`、问答 `/api/qa`（SSE）。所有业务接口需携带 `X-User-Id`，首问不带 `conversationId` 时由服务端懒创建并通过 SSE 首个 `meta` 事件回传。前端交互约定见 [docs/prd/multi-turn-frontend.md](docs/prd/multi-turn-frontend.md)；前端为独立仓库（可选），`npm install && npm run dev` 起在 5173，Vite 已把 `/api` 代理到 8080。
 
 ### 接入真实模型（可选）
 
@@ -105,7 +109,8 @@ java -jar target/lender-assistant-0.1.0-SNAPSHOT.jar --server.port=8080
 | `RAG_EXTRACT_PROVIDER`   | `mock` / `openai` | 字段抽取 |
 | `RAG_DRAFT_PROVIDER`     | `mock` / `openai` | 代码草稿 |
 
-配 `LLM_API_KEY` / `LLM_BASE_URL` / `LLM_MODEL` 三个环境变量即可接入真实模型，key 不进代码库（compose 里走环境变量透传）。
+对话模型默认已走 `openai`，配 `LLM_API_KEY` / `LLM_BASE_URL` / `LLM_MODEL` 三个环境变量即可接入真实模型，key 不进代码库；无 key 时调用失败会按 fail-open 降级，本地联调可显式设 `RAG_CHAT_PROVIDER=mock`。抽取/草稿仍是 `mock`，切换需设 `RAG_EXTRACT_PROVIDER`、`RAG_DRAFT_PROVIDER`。
+`docker compose` 会自动读取项目根 `.env`；本地 `mvn spring-boot:run` / `java -jar` 不会自动加载 `.env`，需先自行导出环境变量。
 真实模型走 OpenAI 兼容协议，切换 DeepSeek / Kimi / 通义 / GLM 等只改这三个变量，代码不动：
 
 ```bash
@@ -114,7 +119,7 @@ LLM_BASE_URL=https://api.deepseek.com  LLM_MODEL=deepseek-chat
 # 其他兼容厂商：base-url 填到 /v1 这一级，模型名按厂商文档
 ```
 
-向量化仍单独用 `ZHIPU_API_KEY`（智谱 embedding-3）。
+向量化需单独把 `RAG_EMBEDDING_PROVIDER` 切成 `zhipu`，并配 `ZHIPU_API_KEY`（智谱 embedding-3）。
 
 ## 设计决策（为什么）
 

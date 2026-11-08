@@ -22,6 +22,11 @@ spring:
         options:
           model: ${LLM_MODEL:deepseek-chat}
           temperature: 0.7
+  servlet:
+    multipart:
+      # 资方接口文档（PDF/Word/Excel）单文件上限 50MB，整包（含表单）留 10MB 余量
+      max-file-size: 50MB
+      max-request-size: 60MB
 
 mybatis:
   # Mapper XML 统一放 resources/mapper（§6.2），与接口不在同一 classpath 位置，必须显式指定
@@ -33,8 +38,8 @@ mybatis:
 # 应用自定义配置（RAG 链路参数集中在这里，阶段 3 调优只动这里）
 rag:
   chat:
-    # provider: mock=本地Mock(无key时开发联调) / openai=真实模型(OpenAI 兼容协议，有key后切换)
-    provider: ${RAG_CHAT_PROVIDER:mock}
+    # provider: openai=真实模型(OpenAI 兼容协议，默认) / mock=本地Mock(无key时联调)
+    provider: ${RAG_CHAT_PROVIDER:openai}
   embedding:
     # provider: hash=本地Mock(开发联调) / zhipu=智谱API(有key后切换)
     provider: ${RAG_EMBEDDING_PROVIDER:hash}
