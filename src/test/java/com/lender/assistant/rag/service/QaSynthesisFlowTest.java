@@ -35,7 +35,9 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -55,6 +57,8 @@ class QaSynthesisFlowTest {
     private CapturingGenerator generator;
     private ConversationRoundDTO round;
     private final SseRecordingEmitter emitter = new SseRecordingEmitter();
+    /** completeRound 被调用那一刻已推送的事件名，用于证明"先落库再发 done" */
+    private List<String> eventsAtPersist;
 
     @BeforeEach
     void setUp() {
@@ -62,8 +66,12 @@ class QaSynthesisFlowTest {
         when(searchService.hybridSearch(any(), any(), anyInt()))
                 .thenReturn(List.of(source(9L)));
         conversationService = mock(ConversationService.class);
+        doAnswer(invocation -> {
+            eventsAtPersist = emitter.eventNames();
+            return null;
+        }).when(conversationService).completeRound(any());
         ConversationHistoryAssembler historyAssembler = mock(ConversationHistoryAssembler.class);
-        when(historyAssembler.assemble(anyString(), anyString()))
+        when(historyAssembler.assemble(anyList(), anyString()))
                 .thenReturn(List.of(new com.lender.assistant.rag.model.dto.ChatTurnDTO("USER", "上一轮问题")));
         when(historyAssembler.listRows(anyString())).thenReturn(List.of());
         routing = mock(QuestionRoutingService.class);
@@ -76,8 +84,8 @@ class QaSynthesisFlowTest {
                                 mock(com.lender.assistant.resilience.mapper.LlmCallLogMapper.class)),
                         3, 10, 2, false),
                 conversationService, new ConversationLockRegistry(), historyAssembler);
-        ReflectionTestUtils.setField(qaService, "chatProvider", "openai");
         ReflectionTestUtils.setField(qaService, "routingService", routing);
+        ReflectionTestUtils.setField(qaService, "objectMapper", new ObjectMapper());
         ReflectionTestUtils.setField(qaService, "planningService", planning);
         ReflectionTestUtils.setField(qaService, "previousRouteResolver",
                 new PreviousRouteResolver(new ObjectMapper()));
@@ -110,7 +118,7 @@ class QaSynthesisFlowTest {
     }
 
     @Test
-    @DisplayName("零命中且无业务产物：不调生成，直接推无召回提示")
+    @DisplayName("零命中：不调生成，先落库再发 done，provider=rule")
     void zeroHitWithoutBusinessOutputSkipsGeneration() {
         ExecutionPlanDTO plan = twoStepPlan();
         PlanExecutionResultDTO result = new PlanExecutionResultDTO(List.of(
@@ -126,7 +134,29 @@ class QaSynthesisFlowTest {
         assertEquals(List.of("event:meta", "event:route", "event:plan",
                 "event:step", "event:step", "event:step", "event:step",
                 "event:sources", "event:delta", "event:done"), emitter.eventNames());
-        verify(conversationService).completeRound(any());
+        assertFalse(eventsAtPersist.contains("event:done"), "done 事件必须在落库之后才发");
+        assertEquals("rule", captured().provider(), "引导文案不是模型产出，provider 应为 rule");
+    }
+
+    @Test
+    @DisplayName("零命中但业务工具有产物：仍短路到无召回提示，不调合成模型")
+    void zeroHitWithBusinessOutputSkipsSynthesisModel() {
+        ExecutionPlanDTO plan = twoStepPlan();
+        PlanExecutionResultDTO result = new PlanExecutionResultDTO(List.of(
+                outcome("s1", 1, "kb.search", StepStatus.DEGRADED, List.of(), "资料中未提及"),
+                outcome("s2", 2, "customer.profile", StepStatus.DONE, List.of(), "可用额度 800 万")),
+                false, 180_000);
+        when(planning.plan(any(), any())).thenReturn(plan);
+        stubExecute(result);
+
+        qaService.streamAnswer(emitter, "华信能放多少", 4, USER_ID, round, System.currentTimeMillis());
+
+        assertEquals(0, generator.requests.size(), "没有可引用来源时不调合成模型");
+        assertEquals(List.of("event:meta", "event:route", "event:plan",
+                "event:step", "event:step", "event:step", "event:step",
+                "event:sources", "event:delta", "event:done"), emitter.eventNames());
+        assertFalse(eventsAtPersist.contains("event:done"), "done 事件必须在落库之后才发");
+        assertEquals("rule", captured().provider());
     }
 
     @Test

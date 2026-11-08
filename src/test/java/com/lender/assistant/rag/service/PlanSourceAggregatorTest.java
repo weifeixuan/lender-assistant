@@ -43,6 +43,16 @@ class PlanSourceAggregatorTest {
         assertEquals(List.of(), PlanSourceAggregator.union(outcomes));
     }
 
+    @Test
+    @DisplayName("全局编号按并集顺序从 1 连续分配")
+    void assignsGlobalIndexes() {
+        List<SearchItemResponse> union = List.of(
+                source(1L, "A"), source(2L, "B"), source(3L, "C"));
+
+        assertEquals(Map.of(1L, 1, 2L, 2, 3L, 3),
+                PlanSourceAggregator.globalIndexes(union));
+    }
+
     private static StepOutcomeDTO outcome(String stepId, int order, SearchItemResponse... sources) {
         List<SearchItemResponse> list = List.of(sources);
         return new StepOutcomeDTO(stepId, order, "步骤", "kb.search", Map.of("q", stepId),

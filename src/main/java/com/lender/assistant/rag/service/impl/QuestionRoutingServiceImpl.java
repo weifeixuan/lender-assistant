@@ -2,6 +2,7 @@ package com.lender.assistant.rag.service.impl;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.lender.assistant.common.constant.QaPrompts;
 import com.lender.assistant.rag.service.QuestionRoutingService;
 import com.lender.assistant.rag.client.RoutingModelClient;
 import com.lender.assistant.rag.model.dto.QuestionRoute;
@@ -32,7 +33,7 @@ public class QuestionRoutingServiceImpl implements QuestionRoutingService {
     private final double confidenceThreshold;
 
     public QuestionRoutingServiceImpl(RoutingModelClient client, ObjectMapper objectMapper,
-                                      @Value("${rag.routing.confidence-threshold:0.6}")
+                                      @Value("${rag.routing.confidence-threshold}")
                                       double confidenceThreshold) {
         this.client = client;
         this.objectMapper = objectMapper;
@@ -50,6 +51,7 @@ public class QuestionRoutingServiceImpl implements QuestionRoutingService {
                     payload.irrelevantCategory(), request.previousRoute(), payload.reason());
             return decision;
         } catch (Exception ex) {
+            log.warn("路由模型调用或解析失败，降级 KNOWLEDGE", ex);
             return fallback();
         }
     }
@@ -88,33 +90,9 @@ public class QuestionRoutingServiceImpl implements QuestionRoutingService {
     }
 
     private String buildPrompt(RoutingRequestDTO request) {
-        return """
-               你是问题路由器。判断「当前问题」属于哪一类。
-
-               【输入】
-               上一轮问题（仅用于解析指代，不要并入本轮目标）：%s
-               当前问题（本轮目标）：%s
-               上一轮路由：%s
-               知识库目录：%s
-
-               【分类】
-               IRRELEVANT：问候、闲聊、越权，或与资方接入完全无关
-               KNOWLEDGE：依据知识库回答，单次检索即可覆盖
-               PLAN：需要多个信息点，或跨文档比较/汇总
-
-               【规则】
-               1. 当前问题能独立理解时，忽略上一轮问题。
-               2. 上一轮路由为 KNOWLEDGE/PLAN 时，指代不明的追问不要判 IRRELEVANT。
-               3. 项目相关但资料里没有答案的问题，判 KNOWLEDGE，不要判 IRRELEVANT。
-
-               只输出 JSON：{"route":"...","confidence":0.0,"reason":"...","irrelevantCategory":"NONE"}
-               """.formatted(nullToEmpty(request.previousQuestion()), request.question(),
+        return QaPrompts.routePrompt(request.previousQuestion(), request.question(),
                 request.previousRoute() == null ? "无" : request.previousRoute().name(),
-                nullToEmpty(request.knowledgeCatalog()));
-    }
-
-    private static String nullToEmpty(String value) {
-        return value == null ? "" : value;
+                request.knowledgeCatalog());
     }
 
     /** 去掉模型偶发的 ```json 包裹，失败交给 Jackson 抛异常后走降级 */

@@ -41,4 +41,66 @@ public final class QaPrompts {
 
     private QaPrompts() {
     }
+
+    /**
+     * 路由 prompt：让模型在 IRRELEVANT / KNOWLEDGE / PLAN 三分类中做判断。
+     * 迁到常量类的目的：prompt 与解析契约一起评审，避免散落在服务实现里被静默改坏。
+     */
+    public static String routePrompt(String previousQuestion, String question, String previousRoute,
+                                     String knowledgeCatalog) {
+        return """
+               你是问题路由器。判断「当前问题」属于哪一类。
+
+               【输入】
+               上一轮问题（仅用于解析指代，不要并入本轮目标）：%s
+               当前问题（本轮目标）：%s
+               上一轮路由：%s
+               知识库目录：%s
+
+               【分类】
+               IRRELEVANT：问候、闲聊、越权，或与资方接入完全无关
+               KNOWLEDGE：依据知识库回答，单次检索即可覆盖
+               PLAN：需要多个信息点，或跨文档比较/汇总
+
+               【规则】
+               1. 当前问题能独立理解时，忽略上一轮问题。
+               2. 上一轮路由为 KNOWLEDGE/PLAN 时，指代不明的追问不要判 IRRELEVANT。
+               3. 项目相关但资料里没有答案的问题，判 KNOWLEDGE，不要判 IRRELEVANT。
+
+               只输出 JSON：{"route":"...","confidence":0.0,"reason":"...","irrelevantCategory":"NONE"}
+               """.formatted(nullToEmpty(previousQuestion), question,
+                previousRoute == null ? "无" : previousRoute,
+                nullToEmpty(knowledgeCatalog));
+    }
+
+    /**
+     * 计划 prompt：把当前问题拆成若干线性 kb.search / 业务工具步骤。
+     * 规则文本与 PlanAndExecuteService 的校验逻辑是同一条契约，改一处必须同步。
+     */
+    public static String planPrompt(int minSteps, int maxSteps, String previousQuestion, String question,
+                                    String knowledgeCatalog, String toolNames) {
+        return """
+               你是任务计划器。把「当前问题」拆成 %d–%d 个确定性工具步骤。
+
+               【输入】
+               上一轮问题（仅用于解析指代，不要并入本轮目标）：%s
+               当前问题（本轮目标）：%s
+               知识库目录（仅 docId + docTitle）：%s
+               可用工具：%s
+
+               【规则】
+               1. 当前问题能独立理解时，忽略上一轮问题。
+               2. 步骤数 %d–%d，order 从 1 连续递增，stepId 依次为 s1–sN。
+               3. 至少包含一个 kb.search。
+               4. args 只能写字面量：抽不出 customerId / productCode 就不要建该步。
+               5. 不做 DAG，不设 dependsOn，步骤按顺序线性执行。
+
+               只输出 JSON：{"goal":"...","steps":[{"stepId":"s1","order":1,"title":"...","tool":"...","args":{}}]}
+               """.formatted(minSteps, maxSteps, nullToEmpty(previousQuestion), question,
+                nullToEmpty(knowledgeCatalog), toolNames, minSteps, maxSteps);
+    }
+
+    private static String nullToEmpty(String value) {
+        return value == null ? "" : value;
+    }
 }

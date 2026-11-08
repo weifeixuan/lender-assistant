@@ -19,6 +19,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.lang.reflect.Method;
 import java.sql.PreparedStatement;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -74,8 +75,22 @@ class ConversationMapperXmlContractTest {
                 "缺少 insert 语句");
         assertTrue(configuration.hasStatement(namespace + ".listByConversation"),
                 "缺少 listByConversation 语句");
+        assertTrue(configuration.hasStatement(namespace + ".listRecentByConversation"),
+                "缺少 listRecentByConversation 语句");
         assertTrue(configuration.hasStatement(namespace + ".updateRouteAndPlan"),
                 "缺少 updateRouteAndPlan 语句");
+    }
+
+    @Test
+    @DisplayName("最近消息窗口：先按 id 倒序截取 limit 条，再升序返回")
+    void recentMessageWindowIsBounded() {
+        Configuration configuration = parse(MESSAGE_MAPPER);
+        String sql = configuration.getMappedStatement(
+                        "com.lender.assistant.conversation.mapper.MessageMapper.listRecentByConversation")
+                .getBoundSql(Map.of("conversationId", "conv-1", "limit", 14)).getSql();
+        assertTrue(sql.contains("ORDER BY id DESC"), "必须先倒序截取窗口，避免整段会话进内存");
+        assertTrue(sql.contains("LIMIT"), "窗口必须有上限");
+        assertTrue(sql.contains("ORDER BY id ASC"), "再升序返回，保证回放时序");
     }
 
     @Test

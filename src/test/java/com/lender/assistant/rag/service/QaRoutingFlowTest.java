@@ -24,9 +24,12 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -39,6 +42,7 @@ class QaRoutingFlowTest {
     private static final String USER_ID = "dev-user-001";
 
     private QaServiceImpl qaService;
+    private FixedGenerator generator;
     private ConversationService conversationService;
     private ConversationHistoryAssembler historyAssembler;
     private QuestionRoutingService routing;
@@ -46,6 +50,18 @@ class QaRoutingFlowTest {
     private final RecordingEmitter emitter = new RecordingEmitter();
 
     static class FixedGenerator implements AnswerGeneratorStrategy {
+        private boolean mock;
+
+        FixedGenerator mockMode() {
+            this.mock = true;
+            return this;
+        }
+
+        @Override
+        public boolean isMock() {
+            return mock;
+        }
+
         @Override
         public void generate(AnswerGenerationRequestDTO request) {
             request.onDelta().accept("答案");
@@ -64,20 +80,34 @@ class QaRoutingFlowTest {
                 .thenReturn(List.of(new SearchItemResponse(1L, "doc", "标题", "节", "内容", null, null, false, null)));
         conversationService = mock(ConversationService.class);
         historyAssembler = mock(ConversationHistoryAssembler.class);
-        when(historyAssembler.assemble(anyString(), anyString())).thenReturn(List.of());
+        when(historyAssembler.assemble(anyList(), anyString())).thenReturn(List.of());
         when(historyAssembler.listRows(anyString())).thenReturn(List.of());
         routing = mock(QuestionRoutingService.class);
-        qaService = new QaServiceImpl(searchService, new FixedGenerator(),
+        generator = new FixedGenerator();
+        qaService = new QaServiceImpl(searchService, generator,
                 new com.lender.assistant.resilience.ResilientLlmExecutor(
                         new com.lender.assistant.resilience.LlmCallLogger(
                                 mock(com.lender.assistant.resilience.mapper.LlmCallLogMapper.class)),
                         3, 10, 2, false),
                 conversationService, new ConversationLockRegistry(), historyAssembler);
-        ReflectionTestUtils.setField(qaService, "chatProvider", "openai");
         ReflectionTestUtils.setField(qaService, "routingService", routing);
+        ReflectionTestUtils.setField(qaService, "objectMapper",
+                new com.fasterxml.jackson.databind.ObjectMapper());
         ReflectionTestUtils.setField(qaService, "previousRouteResolver",
                 new com.lender.assistant.rag.service.PreviousRouteResolver(new com.fasterxml.jackson.databind.ObjectMapper()));
         round = new ConversationRoundDTO("conv-1", "round-1", "msg-user", "msg-assistant");
+    }
+
+    @Test
+    @DisplayName("一轮只查一次历史窗口：历史装配与上一轮路由解析复用同一批行")
+    void historyWindowQueriedOncePerRound() {
+        when(routing.route(any())).thenReturn(new RoutingDecisionDTO(
+                QuestionRoute.KNOWLEDGE, 0.9, "资料问答", "NONE"));
+
+        qaService.streamAnswer(emitter, "单笔代收限额", 4, USER_ID, round, System.currentTimeMillis());
+
+        verify(historyAssembler, times(1)).listRows("conv-1");
+        verify(historyAssembler, times(1)).assemble(anyList(), eq("round-1"));
     }
 
     @Test
@@ -124,9 +154,9 @@ class QaRoutingFlowTest {
     }
 
     @Test
-    @DisplayName("mock provider 跳过路由：不发 route/plan/step")
+    @DisplayName("mock 生成策略跳过路由：不发 route/plan/step（按 Bean 能力判定，不看配置字符串）")
     void mockProviderSkipsRouting() {
-        ReflectionTestUtils.setField(qaService, "chatProvider", "mock");
+        generator.mockMode();
 
         qaService.streamAnswer(emitter, "单笔代收限额", 4, USER_ID, round, System.currentTimeMillis());
 

@@ -25,4 +25,13 @@ public final class PlanSourceAggregator {
         }
         return List.copyOf(unique.values());
     }
+
+    /** 并集顺序 → 全局引用编号（从 1 起），与 SSE sources 事件的 idx 同一口径 */
+    public static Map<Long, Integer> globalIndexes(List<SearchItemResponse> union) {
+        Map<Long, Integer> indexes = new LinkedHashMap<>();
+        for (int i = 0; i < union.size(); i++) {
+            indexes.put(union.get(i).chunkId(), i + 1);
+        }
+        return indexes;
+    }
 }

@@ -2,6 +2,7 @@ package com.lender.assistant.rag.service;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.lender.assistant.common.constant.QaPrompts;
 import com.lender.assistant.common.util.ThreadPoolFactory;
 import com.lender.assistant.rag.client.PlannerModelClient;
 import com.lender.assistant.rag.model.dto.ExecutionPlanDTO;
@@ -16,6 +17,8 @@ import com.lender.assistant.rag.tool.ToolContext;
 import com.lender.assistant.rag.tool.ToolErrorCode;
 import com.lender.assistant.rag.tool.ToolResult;
 import jakarta.annotation.PreDestroy;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
@@ -40,6 +43,8 @@ import java.util.concurrent.TimeoutException;
  */
 @Service
 public class PlanAndExecuteService {
+
+    private static final Logger log = LoggerFactory.getLogger(PlanAndExecuteService.class);
 
     private static final String KB_SEARCH = "kb.search";
     private static final String MARKDOWN_FENCE = "```";
@@ -84,6 +89,7 @@ public class PlanAndExecuteService {
                     ModelPayload.class);
             return validate(payload);
         } catch (Exception ex) {
+            log.warn("计划生成或解析失败，返回无效计划以触发 KNOWLEDGE 降级", ex);
             return ExecutionPlanDTO.invalid();
         }
     }
@@ -96,6 +102,7 @@ public class PlanAndExecuteService {
                 return client.complete(prompt);
             } catch (RuntimeException ex) {
                 lastFailure = ex;
+                log.warn("计划模型调用失败（第 {}/{} 次）", attempt + 1, MAX_ATTEMPTS, ex);
             }
         }
         throw lastFailure == null ? new IllegalStateException("计划模型未返回内容") : lastFailure;
@@ -264,31 +271,9 @@ public class PlanAndExecuteService {
     }
 
     private String buildPrompt(String question, String previousQuestion, String knowledgeCatalog) {
-        return """
-               你是任务计划器。把「当前问题」拆成 %d–%d 个确定性工具步骤。
-
-               【输入】
-               上一轮问题（仅用于解析指代，不要并入本轮目标）：%s
-               当前问题（本轮目标）：%s
-               知识库目录（仅 docId + docTitle）：%s
-               可用工具：%s
-
-               【规则】
-               1. 当前问题能独立理解时，忽略上一轮问题。
-               2. 步骤数 %d–%d，order 从 1 连续递增，stepId 依次为 s1–sN。
-               3. 至少包含一个 kb.search。
-               4. args 只能写字面量：抽不出 customerId / productCode 就不要建该步。
-               5. 不做 DAG，不设 dependsOn，步骤按顺序线性执行。
-
-               只输出 JSON：{"goal":"...","steps":[{"stepId":"s1","order":1,"title":"...","tool":"...","args":{}}]}
-               """.formatted(settings.minSteps(), settings.maxSteps(), nullToEmpty(previousQuestion),
-                question, nullToEmpty(knowledgeCatalog),
-                String.join(", ", registry.names().stream().sorted().toList()),
-                settings.minSteps(), settings.maxSteps());
-    }
-
-    private static String nullToEmpty(String value) {
-        return value == null ? "" : value;
+        return QaPrompts.planPrompt(settings.minSteps(), settings.maxSteps(), previousQuestion,
+                question, knowledgeCatalog,
+                String.join(", ", registry.names().stream().sorted().toList()));
     }
 
     /** 去掉模型偶发的 ```json 包裹，失败交给 Jackson 抛异常后走降级 */

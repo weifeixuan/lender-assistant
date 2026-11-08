@@ -62,6 +62,7 @@ class KbSearchPlanToolTest {
         assertTrue(result.ok());
         assertEquals(List.of(1L, 2L), result.chunkIds());
         assertTrue(result.content().contains("支持美元与人民币"));
+        assertFalse(result.content().contains("【来源"), "步骤内不编号：编号由编排层按并集统一分配");
     }
 
     @Test

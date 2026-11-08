@@ -86,7 +86,8 @@ class PlanExecutionTest {
     @Test
     @DisplayName("工具超时记 FAILED / TOOL_TIMEOUT，后续步骤继续")
     void toolTimeoutFails() {
-        PlanExecutionResultDTO result = service(new SlowTool("kb.search", 300), profileTool())
+        PlanExecutionResultDTO result = service(SHORT_TIMEOUT_MILLIS,
+                new SlowTool("kb.search", 300), profileTool())
                 .execute(twoStepPlan(), TOP_K, budget(), event -> {
                 });
 
@@ -139,9 +140,14 @@ class PlanExecutionTest {
     }
 
     private static PlanAndExecuteService service(AgentTool... tools) {
+        // 默认给足超时：全量套件并行负载下 50ms 可能因调度延迟误判 TOOL_TIMEOUT
+        return service(500L, tools);
+    }
+
+    private static PlanAndExecuteService service(long toolTimeoutMillis, AgentTool... tools) {
         PlanToolRegistry registry = new PlanToolRegistry(List.of(tools));
         return new PlanAndExecuteService(prompt -> "{}", new ObjectMapper(), registry,
-                new PlanSettings(2, 5, SHORT_TIMEOUT_MILLIS));
+                new PlanSettings(2, 5, toolTimeoutMillis));
     }
 
     private static AgentTool kbTool(List<Long> chunkIds) {

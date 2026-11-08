@@ -63,15 +63,17 @@ public class KbSearchPlanTool implements AgentTool {
         return ids;
     }
 
+    /**
+     * 步骤产物只保留原文，不标来源编号：编号由编排层按跨步并集统一分配。
+     * 若每步各自从【来源1】开始，合成时模型引用的编号会和前端 sources 事件对不上。
+     */
     private static String summarize(List<SearchItemResponse> hits) {
         if (hits.isEmpty()) {
             return NOT_FOUND;
         }
         StringBuilder text = new StringBuilder();
-        for (int i = 0; i < hits.size(); i++) {
-            SearchItemResponse hit = hits.get(i);
-            text.append("【来源").append(i + 1).append("】")
-                    .append(hit.docTitle()).append(" / ")
+        for (SearchItemResponse hit : hits) {
+            text.append(hit.docTitle()).append(" / ")
                     .append(hit.sectionPath() == null ? "" : hit.sectionPath())
                     .append('\n').append(hit.content()).append('\n');
         }

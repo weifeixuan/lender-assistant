@@ -5,6 +5,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lender.assistant.common.constant.MessageConstants;
 import com.lender.assistant.conversation.model.entity.MessageEntity;
 import com.lender.assistant.rag.model.dto.QuestionRoute;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
@@ -18,6 +20,8 @@ import java.util.List;
  */
 @Component
 public class PreviousRouteResolver {
+
+    private static final Logger log = LoggerFactory.getLogger(PreviousRouteResolver.class);
 
     private final ObjectMapper objectMapper;
 
@@ -45,6 +49,7 @@ public class PreviousRouteResolver {
             JsonNode node = objectMapper.readTree(routeJson).get("route");
             return node == null ? null : QuestionRoute.from(node.asText());
         } catch (Exception ex) {
+            log.warn("上一轮 route JSON 解析失败，按无 previousRoute 处理: routeJson={}", routeJson, ex);
             return null;
         }
     }

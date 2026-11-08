@@ -49,10 +49,29 @@
         ORDER BY id ASC
     </select>
 
+    <select id="listRecentByConversation" resultMap="messageRowMap">
+        SELECT message_id, conversation_id, round_id, role, content, status,
+               sources::text AS sources_json,
+               provider, elapsed_ms, error_msg,
+               TO_CHAR(create_time, 'YYYY-MM-DD HH24:MI:SS') AS create_time,
+               route::text AS route_json,
+               execution_plan::text AS execution_plan_json
+        FROM (
+            SELECT id, message_id, conversation_id, round_id, role, content, status,
+                   sources, provider, elapsed_ms, error_msg, create_time, route, execution_plan
+            FROM message
+            WHERE conversation_id = #{conversationId}
+            ORDER BY id DESC
+            LIMIT #{limit}
+        ) recent
+        ORDER BY id ASC
+    </select>
+
     <update id="updateRouteAndPlan">
         UPDATE message
         SET route = CAST(#{routeJson,jdbcType=VARCHAR} AS jsonb),
-            execution_plan = CAST(#{executionPlanJson,jdbcType=VARCHAR} AS jsonb)
+            execution_plan = CAST(#{executionPlanJson,jdbcType=VARCHAR} AS jsonb),
+            update_time = CURRENT_TIMESTAMP
         WHERE conversation_id = #{conversationId}
           AND round_id = #{roundId}
           AND role = 'ASSISTANT'

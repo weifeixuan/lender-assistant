@@ -23,8 +23,8 @@ public class PlanSettings {
     private final long toolTimeoutMillis;
 
     @Autowired
-    public PlanSettings(@Value("${rag.plan.min-steps:2}") int minSteps,
-                        @Value("${rag.plan.max-steps:5}") int maxSteps) {
+    public PlanSettings(@Value("${rag.plan.min-steps}") int minSteps,
+                        @Value("${rag.plan.max-steps}") int maxSteps) {
         this(minSteps, maxSteps, TOOL_TIMEOUT_MILLIS);
     }
 

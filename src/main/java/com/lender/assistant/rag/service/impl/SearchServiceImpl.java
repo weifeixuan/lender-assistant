@@ -62,7 +62,7 @@ public class SearchServiceImpl implements SearchService {
     private final double maxDistance;
 
     public SearchServiceImpl(EmbeddingStrategy embeddingStrategy, DocChunkMapper docChunkMapper,
-                             @Value("${rag.search.max-distance:-1}") double maxDistance) {
+                             @Value("${rag.search.max-distance}") double maxDistance) {
         this.embeddingStrategy = embeddingStrategy;
         this.docChunkMapper = docChunkMapper;
         this.maxDistance = maxDistance;
@@ -344,7 +344,8 @@ public class SearchServiceImpl implements SearchService {
 
     /** 只取前 topK 条；结果少于 topK 时原样返回 */
     private List<SearchItemResponse> truncate(List<SearchItemResponse> ranked, int topK) {
-        return ranked.subList(0, Math.min(topK, ranked.size()));
+        // copyOf 而非 subList：subList 只是原列表的视图，持有它会让整个 ranked 无法回收
+        return List.copyOf(ranked.subList(0, Math.min(topK, ranked.size())));
     }
 
     /** 单通道命中：rank 为通道内 1-based 名次（RRF 用），chunkIndex 供相邻切片合并判断 */

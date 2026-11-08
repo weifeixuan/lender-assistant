@@ -46,7 +46,6 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.util.List;
 import java.util.UUID;
-import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.ThreadPoolExecutor;
@@ -104,22 +103,14 @@ public class QaServiceImpl implements QaService {
 
     /** 合成超时计时器：只做一次定时取消，单线程守护线程，不参与业务执行 */
     private final ScheduledExecutorService timeoutScheduler =
-            Executors.newSingleThreadScheduledExecutor(runnable -> {
-                Thread thread = new Thread(runnable, "qa-synthesis-timer");
-                thread.setDaemon(true);
-                return thread;
-            });
+            ThreadPoolFactory.createScheduled("qa-synthesis-timer");
 
-    /** 当前生成 provider；mock 模式跳过路由与计划，事件序列保持现状（票 03） */
-    @Value("${rag.chat.provider:mock}")
-    private String chatProvider;
-
-    /** 无关问题的固定提示；非模型生成，done.provider=rule */
-    @Value("${rag.routing.irrelevant-reply:我只回答资方接入相关的资料问题，可以换个问法再试试。}")
+    /** 无关问题的固定提示；非模型生成，done.provider=rule。默认值只在 application.yml 维护，代码侧不再兜底 */
+    @Value("${rag.routing.irrelevant-reply}")
     private String irrelevantReply;
 
     /** 整轮预算：从路由开始计时到合成结束，唯一超时配置（票 10） */
-    @Value("${rag.plan.total-budget-ms:90000}")
+    @Value("${rag.plan.total-budget-ms}")
     private long totalBudgetMillis;
 
     @Autowired(required = false)
@@ -133,7 +124,7 @@ public class QaServiceImpl implements QaService {
 
     /** 仅用于落库 route / execution_plan 两个 JSONB 字段 */
     @Autowired(required = false)
-    private ObjectMapper objectMapper = new ObjectMapper();
+    private ObjectMapper objectMapper;
 
     @Autowired
     public QaServiceImpl(SearchService searchService, AnswerGeneratorStrategy generator,
@@ -247,8 +238,10 @@ public class QaServiceImpl implements QaService {
                 return;
             }
 
-            // 历史只在追问时非空；检索 query 带最近一条历史用户提问，让"那二套呢"这类指代能召回正确资料
-            List<ChatTurnDTO> history = historyAssembler.assemble(round.conversationId(), round.roundId());
+            // 历史只在追问时非空；检索 query 带最近一条历史用户提问，让"那二套呢"这类指代能召回正确资料。
+            // 本轮只查一次库：同一份窗口行既用于历史装配，也用于上一轮路由解析（routeRound）。
+            List<MessageEntity> rows = historyAssembler.listRows(round.conversationId());
+            List<ChatTurnDTO> history = historyAssembler.assemble(rows, round.roundId());
             // 追问时把「当前问题」与「上一轮问题」分段传给检索：关键词 token 配额按段分配，
             // 避免上一轮长问题按顺序把当前追问的关键词挤出配额（票 08）
             String lastUser = ConversationHistoryAssembler.lastUserContent(history);
@@ -257,7 +250,7 @@ public class QaServiceImpl implements QaService {
                     new PlanBudget(totalBudgetMillis, System::currentTimeMillis));
             PlanRoundOutcome planOutcome = null;
             if (!isMockMode()) {
-                RoutingDecisionDTO decision = routeRound(emitter, request);
+                RoutingDecisionDTO decision = routeRound(emitter, request, rows);
                 if (decision == null) {
                     return;
                 }
@@ -279,14 +272,15 @@ public class QaServiceImpl implements QaService {
                 return;
             }
 
-            if (planOutcome == null && hits.isEmpty()) {
-                events.noRecall(emitter, generator.name(), stream);
+            // 零召回一律短路：PLAN 轮即便有业务工具产物也不再调合成模型——
+            // 没有资料可引用时，让模型"根据工具产物自由发挥"正是幻觉的高发区。
+            if (hits.isEmpty()) {
+                events.noRecall(emitter, stream);
                 return;
             }
-            if (planOutcome != null && !synthesizePlan(emitter, request, planOutcome, hits)) {
-                return;
-            }
-            if (planOutcome == null) {
+            if (planOutcome != null) {
+                synthesizePlan(emitter, request, planOutcome, hits);
+            } else {
                 streamModelAnswer(emitter, question, history, hits, stream);
             }
 
@@ -309,13 +303,12 @@ public class QaServiceImpl implements QaService {
      *
      * @return 路由结果；null 表示客户端已断开
      */
-    private RoutingDecisionDTO routeRound(SseEmitter emitter, RoundRequest request) {
+    private RoutingDecisionDTO routeRound(SseEmitter emitter, RoundRequest request, List<MessageEntity> rows) {
         if (routingService == null) {
             return new RoutingDecisionDTO(QuestionRoute.KNOWLEDGE, 0.0, "无路由服务", "NONE");
         }
         RoutingDecisionDTO decision;
         try {
-            List<MessageEntity> rows = historyAssembler.listRows(request.round().conversationId());
             QuestionRoute previous = previousRouteResolver == null
                     ? null : previousRouteResolver.resolve(rows);
             decision = routingService.route(
@@ -358,23 +351,15 @@ public class QaServiceImpl implements QaService {
                 result.remainingBudgetMillis());
     }
 
-    /**
-     * PLAN 轮唯一一次生成：用「目标 + 步骤产物」合成，不重放完整历史。
-     *
-     * @return false 表示已推送无召回提示（无需再做合成）
-     */
-    private boolean synthesizePlan(SseEmitter emitter, RoundRequest request,
-                                   PlanRoundOutcome outcome, List<SearchItemResponse> hits) {
+    /** PLAN 轮唯一一次生成：用「目标 + 步骤产物」合成，不重放完整历史；零召回已在编排层短路 */
+    private void synthesizePlan(SseEmitter emitter, RoundRequest request,
+                                PlanRoundOutcome outcome, List<SearchItemResponse> hits) {
         if (outcome.remainingBudgetMillis() <= 0) {
             throw new BizException(ErrorCode.INTERNAL_ERROR, "本轮处理超时，请重试");
         }
         SynthesisPromptBuilder.Context context = SynthesisPromptBuilder.build(
-                request.question(), outcome.plan().goal(), outcome.result().steps());
+                request.question(), outcome.plan().goal(), outcome.result().steps(), hits);
         request.stream().contextTruncated(context.truncated());
-        if (hits.isEmpty() && !context.businessOutput()) {
-            events.noRecall(emitter, generator.name(), request.stream());
-            return false;
-        }
         AtomicBoolean timedOut = new AtomicBoolean(false);
         long limit = Math.max(1, Math.min(SYNTHESIS_MAX_MILLIS, outcome.remainingBudgetMillis()));
         ScheduledFuture<?> timeoutTask = timeoutScheduler.schedule(() -> {
@@ -389,7 +374,6 @@ public class QaServiceImpl implements QaService {
         if (timedOut.get()) {
             throw new BizException(ErrorCode.INTERNAL_ERROR, "本轮处理超时，请重试");
         }
-        return true;
     }
 
     /** 合成复用现有生成器，但只传合成上下文、空历史，scene 走 SYNTHESIS */
@@ -415,9 +399,9 @@ public class QaServiceImpl implements QaService {
                                 ConversationRoundDTO round, RoundStateServiceImpl stream, PlanBudget budget) {
     }
 
-    /** mock 只保证对话能走通：跳过路由/计划，事件序列与现状一致 */
+    /** mock 只保证对话能走通：跳过路由/计划，事件序列与现状一致；判定依据实际 Bean 能力而非配置字符串 */
     private boolean isMockMode() {
-        return chatProvider == null || "mock".equalsIgnoreCase(chatProvider);
+        return generator.isMock();
     }
 
     /**

@@ -49,15 +49,22 @@ public class ConversationHistoryAssembler {
         this.maxChars = maxChars;
     }
 
-    /** 会话内按 id 升序的原始消息行；供路由读取上一轮 route 用，不做回放过滤 */
+    /** 会话内最近的原始消息行（id 升序）；路由解析与历史装配共用同一个窗口 */
     public List<MessageEntity> listRows(String conversationId) {
-        return messageMapper.listByConversation(conversationId);
+        // 窗口 = 最近 N 轮 × 2 条 + 当前轮 2 条，够装配用且不会把整段会话读进内存
+        return messageMapper.listRecentByConversation(conversationId, maxRounds * 2 + 2);
     }
 
     /** @param currentRoundId 本轮 id，装配时排除，避免把刚提问的用户消息当成历史 */
     public List<ChatTurnDTO> assemble(String conversationId, String currentRoundId) {
-        List<MessageEntity> rows = messageMapper.listByConversation(conversationId);
+        return assemble(listRows(conversationId), currentRoundId);
+    }
 
+    /**
+     * 用已读取的消息行装配历史：同一请求内 route 解析与历史回放共用一次查询结果，
+     * 避免对同一会话重复查库。
+     */
+    public List<ChatTurnDTO> assemble(List<MessageEntity> rows, String currentRoundId) {
         Map<String, RoundMessages> rounds = new LinkedHashMap<>();
         for (MessageEntity row : rows) {
             if (row.roundId().equals(currentRoundId)) {

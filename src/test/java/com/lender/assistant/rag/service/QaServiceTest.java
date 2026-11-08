@@ -29,6 +29,7 @@ import java.util.function.Consumer;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.argThat;
@@ -102,7 +103,7 @@ class QaServiceTest {
         qaService = new QaServiceImpl(searchService, generator, resilientExecutor, conversationService,
                 lockRegistry, historyAssembler);
         round = new ConversationRoundDTO("conv-1", "round-1", "msg-user", "msg-assistant");
-        when(historyAssembler.assemble(anyString(), anyString())).thenReturn(List.of());
+        when(historyAssembler.assemble(anyList(), anyString())).thenReturn(List.of());
     }
 
     private SearchItemResponse hit(long chunkId, String title, String section, String content) {
@@ -158,7 +159,7 @@ class QaServiceTest {
     @Test
     @DisplayName("回归：历史为工具数据、本轮无相关资料时，上下文带来源标注且系统提示禁止否定历史")
     void toolBackedHistoryIsNotDiscredited() {
-        when(historyAssembler.assemble("conv-1", "round-1")).thenReturn(List.of(
+        when(historyAssembler.assemble(anyList(), eq("round-1"))).thenReturn(List.of(
                 new ChatTurnDTO("USER", "华信币种和 C10001 额度"),
                 new ChatTurnDTO("ASSISTANT", "客户 C10001：可用 180 万元"
                         + "\n[上一轮回答包含业务工具数据：customer.profile，非知识库文档]")));
@@ -314,7 +315,7 @@ class QaServiceTest {
                 System.currentTimeMillis());
 
         verify(searchService, never()).hybridSearch(any(), any(), anyInt());
-        verify(historyAssembler, never()).assemble(anyString(), anyString());
+        verify(historyAssembler, never()).assemble(anyList(), anyString());
         verify(conversationService).completeRound(argThat(completion ->
                 completion.status().equals("STOPPED")
                         && completion.content().isEmpty()));
@@ -566,7 +567,7 @@ class QaServiceTest {
     @Test
     @DisplayName("追问：历史按序传给生成器，检索 query 拼接最近一条历史用户提问")
     void passesHistoryAndPrependsLastUserQuestionToRetrieval() {
-        when(historyAssembler.assemble("conv-1", "round-1")).thenReturn(List.of(
+        when(historyAssembler.assemble(anyList(), eq("round-1"))).thenReturn(List.of(
                 new ChatTurnDTO("USER", "首轮问题"), new ChatTurnDTO("ASSISTANT", "首轮回答")));
         when(searchService.hybridSearch("追问", "首轮问题", 4))
                 .thenReturn(List.of(hit(1, "某文档", "某节", "内容")));

@@ -11,6 +11,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -32,9 +33,14 @@ final class QaEventEmitter {
         try {
             emitter.send(SseEmitter.event().name(event).data(data));
             return true;
-        } catch (Exception e) {
-            // 发送失败基本等价于客户端断开：不吞异常语义，只降级为 DEBUG 留痕
-            log.debug("SSE 事件发送失败，客户端可能已断开: event={}", event);
+        } catch (IOException e) {
+            // 客户端主动断开 / 管道关闭：正常的请求终止，DEBUG 留痕即可，不刷 WARN
+            log.debug("SSE 事件发送失败，客户端已断开: event={}, reason={}", event, e.getMessage());
+            state.disconnected();
+            return false;
+        } catch (RuntimeException e) {
+            // 序列化失败或 emitter 已 completed：属于代码/状态异常，必须 WARN 带堆栈，不能静默丢事件
+            log.warn("SSE 事件发送失败（非客户端断开）: event={}", event, e);
             state.disconnected();
             return false;
         }
@@ -68,18 +74,22 @@ final class QaEventEmitter {
         emitter.complete();
     }
 
-    /** 无召回分支：推送引导文案与 done 后正常结束 */
-    void noRecall(SseEmitter emitter, String provider, RoundStateServiceImpl state) {
+    /**
+     * 无召回分支：引导文案不是模型产出，provider 恒为 rule。
+     * 终态先落库再发 done——done 只是把已完成的事实告知前端，落库失败不应被当成"已完成"。
+     */
+    void noRecall(SseEmitter emitter, RoundStateServiceImpl state) {
         String guidance = "资料库中没有检索到相关内容，请先在上方上传并入库文档。";
         state.append(guidance);
         if (!send(emitter, "delta", guidance, state)) {
             return;
         }
+        state.provider(MessageConstants.RULE_PROVIDER);
+        state.done();
         if (!send(emitter, "done",
-                new QaDoneResponse(provider, state.elapsedMillis(), 0), state)) {
+                new QaDoneResponse(MessageConstants.RULE_PROVIDER, state.elapsedMillis(), 0), state)) {
             return;
         }
-        state.done();
         emitter.complete();
     }
 
@@ -93,7 +103,8 @@ final class QaEventEmitter {
                 + "上方召回来源仍可查看。模型恢复前请使用检索测试区块。", state);
         state.failed("模型服务熔断中");
         if (sent) {
-            emitter.completeWithError(e);
+            // 已按协议发出 error 事件：正常结束 SSE（响应已提交，completeWithError 只会再抛一次异步错误）
+            emitter.complete();
         }
     }
 
@@ -108,7 +119,9 @@ final class QaEventEmitter {
         boolean sent = send(emitter, "error", reason, state);
         state.failed(reason);
         if (sent) {
-            emitter.completeWithError(e);
+            // error 事件已经让前端拿到失败语义：此处正常 complete，不再 completeWithError
+            // （响应已提交，completeWithError 会触发容器级错误回调，日志里多一条无意义的异常）
+            emitter.complete();
         }
     }
 

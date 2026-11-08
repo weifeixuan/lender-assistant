@@ -12,7 +12,10 @@ import java.util.ArrayList;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class ConversationHistoryAssemblerTest {
@@ -32,13 +35,14 @@ class ConversationHistoryAssemblerTest {
     @Test
     @DisplayName("排除当前轮，完整轮次按 USER→ASSISTANT 顺序回放")
     void keepsCompleteRoundsInOrder() {
-        when(messageMapper.listByConversation(CONVERSATION_ID)).thenReturn(List.of(
+        when(messageMapper.listRecentByConversation(eq(CONVERSATION_ID), anyInt())).thenReturn(List.of(
                 row("r1", "USER", "问题一", "DONE"),
                 row("r1", "ASSISTANT", "回答一", "DONE"),
                 row(CURRENT_ROUND, "USER", "当前问题", "DONE"),
                 row(CURRENT_ROUND, "ASSISTANT", "当前回答", "DONE")));
 
         List<ChatTurnDTO> history = assembler.assemble(CONVERSATION_ID, CURRENT_ROUND);
+        verify(messageMapper).listRecentByConversation(CONVERSATION_ID, 14);
 
         assertEquals(List.of(new ChatTurnDTO("USER", "问题一"), new ChatTurnDTO("ASSISTANT", "回答一")),
                 history);
@@ -47,7 +51,7 @@ class ConversationHistoryAssemblerTest {
     @Test
     @DisplayName("缺助手消息或状态非 DONE 的轮次整轮丢弃")
     void dropsIncompleteOrFailedRounds() {
-        when(messageMapper.listByConversation(CONVERSATION_ID)).thenReturn(List.of(
+        when(messageMapper.listRecentByConversation(eq(CONVERSATION_ID), anyInt())).thenReturn(List.of(
                 row("r1", "USER", "问题一", "DONE"),
                 row("r1", "ASSISTANT", "半截回答", "STOPPED"),
                 row("r2", "USER", "问题二", "DONE")));
@@ -65,7 +69,7 @@ class ConversationHistoryAssemblerTest {
             rows.add(row("r" + i, "USER", "问题" + i, "DONE"));
             rows.add(row("r" + i, "ASSISTANT", "回答" + i, "DONE"));
         }
-        when(messageMapper.listByConversation(CONVERSATION_ID)).thenReturn(rows);
+        when(messageMapper.listRecentByConversation(eq(CONVERSATION_ID), anyInt())).thenReturn(rows);
 
         List<ChatTurnDTO> history = assembler.assemble(CONVERSATION_ID, CURRENT_ROUND);
 
@@ -77,7 +81,7 @@ class ConversationHistoryAssemblerTest {
     @Test
     @DisplayName("总字符超限时从最旧一轮整轮丢弃")
     void trimsOldestRoundWhenOverCharLimit() {
-        when(messageMapper.listByConversation(CONVERSATION_ID)).thenReturn(List.of(
+        when(messageMapper.listRecentByConversation(eq(CONVERSATION_ID), anyInt())).thenReturn(List.of(
                 row("r1", "USER", "a".repeat(50), "DONE"),
                 row("r1", "ASSISTANT", "b".repeat(50), "DONE"),
                 row("r2", "USER", "c".repeat(50), "DONE"),
@@ -108,7 +112,7 @@ class ConversationHistoryAssemblerTest {
     @Test
     @DisplayName("provider=rule 的固定提示轮整轮跳过回放")
     void skipsRuleReplies() {
-        when(messageMapper.listByConversation(CONVERSATION_ID)).thenReturn(List.of(
+        when(messageMapper.listRecentByConversation(eq(CONVERSATION_ID), anyInt())).thenReturn(List.of(
                 new MessageEntity("msg-1", CONVERSATION_ID, "r1", "USER", "你好", "DONE",
                         null, null, 0, null, "2026-11-01 10:00:00", null, null),
                 new MessageEntity("msg-2", CONVERSATION_ID, "r1", "ASSISTANT", "固定提示", "DONE",
@@ -129,7 +133,7 @@ class ConversationHistoryAssemblerTest {
     @DisplayName("PLAN 轮历史含业务工具产物时，助手正文追加来源标注且不改 USER 轮")
     void annotatesToolBackedAssistantTurn() {
         String content = "客户 C10001：授信 500 万元；已用 320 万元；可用 180 万元";
-        when(messageMapper.listByConversation(CONVERSATION_ID)).thenReturn(List.of(
+        when(messageMapper.listRecentByConversation(eq(CONVERSATION_ID), anyInt())).thenReturn(List.of(
                 row("r1", "USER", "华信币种和 C10001 额度", "DONE"),
                 assistantRow("r1", content, "{\"route\":\"PLAN\"}", """
                         {"degraded":false,"steps":[
@@ -147,7 +151,7 @@ class ConversationHistoryAssemblerTest {
     @Test
     @DisplayName("PLAN 轮只有 kb.search 步骤时不加标注")
     void kbOnlyPlanIsNotAnnotated() {
-        when(messageMapper.listByConversation(CONVERSATION_ID)).thenReturn(List.of(
+        when(messageMapper.listRecentByConversation(eq(CONVERSATION_ID), anyInt())).thenReturn(List.of(
                 row("r1", "USER", "华信单笔限额", "DONE"),
                 assistantRow("r1", "单笔限额 500 万元", "{\"route\":\"PLAN\"}", """
                         {"degraded":false,"steps":[
@@ -163,7 +167,7 @@ class ConversationHistoryAssemblerTest {
     @Test
     @DisplayName("计划已弃用（degraded）时没有工具产物，不加标注")
     void degradedPlanIsNotAnnotated() {
-        when(messageMapper.listByConversation(CONVERSATION_ID)).thenReturn(List.of(
+        when(messageMapper.listRecentByConversation(eq(CONVERSATION_ID), anyInt())).thenReturn(List.of(
                 row("r1", "USER", "华信单笔限额", "DONE"),
                 assistantRow("r1", "单笔限额 500 万元", "{\"route\":\"PLAN\"}", """
                         {"degraded":true,"degradedReason":"计划校验失败","steps":[]}
