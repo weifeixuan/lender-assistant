@@ -1,6 +1,8 @@
 package com.lender.assistant.common.util;
 
 import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
@@ -43,5 +45,19 @@ public final class ThreadPoolFactory {
         return new ThreadPoolExecutor(coreSize, maxSize, keepAliveSeconds, TimeUnit.SECONDS,
                 new LinkedBlockingQueue<>(queueCapacity), threadFactory,
                 new ThreadPoolExecutor.AbortPolicy());
+    }
+
+    /**
+     * 创建单线程调度器：只用于少量一次性定时任务（如合成超时计时），
+     * 沿用命名 daemon 线程约定；关停仍由持有方负责。
+     */
+    public static ScheduledExecutorService createScheduled(String threadNamePrefix) {
+        AtomicInteger sequence = new AtomicInteger(0);
+        ThreadFactory threadFactory = runnable -> {
+            Thread thread = new Thread(runnable, threadNamePrefix + "-" + sequence.incrementAndGet());
+            thread.setDaemon(true);
+            return thread;
+        };
+        return new ScheduledThreadPoolExecutor(1, threadFactory);
     }
 }

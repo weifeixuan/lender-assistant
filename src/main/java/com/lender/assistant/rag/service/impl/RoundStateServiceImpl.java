@@ -41,7 +41,11 @@ final class RoundStateServiceImpl {
     private final ConversationService conversationService;
     private final ObjectMapper objectMapper;
     private List<QaSourceSnapshotDTO> sources = List.of();
-    private String providerName;
+    /**
+     * 本轮 provider：meta 首事件先写规则名，模型真正开始生成时由 provider() 覆写。
+     * volatile 保证工作线程的覆写对终态落库线程可见；落库时仍在 synchronized 内取快照。
+     */
+    private volatile String providerName;
     /** 本轮路由结果；mock 模式为 null */
     private RoutingDecisionDTO routeDecision;
     /** PLAN 轮的计划与执行快照；KNOWLEDGE / IRRELEVANT 轮为 null */
@@ -131,15 +135,17 @@ final class RoundStateServiceImpl {
         List<QaSourceSnapshotDTO> snapshot;
         String routeJson;
         String executionPlanJson;
+        String providerSnapshot;
         synchronized (this) {
             text = content.toString();
             snapshot = sources;
             routeJson = writeJson(routeDecision);
             executionPlanJson = writeExecutionPlanJson();
+            providerSnapshot = providerName;
         }
         conversationService.completeRound(new AssistantMessageCompletionDTO(
                 round.conversationId(), round.roundId(), round.assistantMessageId(),
-                text, snapshot, providerName, System.currentTimeMillis() - startedAt,
+                text, snapshot, providerSnapshot, System.currentTimeMillis() - startedAt,
                 status, error, routeJson, executionPlanJson));
     }
 

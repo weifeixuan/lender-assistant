@@ -2,6 +2,8 @@ package com.lender.assistant.rag.service.impl;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.lender.assistant.common.exception.BizException;
+import com.lender.assistant.common.exception.ErrorCode;
 import com.lender.assistant.rag.service.PlanAndExecuteService;
 import com.lender.assistant.rag.model.dto.ExecutionPlanDTO;
 import com.lender.assistant.rag.service.QuestionRoutingService;
@@ -18,6 +20,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * 路由与计划离线评估实现：评估集固定、指标口径固定、阈值只读不调。
@@ -35,6 +38,8 @@ public class RoutingEvalServiceImpl implements RoutingEvalService {
     private final PlanAndExecuteService planningService;
     private final ObjectMapper objectMapper;
     private final String evalResource;
+    /** 并发守卫：评估集每条都要打模型，多个请求叠加会成倍放大调用与成本 */
+    private final AtomicBoolean running = new AtomicBoolean(false);
 
     @Value("${rag.routing.confidence-threshold:0.6}")
     private double threshold;
@@ -57,12 +62,19 @@ public class RoutingEvalServiceImpl implements RoutingEvalService {
     }
 
     @Override
-    public RoutingEvalResponse run() throws Exception {
-        List<RoutingEvalItemResponse> results = new ArrayList<>();
-        for (EvalItem item : load()) {
-            results.add(evaluate(item));
+    public RoutingEvalResponse run() throws IOException {
+        if (!running.compareAndSet(false, true)) {
+            throw new BizException(ErrorCode.EVAL_BUSY, ErrorCode.EVAL_BUSY.defaultMessage());
         }
-        return summarize(results);
+        try {
+            List<RoutingEvalItemResponse> results = new ArrayList<>();
+            for (EvalItem item : load()) {
+                results.add(evaluate(item));
+            }
+            return summarize(results);
+        } finally {
+            running.set(false);
+        }
     }
 
     private RoutingEvalItemResponse evaluate(EvalItem item) {
