@@ -67,7 +67,7 @@ class ExtractServiceTest {
     }
 
     @Test
-    @DisplayName("正常抽取：文档按 ChunkDTO 序拼成全文，生成器收到标题+全文")
+    @DisplayName("正常抽取：文档按切片序拼成全文，生成器收到标题+全文")
     void orchestratesLoadAndExtract() {
         List<FieldMappingEntity> result = service.extractFromDoc("doc1");
 
@@ -78,7 +78,7 @@ class ExtractServiceTest {
         assertEquals("瑞金租赁_资金对接接口文档_v1.0", doc.docTitle());
         assertTrue(doc.text().contains("网关地址 https://fake-ruijin.example.com/openapi"));
         assertTrue(doc.text().contains("接口路径 /openapi/loan/order/create"));
-        assertEquals(1, doc.lines().size(), "结构化 ChunkDTO 行必须一并传给生成器");
+        assertEquals(1, doc.lines().size(), "结构化切片行必须一并传给生成器");
         // 生成器调用必须经韧性执行器包装，scene=extract
         verify(executor).execute(eq(LlmScene.EXTRACT), eq("Mock"), any(Supplier.class), eq(true));
     }

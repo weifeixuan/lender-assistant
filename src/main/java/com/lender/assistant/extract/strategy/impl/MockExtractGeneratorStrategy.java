@@ -105,7 +105,7 @@ public class MockExtractGeneratorStrategy implements ExtractGeneratorStrategy {
         out.addAll(extractApiPaths(doc.lines()));
 
         // 7. 状态枚举：收集全部匹配取最长——硬切分可能把枚举截断（"SUCCESS / FAIL"），
-        //    完整值在相邻 ChunkDTO 里；首匹配会抽到残缺形态，最长匹配最稳
+        //    完整值在相邻切片里；首匹配会抽到残缺形态，最长匹配最稳
         Matcher status = STATUS_ENUM.matcher(docText);
         String bestStatus = null;
         while (status.find()) {
@@ -186,7 +186,7 @@ public class MockExtractGeneratorStrategy implements ExtractGeneratorStrategy {
 
     /**
      * 接口路径抽取：路径语义在章节标题里，标题来自两个来源——
-     * ① ChunkDTO 的 sectionPath（loadDocContent 返回的结构化字段，主通道）；
+     * ① 切片的 sectionPath（loadDocContent 返回的结构化字段，主通道）；
      * ② 行内编号标题（直接抽取纯文本时的兜底）。
      * 取"路径出现前最近一次声明的章节"做分类。
      */

@@ -27,7 +27,7 @@ class LenderQueryToolsTest {
     }
 
     @Test
-    @DisplayName("查已入库文件列表：返回 docId/标题/ChunkDTO 数的格式化清单")
+    @DisplayName("查已入库文件列表：返回 docId/标题/切片数的格式化清单")
     void listIngestedDocsFormatsSummary() {
         when(documentService.listDocuments()).thenReturn(List.of(
                 new DocSummaryDTO("ruijin_api_v1", "瑞金租赁_资金对接接口文档_v1.0",
@@ -40,7 +40,7 @@ class LenderQueryToolsTest {
         assertTrue(result.contains("2"));
         assertTrue(result.contains("ruijin_api_v1"));
         assertTrue(result.contains("瑞金租赁_资金对接接口文档_v1.0"));
-        assertTrue(result.contains("5"), "必须带 ChunkDTO 数量");
+        assertTrue(result.contains("5"), "必须带切片数量");
     }
 
     @Test
@@ -51,7 +51,7 @@ class LenderQueryToolsTest {
     }
 
     @Test
-    @DisplayName("查某文档 ChunkDTO 数：已入库返回数量")
+    @DisplayName("查某文档切片数：已入库返回数量")
     void docChunkStatsKnownDoc() {
         when(documentService.countByDoc("ruijin_api_v1")).thenReturn(5);
         String result = tools.getDocChunkStats("ruijin_api_v1");
@@ -60,7 +60,7 @@ class LenderQueryToolsTest {
     }
 
     @Test
-    @DisplayName("查某文档 ChunkDTO 数：未入库文档给出明确提示（宁说没有，不编数字）")
+    @DisplayName("查某文档切片数：未入库文档给出明确提示（宁说没有，不编数字）")
     void docChunkStatsUnknownDoc() {
         when(documentService.countByDoc("nope")).thenReturn(0);
         assertTrue(tools.getDocChunkStats("nope").contains("未入库"));

@@ -62,7 +62,7 @@ class SearchServiceTest {
     }
 
     @Test
-    @DisplayName("hybrid：RRF 融合排序——双通道都命中的 ChunkDTO 排最前")
+    @DisplayName("hybrid：RRF 融合排序——双通道都命中的切片排最前")
     void hybridRrfFusion() {
         // 向量通道：A 第1名、B 第2名；关键词通道：B 第1名、C 第2名
         when(embeddingStrategy.embed(any())).thenReturn(new float[4]);

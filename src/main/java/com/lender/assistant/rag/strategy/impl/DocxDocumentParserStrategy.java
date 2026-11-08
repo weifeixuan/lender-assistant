@@ -24,7 +24,7 @@ import java.util.List;
  * 如果你的模板样式名不同，改 headingLevelOf() 一处即可。
  *
  * 表格：逐行转成 "列名: 值 | 列名: 值" 文本——接口文档的字段表经这样转换后，
- * "逾期天数在第几列"这类问题的答案会以自然语言形式出现在 ChunkDTO 里。
+ * "逾期天数在第几列"这类问题的答案会以自然语言形式出现在切片里。
  */
 @Component
 public class DocxDocumentParserStrategy implements DocumentParserStrategy {

@@ -36,7 +36,7 @@ public class RoutingEvalServiceImpl implements RoutingEvalService {
     private final ObjectMapper objectMapper;
     private final String evalResource;
 
-    @Value("${routing.confidence-threshold:0.6}")
+    @Value("${rag.routing.confidence-threshold:0.6}")
     private double threshold;
 
     @Autowired

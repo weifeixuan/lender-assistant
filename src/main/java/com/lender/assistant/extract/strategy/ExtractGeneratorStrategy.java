@@ -18,7 +18,7 @@ import java.util.List;
 public interface ExtractGeneratorStrategy {
 
     /**
-     * @param doc 文档标题 + 全文 + 结构化 ChunkDTO 行（见 {@link DocContentDTO}）
+     * @param doc 文档标题 + 全文 + 结构化切片行（见 {@link DocContentDTO}）
      * @return 抽到的映射列表；文档中不存在的字段**不应**出现在结果里（宁缺勿编）
      */
     List<FieldMappingEntity> extract(DocContentDTO doc);

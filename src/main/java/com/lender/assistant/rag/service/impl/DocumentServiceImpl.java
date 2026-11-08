@@ -119,12 +119,12 @@ public class DocumentServiceImpl implements DocumentService {
     /** 逐切片向量化：章节路径拼进向量化输入（标题是强语义信号，丢掉太可惜） */
     private List<ChunkEntity> embedChunks(List<ChunkDTO> chunks) {
         List<ChunkEntity> rows = new ArrayList<>(chunks.size());
-        for (ChunkDTO ChunkDTO : chunks) {
-            String embedInput = ChunkDTO.sectionPath() == null || ChunkDTO.sectionPath().isEmpty()
-                    ? ChunkDTO.content()
-                    : ChunkDTO.sectionPath() + "\n" + ChunkDTO.content();
-            rows.add(new ChunkEntity(ChunkDTO.sectionPath(), ChunkDTO.index(), ChunkDTO.content(),
-                    ChunkDTO.charCount(), PgVectorUtils.toLiteral(embeddingStrategy.embed(embedInput))));
+        for (ChunkDTO chunk : chunks) {
+            String embedInput = chunk.sectionPath() == null || chunk.sectionPath().isEmpty()
+                    ? chunk.content()
+                    : chunk.sectionPath() + "\n" + chunk.content();
+            rows.add(new ChunkEntity(chunk.sectionPath(), chunk.index(), chunk.content(),
+                    chunk.charCount(), PgVectorUtils.toLiteral(embeddingStrategy.embed(embedInput))));
         }
         return rows;
     }
@@ -155,8 +155,8 @@ public class DocumentServiceImpl implements DocumentService {
 
     private String contentHash(List<ChunkDTO> chunks) {
         StringBuilder canonical = new StringBuilder();
-        for (ChunkDTO ChunkDTO : chunks) {
-            canonical.append(canonicalLine(ChunkDTO.sectionPath(), ChunkDTO.content()));
+        for (ChunkDTO chunk : chunks) {
+            canonical.append(canonicalLine(chunk.sectionPath(), chunk.content()));
         }
         return sha256(canonical.toString());
     }

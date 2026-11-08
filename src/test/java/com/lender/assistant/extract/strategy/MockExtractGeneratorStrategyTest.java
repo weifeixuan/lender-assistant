@@ -118,7 +118,7 @@ class MockExtractGeneratorStrategyTest {
     }
 
     @Test
-    @DisplayName("回归：章节标题来自 ChunkDTO 的 sectionPath（content 里没有标题），路径仍能按章节分类")
+    @DisplayName("回归：章节标题来自切片的 sectionPath（content 里没有标题），路径仍能按章节分类")
     void apiPathClassifiedByChunkSectionPath() {
         // 真实数据形态：SectionChunkSplitterStrategy 把标题存进 section_path 而非 content
         String firstChapter = "瑞金租赁（虚构）资金对接采用 REST 风格，网关地址 https://fake-ruijin.example.com/openapi。";
@@ -130,7 +130,7 @@ class MockExtractGeneratorStrategyTest {
                         new DocChunkLineDTO("瑞金租赁_资金对接接口文档_v1.0",
                                 "瑞金租赁 资金对接接口文档 > 二、放款指令接口", secondChapter)));
         Map<String, FieldMappingEntity> m = extractAsMap(crossChunk);
-        assertTrue(m.containsKey("payment_api"), "章节信息来自 ChunkDTO 的 sectionPath，路径必须归入 payment_api");
+        assertTrue(m.containsKey("payment_api"), "章节信息来自切片的 sectionPath，路径必须归入 payment_api");
         assertEquals("/openapi/loan/order/create", m.get("payment_api").lenderValue());
     }
 

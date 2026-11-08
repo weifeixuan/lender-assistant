@@ -36,8 +36,8 @@ public interface DocumentService {
     List<DocSummaryDTO> listDocuments();
 
     /**
-     * 按 ChunkDTO 序取文档内容：text 为拼好的全文（每块前置一行【章节】section_path，供模型 Prompt），
-     * lines 为结构化 ChunkDTO 行（供规则抽取按章节分类）；文档不存在返回 null。
+     * 按切片序取文档内容：text 为拼好的全文（每块前置一行【章节】section_path，供模型 Prompt），
+     * lines 为结构化切片行（供规则抽取按章节分类）；文档不存在返回 null。
      */
     DocContentDTO loadDocContent(String docId);
 

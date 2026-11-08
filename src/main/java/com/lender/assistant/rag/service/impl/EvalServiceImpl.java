@@ -24,7 +24,7 @@ import java.util.List;
  * - MRR（Mean Reciprocal Rank）：第一条命中结果的排名倒数的均值——
  *   衡量"最好的结果排多前"，对"topK 挤不下更多内容"的 Prompt 预算敏感。
  *
- * ground truth 判定：mustContain 关键词列表，召回 ChunkDTO 内容任一命中即算相关。
+ * ground truth 判定：mustContain 关键词列表，召回切片内容任一命中即算相关。
  * 这是字符串级判定，对字段名/路径/格式串这类 FACT/RULE 问题足够准；
  * 语义级判定（"回答是否正确"）属于生成质量评估，等真模型 + 人工抽检，不在此脚本职责内。
  *

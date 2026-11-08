@@ -27,7 +27,7 @@ public class LenderQueryTools {
         this.documentService = documentService;
     }
 
-    @Tool(name = "listIngestedDocs", description = "查询已入库的资方文件列表，返回每个文档的 docId、标题与 ChunkDTO 数量")
+    @Tool(name = "listIngestedDocs", description = "查询已入库的资方文件列表，返回每个文档的 docId、标题与切片数量")
     public String listIngestedDocs() {
         List<DocSummaryDTO> docs = documentService.listDocuments();
         if (docs.isEmpty()) {
@@ -42,10 +42,10 @@ public class LenderQueryTools {
         return sb.toString().trim();
     }
 
-    @Tool(name = "getDocChunkStats", description = "查询指定 docId 文档的入库 ChunkDTO 数量")
+    @Tool(name = "getDocChunkStats", description = "查询指定 docId 文档的入库切片数量")
     public String getDocChunkStats(@ToolParam(description = "文档 docId") String docId) {
         int n = documentService.countByDoc(docId);
-        return n == 0 ? docId + " 未入库或无内容。" : docId + " 已入库 " + n + " 个 ChunkDTO。";
+        return n == 0 ? docId + " 未入库或无内容。" : docId + " 已入库 " + n + " 个切片。";
     }
 
     /** 供 ToolIntentRouter 做 docId 匹配（非工具方法，不暴露给模型） */

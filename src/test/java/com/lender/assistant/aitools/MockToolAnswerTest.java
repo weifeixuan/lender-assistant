@@ -58,7 +58,7 @@ class MockToolAnswerTest {
     }
 
     @Test
-    @DisplayName("问某文档 ChunkDTO 数：工具参数正确传递")
+    @DisplayName("问某文档切片数：工具参数正确传递")
     void docStatsToolCall() {
         String answer = generateAndCollect("ruijin_api_v1 这个文档切了多少块");
 

@@ -32,7 +32,7 @@ import static org.mockito.Mockito.*;
  * DocumentServiceImpl 单元测试：只测自身编排逻辑，Mapper 全部 mock（§10.2 不连真库）。
  *
  * 断言锚点是"与旧 rag/store/DocumentStore 逐行为等价"：
- * 空文档只删不插、非空文档先删后插、无 ChunkDTO 返回 null、【章节】前缀拼接逐字一致。
+ * 空文档只删不插、非空文档先删后插、无切片返回 null、【章节】前缀拼接逐字一致。
  */
 class DocumentServiceTest {
 
@@ -222,11 +222,11 @@ class DocumentServiceTest {
 
         DocContentDTO content = service.loadDocContent("doc1");
 
-        assertNull(content, "无 ChunkDTO 视为文档不存在，返回 null 而非空串");
+        assertNull(content, "无切片视为文档不存在，返回 null 而非空串");
     }
 
     @Test
-    @DisplayName("loadDocContent：按 ChunkDTO 序拼接，每块前置【章节】，标题取首行")
+    @DisplayName("loadDocContent：按切片序拼接，每块前置【章节】，标题取首行")
     void loadDocContentJoinsChunksWithSectionPrefix() {
         when(mapper.listChunkLines("doc1")).thenReturn(List.of(
                 new DocChunkLineDTO("标题", "甲", "正文A"),
