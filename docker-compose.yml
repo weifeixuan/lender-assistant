@@ -1,4 +1,4 @@
-# 资方接入智能助手：一键起全套（应用 + pgvector 数据库）
+# 融资智能工作台：一键起全套（应用 + pgvector 数据库）
 #
 # 用法：
 #   docker compose up -d lender-pg   # 本地开发只起数据库（5432，复用现有卷 lender_pgdata）
