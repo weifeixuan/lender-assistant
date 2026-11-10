@@ -1,6 +1,6 @@
 # 融资智能工作台（lender-assistant）
 
-面向**融资租赁资方接入**场景的 RAG + LLM 工程化实践项目：把多家资方的接口文档、日末文件说明做成可检索知识库，回答带引用溯源；按字段映射抽取新资方接入信息；再由映射表生成 Java 适配层代码草稿。
+面向**企业知识与业务智能化**的 Agentic LLM 工程实践：以 Router 分流问题、以 Plan-and-Execute 编排多步任务并调度工具，检索增强（RAG）只是其中一项能力，负责企业内部资料的知识问答与引用溯源；在此基础上完成字段抽取与代码草稿生成，并为后续接入更多 Agent 预留扩展点。
 
 > **红线声明**：项目中所有资方（华信银行、瑞金租赁等）均为**虚构脱敏**素材，文档由脚本生成，不含任何真实机构信息；开发时间线真实。
 
@@ -8,13 +8,14 @@
 
 ## 核心能力
 
-| 能力               | 说明                                          | 验收数字                             |
-| ---------------- | ------------------------------------------- | -------------------------------- |
-| 混合检索问答           | 向量 + 关键词双通道，RRF 融合排序，SSE 流式回答带【来源N】溯源       | 20条评估集 recall@4=100%（Mock向量，构造性） |
-| 字段映射抽取           | 新资方文档 → 12 个内部标准字段的映射表 → 界面人工确认/修正          | 三份样例文档精确率/召回率 100%（Mock规则，构造性）   |
-| Function Calling | 模型可调用"查已入库文件 / 查文档chunk数"两个真实业务查询           | SSE 真库验证两意图均正确触发                 |
-| 韧性与留痕            | 熔断 + 重试（编程式 Resilience4j）+ 每次模型调用留痕；熔断走人工降级 | chaos 演练：3次失败→OPEN→快速失败，系统不崩     |
-| 代码草稿生成           | 字段映射表 + 策略模式骨架 → Java 适配层草稿 + 人工复核声明        | 映射9条→草稿零占位残留                     |
+| 能力                       | 说明                                                    | 验收依据 / 样本                                                          |
+| ------------------------ | ----------------------------------------------------- | ------------------------------------------------------------------ |
+| 混合检索问答                   | 向量 + 关键词双通道，RRF 融合排序，SSE 流式回答带【来源N】溯源                 | 20 条评估集（FACT 9 / RULE 10 / NEGATIVE 1，负例不计分）；三种检索模式对比见 `docs/eval/评估报告_baseline_v1.md` |
+| 路由 + 计划执行                 | 三分支路由；PLAN 2–5 步串行执行后一次合成；校验不过整单降级 KNOWLEDGE        | 单测覆盖降级、超时与零召回短路；契约见 ADR-0010 / ADR-0014 / ADR-0015                |
+| 字段映射抽取                   | 新资方文档 → 12 个内部标准字段的映射表 → 界面人工确认/修正                     | 3 份样例文档、12 个字段全量走「抽取 → 人工确认/修正」；Mock 规则抽取，仓库暂无量化评估报告               |
+| Function Calling（回答链路）    | 真实模型可自主调用"查已入库文件 / 查文档 chunk 数"两个业务查询；mock 模式由关键词规则模拟决策 | 真库联调验证两个意图均可触发                                                     |
+| 韧性与留痕                    | 熔断 + 重试（编程式 Resilience4j）+ 每次模型调用留痕；熔断走人工降级            | chaos 演练：连续 3 次失败 → OPEN → 快速失败，系统不崩                                |
+| 代码草稿生成                   | 字段映射表 + 策略模式骨架 → Java 适配层草稿 + 人工复核声明                   | 样例映射表生成草稿：无 `{{...}}` 占位符残留，缺失字段渲染 `// TODO 人工补充`                |
 
 ## 问答请求处理流程（路由 + Plan-and-Execute）
 
@@ -32,8 +33,11 @@ flowchart TD
 
     X --> U["步骤来源并集<br/>按 chunkId 去重"]
     K --> U
-    U --> G["唯一一次流式生成 / 合成<br/>SYNTHESIS 场景<br/>→ SSE delta"]
+    U --> Z{"来源并集为空？"}
+    Z -->|是| N["零召回：不调模型<br/>仅推引导文案"]
+    Z -->|否| G["唯一一次流式生成 / 合成<br/>SYNTHESIS 场景<br/>→ SSE delta"]
     G --> D["SSE done"]
+    N --> D
     I --> D
 ```
 
@@ -41,6 +45,8 @@ flowchart TD
 - `KNOWLEDGE` 走一次混合检索（向量 + 关键词 → RRF 融合）后流式作答。
 - `PLAN` 先由计划模型产出步骤，再按 `order` 严格串行执行，每步一次工具调用（`kb.search` / `customer.profile` / `lender.product`）。
 - 所有步骤结束后统一做一次流式合成，中间步骤不输出正文，用户只看到一段流式回答。
+- 零召回时不调用合成模型：只推引导文案，PLAN 轮同样短路（见 ADR-0015）。
+- `customer.profile` / `lender.product` 是 Mock 业务工具，需 `RAG_PLAN_TOOLS_MOCK_ENABLED=true` 才注册；默认只有 `kb.search`。
 
 ## 架构
 
@@ -58,7 +64,7 @@ docx/txt 上传 ─▶ 解析(POI) ─▶ 切分(按章节/固定) ─▶ 向量
                             LenderQueryTools（@Tool：查入库文件/chunk数，Function Calling）
 ```
 
-关键模块：`rag/`（检索问答）、`extract/`（抽取）、`draft/`（草稿）、`aitools/`（Function Calling）、`resilience/`（熔断/重试/留痕）。
+关键模块：`rag/`（检索问答）、`conversation/`（多轮会话与消息落库）、`extract/`（抽取）、`draft/`（草稿）、`aitools/`（Function Calling）、`resilience/`（熔断/重试/留痕）、`ops/`（健康探针）。
 
 ## 快速开始
 
@@ -87,8 +93,9 @@ compose 首次启动会自动建库建表（schema SQL 挂载到初始化目录�
 
 ```bash
 # 1. 起数据库（pgvector，卷与 compose 共用，密码与 application.yml 默认值一致）
+#    只绑回环，避免数据库暴露到局域网；容器名与卷同 compose，两种方式只能选其一
 docker run -d --name lender-pg -e POSTGRES_PASSWORD=lender123 -e POSTGRES_DB=lender_assistant \
-  -v lender_pgdata:/var/lib/postgresql/data -p 5432:5432 pgvector/pgvector:pg16
+  -v lender_pgdata:/var/lib/postgresql/data -p 127.0.0.1:5432:5432 pgvector/pgvector:pg16
 
 # 2. 建表
 docker exec -i lender-pg psql -U postgres -d lender_assistant < docs/schema.sql
@@ -98,7 +105,7 @@ mvn package -DskipTests
 java -jar target/lender-assistant-0.1.0-SNAPSHOT.jar --server.port=8080
 ```
 
-后端对外提供 REST + SSE 接口：会话列表 `/api/conversations`、历史 `/api/conversations/{id}/messages`、问答 `/api/qa`（SSE）。所有业务接口需携带 `X-User-Id`，首问不带 `conversationId` 时由服务端懒创建并通过 SSE 首个 `meta` 事件回传。前端交互约定见 [docs/prd/multi-turn-frontend.md](docs/prd/multi-turn-frontend.md)；前端为独立仓库（可选），`npm install && npm run dev` 起在 5173，Vite 已把 `/api` 代理到 8080。
+前端（可选）本地起：`npm install && npm run dev`，端口 5173，Vite 已把 `/api` 代理到 8080。
 
 ### 接入真实模型（可选）
 
@@ -109,7 +116,7 @@ java -jar target/lender-assistant-0.1.0-SNAPSHOT.jar --server.port=8080
 | `RAG_EXTRACT_PROVIDER`   | `mock` / `openai` | 字段抽取 |
 | `RAG_DRAFT_PROVIDER`     | `mock` / `openai` | 代码草稿 |
 
-对话模型默认已走 `openai`，配 `LLM_API_KEY` / `LLM_BASE_URL` / `LLM_MODEL` 三个环境变量即可接入真实模型，key 不进代码库；无 key 时调用失败会按 fail-open 降级，本地联调可显式设 `RAG_CHAT_PROVIDER=mock`。抽取/草稿仍是 `mock`，切换需设 `RAG_EXTRACT_PROVIDER`、`RAG_DRAFT_PROVIDER`。
+对话模型默认已走 `openai`，配 `LLM_API_KEY` / `LLM_BASE_URL` / `LLM_MODEL` 三个环境变量即可接入真实模型，key 不进代码库；无 key 时模型调用会失败并触发熔断，问答降级为可读提示（召回来源仍展示）——注意这与 `fail-open` 不是一回事，`fail-open` 专指路由判定失败时降级 `KNOWLEDGE`。本地联调可显式设 `RAG_CHAT_PROVIDER=mock`。抽取/草稿仍是 `mock`，切换需设 `RAG_EXTRACT_PROVIDER`、`RAG_DRAFT_PROVIDER`。
 `docker compose` 会自动读取项目根 `.env`；本地 `mvn spring-boot:run` / `java -jar` 不会自动加载 `.env`，需先自行导出环境变量。
 真实模型走 OpenAI 兼容协议，切换 DeepSeek / Kimi / 通义 / GLM 等只改这三个变量，代码不动：
 
@@ -125,8 +132,8 @@ LLM_BASE_URL=https://api.deepseek.com  LLM_MODEL=deepseek-chat
 
 | 决策                              | 理由                                                 | 详见                  |
 | ------------------------------- | -------------------------------------------------- | ------------------- |
-| RRF 融合替代"双通道优先"硬排序              | 硬排序让单一通道的宽泛命中挤掉双通道命中；RRF 按排名倒数求和，recall 94.7%→100% | `docs/eval/评估报告_baseline_v1.md` |
-| 全链路 Mock 先行（端口双实现）              | key 没到位也能开发、调试、验收链路本身；真实效果单独复测不混数据                 | 上方「诚实声明」 |
+| RRF 融合替代"双通道优先"硬排序              | 硬排序让单一通道的宽泛命中挤掉双通道命中；RRF 按排名倒数求和，逐条对比见报告（20 条评估集，FACT/RULE 计分、NEGATIVE 不计分） | `docs/eval/评估报告_baseline_v1.md` |
+| 全链路 Mock 先行（端口双实现）              | key 没到位也能开发、调试、验收链路本身；真实效果单独复测不混数据                 | `aitools/ToolIntentRouter.java`（类注释） |
 | 编程式熔断（decorateSupplier）而非注解     | 单测不起容器即可驱动熔断状态机红绿循环                                | `docs/adr/0003-tech-stack-and-exclusions.md` |
 | CB 在外 Retry 在内                  | 重试的每次尝试计入熔断统计，避免重试掩盖故障导致熔断永不打开                     | `resilience/ResilientLlmExecutor.java` |
 | SSE 禁重试                         | token 已推给用户，重放即重复播报事故                              | `docs/adr/0005-streaming-and-error-semantics.md` |
@@ -135,7 +142,7 @@ LLM_BASE_URL=https://api.deepseek.com  LLM_MODEL=deepseek-chat
 
 ## 技术栈
 
-Spring Boot 3.5 · Spring AI 1.1（ChatClient / @Tool）· PostgreSQL 16 + pgvector 0.8（HNSW + trigram）· Resilience4j · Apache POI · SSE
+Spring Boot 3.5 · Spring AI 1.1（ChatClient / @Tool）· PostgreSQL 16 + pgvector（`pgvector/pgvector:pg16` 镜像，HNSW + trigram）· Resilience4j · Apache POI · SSE
 
 ## 项目文档
 
@@ -144,5 +151,8 @@ Spring Boot 3.5 · Spring AI 1.1（ChatClient / @Tool）· PostgreSQL 16 + pgvec
 - `docs/prd/multi-turn-backend.md`：多轮会话后端需求
 - `docs/prd/multi-turn-frontend.md`：多轮会话前端交互与展示约定
 - `docs/prd/qa-routing-and-plan-execute.md`：问答路由与计划执行 PRD
+- `docs/design/`：代码结构治理与重构方案
 - `docs/eval/`：评估集与基线报告
+- `docs/schema.sql`：完整建表与幂等迁移脚本
+- `docs/sample_docs/`：虚构脱敏样例文档（资方接口文档）
 - `docs/gen_sample_docs.py`：虚构脱敏样例文档生成脚本
