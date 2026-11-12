@@ -144,6 +144,13 @@ LLM_BASE_URL=https://api.deepseek.com  LLM_MODEL=deepseek-chat
 
 Spring Boot 3.5 · Spring AI 1.1（ChatClient / @Tool）· PostgreSQL 16 + pgvector（`pgvector/pgvector:pg16` 镜像，HNSW + trigram）· Resilience4j · Apache POI · SSE
 
+## 测试
+
+- 单测：JUnit 5 + Mockito，mock 数据访问层，不连真库。
+- 真库测试：Testcontainers 起 `pgvector/pgvector:pg16`，测试类标 `@Tag("docker")`。
+- 默认档 `mvn test`：277 个用例，不跑真库测试，无 Docker 也可执行。
+- 集成档 `mvn test -Pintegration-tests`：286 个用例，含 9 个真库用例；无 Docker 的机器上这 9 个跳过，不判失败。
+
 ## 项目文档
 
 - `docs/adr/`：架构决策记录（技术选型、接口契约、数据访问、测试事实源）

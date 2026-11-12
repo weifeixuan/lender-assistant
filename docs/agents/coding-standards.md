@@ -154,13 +154,13 @@ com.lender.assistant
 ## 9. 单元测试
 
 1. AIR：自动、独立、可重复（不依赖外部环境）。
-2. 不连真库：mock Mapper，但协作对象用真实实例优于过度 mock（保留真实 `LlmCallLogger` 等，只 mock 数据访问）。理由见 [ADR-0006](../adr/0006-testing-and-schema-source-of-truth.md)。
+2. 单测不连真库：mock Mapper，但协作对象用真实实例优于过度 mock（保留真实 `LlmCallLogger` 等，只 mock 数据访问）。真库验证交给集成测试，见第 7 条。
 3. 一个测试只验一个行为，三段式 given / when / then，断言带消息且**值必须手算核对**。
 4. 优先级：领域核心逻辑（RRF、抽取规则、熔断状态机）> 编排 > controller。
 5. bug 修复先补能复现的 RED 测试再修绿。
 6. 新增 / 修改公共方法必须补或改单测；**改签名 / 改同步异步契约必须同步 `src/test`，改完 `mvn test` 全绿**。
-7. Mapper / DB 链路不写 `@SpringBootTest` 真库冒烟测试，由起服务后手工验证覆盖；改 Mapper / `<resultMap>` / starter 依赖必须真机走一遍（见 [ADR-0006](../adr/0006-testing-and-schema-source-of-truth.md)）。
-8. 测试与 `src/main/java` **同包镜像**：单元测试 `<被测类>Test`、流程测试 `<场景>FlowTest`、契约测试 `<被测对象>ContractTest`，均与被测类/被测对象同包；全局事实源契约测试（如读 `docs/schema.sql` 的 `SchemaContractTest`）放根包 `com.lender.assistant`；`src/test/java` 禁止出现 main 中不存在的平行顶层包（公共测试基建除外，需要时才建 `testutil/`）。
+7. 真库测试用 Testcontainers 起 PostgreSQL（`pgvector/pgvector:pg16`），标 `@Tag("docker")`：`mvn test` 默认排除，`mvn test -Pintegration-tests` 才跑；无 Docker 的机器自动跳过、不判失败；改 Mapper / `<resultMap>` / starter 依赖必须跑一次集成档（[ADR-0017](../adr/0017-testcontainers-for-real-db-verification.md)）。
+8. 测试与 `src/main/java` **同包镜像**：`<被测类>Test` / `<场景>FlowTest` / `<被测对象>ContractTest` 与被测对象同包；全局事实源契约测试（如 `SchemaContractTest`）放根包 `com.lender.assistant`；`src/test/java` 不建 main 中不存在的平行顶层包（公共测试基建除外，如 `testutil/`）。
 
 ## 10. 提交纪律与自检
 

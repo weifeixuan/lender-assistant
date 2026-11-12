@@ -1,6 +1,6 @@
 # ADR-0006：单测 Mock 粒度与建表事实源
 
-- 状态：已采纳
+- 状态：已被 [ADR-0017](0017-testcontainers-for-real-db-verification.md) 取代（本 ADR 的「真库验证方式」决策作废；mock 粒度、断言纪律、建表事实源三条仍然有效）
 - 相关：`docs/agents/coding-standards.md §10.2 / §6.9`、`docs/schema.sql`、`resilience/LlmCallLogger`、`SearchServiceTest`
 
 ## 背景

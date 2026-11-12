@@ -20,6 +20,11 @@
     <properties>
         <java.version>21</java.version>
         <spring-ai.version>1.1.8</spring-ai.version>
+        <!-- Testcontainers 2.x：1.21 在 Windows 上探测 Docker named pipe 恒失败（File.exists 判断），
+             2.x 换用新的 Docker 客户端探测链路。坐标在 2.x 已改成 testcontainers-* 前缀，Boot BOM 不再管 -->
+        <testcontainers.version>2.0.5</testcontainers.version>
+        <!-- 默认排除 docker 标签：无 Docker 的机器上 mvn test 只跑纯单测（见 §9 测试分层） -->
+        <test.excluded.groups>docker</test.excluded.groups>
     </properties>
 
     <dependencyManagement>
@@ -28,6 +33,15 @@
                 <groupId>org.springframework.ai</groupId>
                 <artifactId>spring-ai-bom</artifactId>
                 <version>${spring-ai.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+            <!-- 显式覆盖 Spring Boot BOM 管理的 Testcontainers 1.21.x：
+                 本项目 BOM 优先于父 POM，避免 2.x 模块被传递依赖拉回 1.x -->
+            <dependency>
+                <groupId>org.testcontainers</groupId>
+                <artifactId>testcontainers-bom</artifactId>
+                <version>${testcontainers.version}</version>
                 <type>pom</type>
                 <scope>import</scope>
             </dependency>
@@ -107,6 +121,19 @@
             <artifactId>spring-boot-starter-test</artifactId>
             <scope>test</scope>
         </dependency>
+
+        <!-- 集成测试：真实 PostgreSQL(pgvector) 验证 Mapper XML 里的 SQL。
+             版本由上方 testcontainers-bom 管理；2.x 坐标带 testcontainers- 前缀 -->
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>testcontainers-junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>testcontainers-postgresql</artifactId>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 
     <build>
@@ -115,6 +142,26 @@
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
             </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <configuration>
+                    <!-- 按 JUnit tag 隔离集成测试：默认不跑 @Tag("docker")，
+                         代价是 mvn test 在无 Docker 的机器上仍然全绿（§9） -->
+                    <excludedGroups>${test.excluded.groups}</excludedGroups>
+                </configuration>
+            </plugin>
         </plugins>
     </build>
+
+    <profiles>
+        <profile>
+            <id>integration-tests</id>
+            <properties>
+                <!-- 显式跑集成测试：mvn test -Pintegration-tests
+                     容器不可用时由 @Testcontainers(disabledWithoutDocker = true) 跳过，不判失败 -->
+                <test.excluded.groups>none</test.excluded.groups>
+            </properties>
+        </profile>
+    </profiles>
 </project>
