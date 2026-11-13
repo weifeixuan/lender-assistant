@@ -58,4 +58,10 @@
         WHERE conversation_id = #{conversationId}
           AND status = 'ACTIVE'
     </update>
+
+    <update id="migrateOwner">
+        UPDATE conversation
+        SET user_id = #{toUserId}
+        WHERE user_id = #{fromUserId}
+    </update>
 </mapper>

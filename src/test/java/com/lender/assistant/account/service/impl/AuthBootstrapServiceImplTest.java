@@ -12,7 +12,9 @@ import org.mockito.ArgumentCaptor;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
@@ -51,8 +53,9 @@ class AuthBootstrapServiceImplTest {
         AuthBootstrapServiceImpl service = new AuthBootstrapServiceImpl(
                 userMapper, roleMapper, userRoleMapper, encoder, "admin", "");
 
-        service.bootstrap();
+        String adminUserId = service.bootstrap();
 
+        assertNull(adminUserId, "未创建管理员时返回 null，供历史会话迁移跳过");
         verify(userMapper, never()).insert(anyString(), anyString(), anyString(),
                 anyString(), anyString());
         verify(userRoleMapper, never()).insertIfAbsent(anyString(), anyString());
@@ -77,12 +80,14 @@ class AuthBootstrapServiceImplTest {
         AuthBootstrapServiceImpl service = new AuthBootstrapServiceImpl(
                 userMapper, roleMapper, userRoleMapper, encoder, "admin", "password123");
 
-        service.bootstrap();
+        String adminUserId = service.bootstrap();
 
         ArgumentCaptor<String> userIdCaptor = ArgumentCaptor.forClass(String.class);
         ArgumentCaptor<String> hashCaptor = ArgumentCaptor.forClass(String.class);
         verify(userMapper).insert(userIdCaptor.capture(), eq("admin"), anyString(),
                 hashCaptor.capture(), eq("ENABLED"));
+        assertEquals(userIdCaptor.getValue(), adminUserId,
+                "返回的账户标识应与落库主键一致，供后续会话迁移使用");
         assertFalse(userIdCaptor.getValue().isBlank(), "账户主键必须是应用生成的 UUID");
         assertTrue(hashCaptor.getValue().startsWith("$2"), "口令必须以 BCrypt 摘要落库");
         assertTrue(encoder.matches("password123", hashCaptor.getValue()), "摘要应能校验原始口令");
@@ -97,8 +102,9 @@ class AuthBootstrapServiceImplTest {
         AuthBootstrapServiceImpl service = new AuthBootstrapServiceImpl(
                 userMapper, roleMapper, userRoleMapper, encoder, "admin", "new-password");
 
-        service.bootstrap();
+        String adminUserId = service.bootstrap();
 
+        assertEquals("existing-id", adminUserId, "已有管理员时返回其账户标识");
         verify(userMapper, never()).insert(anyString(), anyString(), anyString(),
                 anyString(), anyString());
         verify(userRoleMapper).insertIfAbsent("existing-id", ADMIN_ROLE_ID);

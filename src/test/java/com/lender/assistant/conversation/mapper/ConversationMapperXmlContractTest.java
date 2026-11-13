@@ -140,6 +140,24 @@ class ConversationMapperXmlContractTest {
                 method, "conv-1", "user-a", "首问标题");
     }
 
+    @Test
+    @DisplayName("migrateOwner 只更新仍属于来源账户的会话，重复执行自然命中 0 行")
+    void migrateOwnerIsScopedToSourceOwner() throws Exception {
+        Configuration configuration = parse(CONVERSATION_MAPPER);
+        String statementId =
+                "com.lender.assistant.conversation.mapper.ConversationMapper.migrateOwner";
+        assertTrue(configuration.hasStatement(statementId), "缺少 migrateOwner 语句");
+        String sql = configuration.getMappedStatement(statementId)
+                .getBoundSql(Map.of("fromUserId", "dev-user-001", "toUserId", "admin-id"))
+                .getSql();
+        assertTrue(sql.contains("SET user_id = ?"), "必须把归属改为目标账户");
+        assertTrue(sql.contains("WHERE user_id = ?"), "必须限定来源账户，重复执行才不会误改");
+
+        Method method = ConversationMapper.class.getMethod("migrateOwner",
+                String.class, String.class);
+        assertParametersBind(CONVERSATION_MAPPER, statementId, method, "dev-user-001", "admin-id");
+    }
+
     /**
      * 按 MapperMethod 的规则从实参构造参数对象，交给 DefaultParameterHandler 逐个取值。
      * 取值失败（如 XML 引用了不存在的 {@code message} 前缀）会抛 ReflectionException。

@@ -53,13 +53,13 @@ public class AuthBootstrapServiceImpl implements AuthBootstrapService {
 
     @Override
     @Transactional
-    public void bootstrap() {
+    public String bootstrap() {
         AppRoleEntity builtinRole = ensureBuiltinRole();
 
         if (adminPassword == null || adminPassword.isBlank()) {
             // 漏配口令不应导致服务起不来：只警告并跳过建号
             log.warn("未配置 AUTH_BOOTSTRAP_ADMIN_PASSWORD，跳过初始管理员创建");
-            return;
+            return null;
         }
 
         String username = adminUsername == null || adminUsername.isBlank()
@@ -79,6 +79,7 @@ public class AuthBootstrapServiceImpl implements AuthBootstrapService {
             log.info("初始管理员账户已存在，跳过创建: {}", username);
         }
         userRoleMapper.insertIfAbsent(admin.userId(), builtinRole.roleId());
+        return admin.userId();
     }
 
     private AppRoleEntity ensureBuiltinRole() {

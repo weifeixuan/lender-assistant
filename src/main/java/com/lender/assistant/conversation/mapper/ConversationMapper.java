@@ -33,4 +33,11 @@ public interface ConversationMapper {
 
     /** 刷新 ACTIVE 会话的最近更新时间；已删会话命中 0 行，时间线不被推后 */
     int touch(@Param("conversationId") String conversationId);
+
+    /**
+     * 历史归属迁移：只把仍属于 {@code fromUserId} 的会话改为 {@code toUserId}。
+     * 重复执行时来源账户已无会话，自然命中 0 行；已删除会话同样迁移。
+     */
+    int migrateOwner(@Param("fromUserId") String fromUserId,
+                     @Param("toUserId") String toUserId);
 }
