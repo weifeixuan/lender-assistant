@@ -4,31 +4,29 @@
 > **冲突优先级**：本文件 > 个人习惯 > 通用规范；拿不准时看同包已有代码的写法。
 > **为何这么定**：取舍理由见 `docs/adr/`，本文只留可执行的规则。
 
+## 本规范的写法约定
+
+- 只写可复用约束，不写现状清单与类名目录；新增类不登记进规范。
+- 同一规则只出现一次，细则归位到对应章节；别处只留指针。
+- 单条尽量不超过两三行，超过说明该拆开或该删。
+- 实现细节与取舍理由交给 spec 与 ADR，本文只保留一行指针。
+- 过时内容直接改或删，不留「历史沿革」「以前是…」。
+- 红线等索引类内容只做速查，不复述规则正文；新增红线先在正文写，再在 §11 加入口。
+
 ## 0. 包结构
 
 ### 0.1 按领域分包 + 领域内按层
 
 ```text
 com.lender.assistant
-├── rag/              # RAG 领域
-│   ├── controller/   #   QaController / EvalController / DocumentAdminController
-│   ├── service/      #   编排（QaService / SearchService / PlanAndExecuteService / QuestionRoutingService；+ impl/）
-│   ├── client/       #   外部模型网关（PlannerModelClient / RoutingModelClient；+ impl/）
-│   ├── strategy/     #   可替换策略（+ impl/；factory/ 仅按文件格式分发用）
-│   ├── mapper/       #   DocChunkMapper（+ resources/mapper/DocChunkMapper.xml）
-│   ├── tool/         #   编排层计划工具 SPI（AgentTool / PlanToolRegistry；与 aitools 的模型工具面分离，见 ADR-0012）
-│   └── model/
-│       ├── entity/   #     *Entity —— DB 行对象（XML resultMap 指向这里）
-│       ├── dto/      #     *DTO / 枚举 —— 领域内跨层数据（QuestionRoute、StepStatus 不加后缀）
-│       ├── request/  #     *Request —— HTTP 入参（QaRequest / SearchRequest）
-│       └── response/ #     *Response —— HTTP 出参（SearchItemResponse / UploadResponse）
-├── extract/          # controller / service(+impl) / mapper / strategy(+impl) / model(entity,request,response)
-├── draft/            # controller / service(+impl) / strategy(+impl) / model(response)
-├── conversation/     # controller / service(+impl) / mapper / model(entity,dto,response)
-├── account/          # 账户、角色、登录态：controller / service(+impl) / mapper / model(entity,request,response)
+├── rag/              # RAG 领域：controller / service(+impl) / client(+impl) / strategy(+impl) / mapper / tool / model
+├── extract/          # 抽取：controller / service(+impl) / mapper / strategy(+impl) / model
+├── draft/            # 起草：controller / service(+impl) / strategy(+impl) / model
+├── conversation/     # 会话与消息：controller / service(+impl) / mapper / model
+├── account/          # 账户、角色、登录态：controller / service(+impl) / mapper / enums / model
 ├── aitools/          # 模型可自主调用的 Function Calling 工具（无 HTTP 入口）
-├── resilience/       # ResilientLlmExecutor / LlmCallLogger（+ mapper/ + model/entity）
-├── ops/              # controller/HealthController（GET /health）
+├── resilience/       # 模型调用韧性与留痕：+ mapper / model/entity
+├── ops/              # 健康探针
 ├── common/           # annotation / constant / exception / util / web
 ├── config/           # @Configuration / @Bean
 └── LenderAssistantApplication.java
@@ -37,15 +35,15 @@ com.lender.assistant
 ### 0.2 结构规则
 
 - 领域内分层 `controller` / `service` / `client` / `strategy` / `mapper` / `model` / `tool`；**顶层禁止建** `controller/` `service/` `mapper/` 技术包。
-- **四分包规则（model/ 下不再直接放类）**：DB 行 → `model/entity/*Entity`；领域内跨层数据 → `model/dto/*DTO`（枚举保留原名）；HTTP 入参 → `model/request/*Request`；HTTP 出参 → `model/response/*Response`。禁止在 `model/` 根直接放类。
+- `model/` 下按 §0.3 四分，**禁止在 `model/` 根直接放类**。
 - **外部模型网关一律进 `client/`（接口 + `impl/`）**，controller 不得直接调 `client/`。
 - 无 HTTP 入口的包（`aitools` / `resilience` / `common`）不建 `controller/`；要访问 DB 才建 `mapper/`。
-- **两类工具面不混放**：`aitools/` 只放模型可自主调用的 `@Tool`（Function Calling）；编排层按计划执行的工具放 `rag/tool/`，类名沿用 `*Tool`（见 [ADR-0012](../adr/0012-retrieval-as-plan-step-capability.md)）。
-- **领域内不建子域包**：编排族按层平铺 `service/`，模型网关进 `client/`，靠 `Plan*` / `Routing*` 语义前缀区分即可。
+- **两类工具面不混放**：`aitools/` 只放模型可自主调用的 `@Tool`（Function Calling）；编排层按计划执行的工具放 `rag/tool/`（见 [ADR-0012](../adr/0012-retrieval-as-plan-step-capability.md)）。
+- **领域内不建子域包**：按层平铺，靠 `Plan*` / `Routing*` 语义前缀区分即可。
 - `src/main/resources/` **不放 `.java`**：模板素材用 `*.java.tmpl` 放 `templates/<用途>/`，读取方路径在同一 commit 同步。
-- 新类定位顺序：领域 → 层 → 都定不了才进 `common/`，并在 commit message 说明理由。
-- 禁止平行单类包、近义包（`extract` vs `extraction` 出过事故）、空包、死代码。
 - 可替换策略统一进 `strategy/`（接口 + `impl/`）；只有运行期按参数选实现才加 `factory/`。
+- 新类定位顺序：领域 → 层 → 都定不了才进 `common/`，并在 commit message 说明理由。
+- 禁止平行单类包、近义包（`extract` vs `extraction` 出过事故）、空包。
 
 ### 0.3 模型类归类与后缀对照
 
@@ -53,13 +51,12 @@ com.lender.assistant
 
 | 角色 | 包 | 后缀 | 判定要点 |
 |---|---|---|---|
-| DB 行对象 | `model/entity/` | `*Entity` | Mapper / XML `resultMap` 直接消费，字段与表列 1:1 |
+| DB 行对象 | `model/entity/` | `*Entity` | XML `resultMap` 直接消费，字段与表列 1:1 |
 | 领域内跨层数据 | `model/dto/` | `*DTO`（枚举保留原名） | service↔mapper、service↔service、SSE 载荷、JSONB 快照 |
-| HTTP 入参 | `model/request/` | `*Request` | 只被 controller 与 service 引用 |
-| HTTP 出参 | `model/response/` | `*Response` | 只被 controller 与 service 引用；SSE 出口载荷同此 |
+| HTTP 入参/出参 | `model/request/`、`model/response/` | `*Request` / `*Response` | 只被 controller 与 service 引用 |
 
-- `model/` 根下禁止直接放类；`request/response` 不得被 mapper / strategy import。
-- 枚举随其主数据载体所在包；同领域凑满 2 个枚举再独立 `<domain>/enums/`。
+- `request` / `response` 不得被 mapper / strategy import。
+- 枚举随其主数据载体所在包；同领域凑满 2 个枚举再独立 `<domain>/enums/`（如 `account/enums/`）。
 
 ## 1. 分层职责与依赖
 
@@ -68,8 +65,8 @@ com.lender.assistant
 | `controller/` | 参数校验、调 service、组装响应、异常→状态码 | 业务逻辑、SQL、直接操作数据源 |
 | `service/` | 业务编排、事务边界、调 mapper / client / tools | 拼 SQL、拼响应细节 |
 | `client/` | 外部模型网关适配（重试、超时、留痕），只被 service 调用 | 业务编排、事务、直接操作 DB |
-| `mapper/` | 全部 SQL、行↔对象映射 | 业务判断、`@Transactional` |
-| `model/request` `model/response` | 对外请求 / 响应 `record` | 业务逻辑、可变状态 |
+| `mapper/` | 数据访问与行↔对象映射（SQL 细则见 §6） | 业务判断、`@Transactional` |
+| `model/request`、`model/response` | 对外请求 / 响应 `record` | 业务逻辑、可变状态 |
 | `model/dto` | 领域内跨层数据 `record`、枚举 | 持久化字段映射 |
 | `model/entity` | DB 行对象（XML `resultMap` 指向） | 业务判断、直接当 HTTP 出参 |
 | `common/util/` | 无状态静态方法 | 持有 Spring Bean、实例状态 |
@@ -105,12 +102,11 @@ com.lender.assistant
 
 ## 4. 增量代码生成
 
-1. 改类前先读目标类 + 同包相邻类；与已有类相似度 > 50% 时扩展它，不新建。
+1. 改类前先读目标类 + 同包相邻类；与已有类相似度 > 50% 时扩展它，已有方法不满足需求时优先重载 / 扩参，**禁止复制改名**。
 2. 新建前 `Grep` 查同名 / 同职责 / 近义包；新包必须能在 §0.1 树里指认位置。
-3. 先复用后新建：已有方法不满足需求时优先重载 / 扩参，禁止复制改名。
-4. 禁止死代码与半成品：不留注释掉的代码、不建空包、不留「以后可能用」；必须编译 + 测试通过，`TODO` 只用于明确的待人工补全点。
-5. 改 A 不顺手改 B：发现相邻问题先提出、确认后再修。
-6. 示例数据全脱敏虚构，时间取真实时间；资方名 / URL / 字段值必须与 `docs/gen_sample_docs.py` 口径一致。
+3. 禁止死代码与半成品：不留注释掉的代码、不建空包、不留「以后可能用」；必须编译 + 测试通过，`TODO` 只用于明确的待人工补全点。
+4. 改 A 不顺手改 B：发现相邻问题先提出、确认后再修。
+5. 示例数据全脱敏虚构，时间取真实时间；资方名 / URL / 字段值必须与 `docs/gen_sample_docs.py` 口径一致。
 
 ## 5. 异常、校验与日志
 
@@ -120,7 +116,7 @@ com.lender.assistant
 4. 日志用 SLF4J 占位符，异常 `log.error("上下文", e)` 带堆栈；禁止 `e.printStackTrace()` / `System.out`；级别 ERROR=需人处理 / WARN=自动恢复但有异常 / INFO=关键节点 / DEBUG=细节；禁止打印身份证 / 卡号 / 密钥，关键上下文带 `docId` / `chunkId`。
 5. 对外响应统一 `ApiResponse{code, msg, data}`（`ApiResponseBodyAdvice` 包装，失败 `data` 为 null），不暴露堆栈 / 内部类名 / SQL；SSE 与探针接口用 `@RawResponse` 排除包装（见 [ADR-0001](../adr/0001-unified-response-envelope.md)、[ADR-0007](../adr/0007-wrap-aspect-and-json-logging.md)）。
 6. MVC 客户端错误按 HTTP 语义归位，不得兜成 500：路由不存在 → 404；报文不可解析 / 参数类型不匹配 / 必填缺失 → 400，且不回声框架技术信息（见 [ADR-0005](../adr/0005-streaming-and-error-semantics.md)）。
-7. 登录与权限错误各自归位：未携带令牌、令牌无效或已失效 → 401 `UNAUTHORIZED`；已登录但缺少所需权限 → 403 `FORBIDDEN`；两种情况都不跳登录、不兜成 400/500。SSE 接口在鉴权失败时也返回普通 JSON 401（见 [ADR-0019](../adr/0019-account-session-and-roles.md)）。
+7. 登录与权限错误：令牌缺失 / 无效 / 已失效 → 401 `UNAUTHORIZED`，已登录但缺权限 → 403 `FORBIDDEN`，均不得兜成 400 / 500；流式接口鉴权失败同样返回普通 JSON 401。完整对照表见 [spec](../design/auth-and-login-spec.md#L185-L187)。
 
 ## 6. 数据访问与事务（MyBatis）
 
@@ -152,8 +148,8 @@ com.lender.assistant
 - 可配置项走 `@Value` / 配置类，集中 `application.yml`；新增配置必须给默认值且可开关（如 `rag.search.max-distance` 默认关闭）。
 - 密钥 / 口令走环境变量，禁止入库；占位假值须显式标注。
 - 新增依赖能不加就不加。
-- 登录鉴权不引 `spring-boot-starter-security`：只引 `spring-security-crypto` 使用 BCrypt；令牌为随机不透明串，库中只存 SHA-256 摘要（`user_session.token_hash`），不签 JWT（见 [ADR-0019](../adr/0019-account-session-and-roles.md)）。
-- 初始管理员口令只从环境变量 `AUTH_BOOTSTRAP_ADMIN_PASSWORD` 读取，禁止写进配置文件或提交入库；缺省时只告警跳过建号，不阻断启动。
+- 鉴权栈见 [ADR-0019](../adr/0019-account-session-and-roles.md)：不引 `spring-boot-starter-security`，只用 `spring-security-crypto`（pom 现状）。
+- 初始管理员口令只从环境变量读取，硬性要求见 §11 红线。
 
 ## 9. 单元测试
 
@@ -163,7 +159,7 @@ com.lender.assistant
 4. 优先级：领域核心逻辑（RRF、抽取规则、熔断状态机）> 编排 > controller。
 5. bug 修复先补能复现的 RED 测试再修绿。
 6. 新增 / 修改公共方法必须补或改单测；**改签名 / 改同步异步契约必须同步 `src/test`，改完 `mvn test` 全绿**。
-7. 真库测试用 Testcontainers 起 PostgreSQL（`pgvector/pgvector:pg16`），标 `@Tag("docker")`：`mvn test` 默认排除，`mvn test -Pintegration-tests` 才跑；无 Docker 的机器自动跳过、不判失败；改 Mapper / `<resultMap>` / starter 依赖必须跑一次集成档（[ADR-0017](../adr/0017-testcontainers-for-real-db-verification.md)）。
+7. 真库测试用 Testcontainers 起 PostgreSQL（`pgvector/pgvector:pg16`），标 `@Tag("docker")`：默认档排除、`-Pintegration-tests` 才跑，无 Docker 自动跳过（见 [ADR-0017](../adr/0017-testcontainers-for-real-db-verification.md)）。
 8. 测试与 `src/main/java` **同包镜像**：`<被测类>Test` / `<场景>FlowTest` / `<被测对象>ContractTest` 与被测对象同包；全局事实源契约测试（如 `SchemaContractTest`）放根包 `com.lender.assistant`；`src/test/java` 不建 main 中不存在的平行顶层包（公共测试基建除外，如 `testutil/`）。
 
 ## 10. 提交纪律与自检
@@ -183,8 +179,15 @@ com.lender.assistant
 
 ## 11. 红线
 
+> 本节为红线速查索引，规则正文见各节。
+
 ❌ `System.out` / `e.printStackTrace()`　❌ 吞异常 / 空 catch　❌ 拼接 SQL / `${}` / `SELECT *`
 ❌ `Map<String,Object>` 作跨层 / 对外契约（唯一例外：`@RawResponse` 探针 `HealthController.health()`，compose 验收脚本按其结构解析）　❌ 魔法值 / 硬编码密钥　❌ `Executors` 建池
+❌ 初始管理员口令写进配置文件 / 设默认值 / 提交入库——只从 `AUTH_BOOTSTRAP_ADMIN_PASSWORD` 读取，缺省只告警跳过建号、不阻断启动
 ❌ 无 HTTP 入口的包建 `controller/`　❌ 顶层建技术包　❌ 空包 / 死代码
 ❌ 业务代码 `if-else` 判实现类　❌ 复制粘贴改名　❌ 改签名不同步调用方与测试
 ❌ 批量重命名对裸词做大小写不敏感全量替换——改完必须逐项核对配置键、字符串常量、注解参数、prompt 文本与测试显示名
+
+## 变更记录
+
+- 2026-11-13：合并重复条目并压缩冗长段落；修正 §5.7 的 401/403 错误引用（改指 spec）；`AccountStatus` / `PermissionCode` 迁至 `account/enums/`；三条鉴权条目分别处置为压成一行、压成指针、提升为 §11 红线。更早历史见 git log。
