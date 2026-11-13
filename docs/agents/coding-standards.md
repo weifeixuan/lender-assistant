@@ -23,7 +23,7 @@ com.lender.assistant
 ├── extract/          # 抽取：controller / service(+impl) / mapper / strategy(+impl) / model
 ├── draft/            # 起草：controller / service(+impl) / strategy(+impl) / model
 ├── conversation/     # 会话与消息：controller / service(+impl) / mapper / model
-├── account/          # 账户、角色、登录态：controller / service(+impl) / mapper / enums / model
+├── account/          # 账户、角色、登录态：controller / service(+impl) / mapper / model（五分见 §0.3）
 ├── aitools/          # 模型可自主调用的 Function Calling 工具（无 HTTP 入口）
 ├── resilience/       # 模型调用韧性与留痕：+ mapper / model/entity
 ├── ops/              # 健康探针
@@ -35,7 +35,7 @@ com.lender.assistant
 ### 0.2 结构规则
 
 - 领域内分层 `controller` / `service` / `client` / `strategy` / `mapper` / `model` / `tool`；**顶层禁止建** `controller/` `service/` `mapper/` 技术包。
-- `model/` 下按 §0.3 四分，**禁止在 `model/` 根直接放类**。
+- `model/` 下按 §0.3 五分，**禁止在 `model/` 根直接放类**。
 - **外部模型网关一律进 `client/`（接口 + `impl/`）**，controller 不得直接调 `client/`。
 - 无 HTTP 入口的包（`aitools` / `resilience` / `common`）不建 `controller/`；要访问 DB 才建 `mapper/`。
 - **两类工具面不混放**：`aitools/` 只放模型可自主调用的 `@Tool`（Function Calling）；编排层按计划执行的工具放 `rag/tool/`（见 [ADR-0012](../adr/0012-retrieval-as-plan-step-capability.md)）。
@@ -47,16 +47,17 @@ com.lender.assistant
 
 ### 0.3 模型类归类与后缀对照
 
-拿到模型类按顺序判定：HTTP 入参/出参 → `request`/`response`；Mapper 直接读写且字段与表列 1:1 → `entity`；其余跨层载体 → `dto`。
+拿到模型类按顺序判定：HTTP 入参/出参 → `request`/`response`；落库或出参的标识集合 → `enums`；Mapper 直接读写且字段与表列 1:1 → `entity`；其余跨层载体 → `dto`。
 
 | 角色 | 包 | 后缀 | 判定要点 |
 |---|---|---|---|
 | DB 行对象 | `model/entity/` | `*Entity` | XML `resultMap` 直接消费，字段与表列 1:1 |
-| 领域内跨层数据 | `model/dto/` | `*DTO`（枚举保留原名） | service↔mapper、service↔service、SSE 载荷、JSONB 快照 |
+| 领域内跨层数据 | `model/dto/` | `*DTO` | service↔mapper、service↔service、SSE 载荷、JSONB 快照 |
+| 标识集合 | `model/enums/` | 原名，不加后缀 | 落库或出参的枚举（如 `AccountStatus`、`PermissionCode`），带 `code` / `desc` |
 | HTTP 入参/出参 | `model/request/`、`model/response/` | `*Request` / `*Response` | 只被 controller 与 service 引用 |
 
 - `request` / `response` 不得被 mapper / strategy import。
-- 枚举随其主数据载体所在包；同领域凑满 2 个枚举再独立 `<domain>/enums/`（如 `account/enums/`）。
+- 枚举统一放 `<domain>/model/enums/`，不再散落到 `common/constant/` 或 `model` 根。
 
 ## 1. 分层职责与依赖
 
@@ -67,7 +68,8 @@ com.lender.assistant
 | `client/` | 外部模型网关适配（重试、超时、留痕），只被 service 调用 | 业务编排、事务、直接操作 DB |
 | `mapper/` | 数据访问与行↔对象映射（SQL 细则见 §6） | 业务判断、`@Transactional` |
 | `model/request`、`model/response` | 对外请求 / 响应 `record` | 业务逻辑、可变状态 |
-| `model/dto` | 领域内跨层数据 `record`、枚举 | 持久化字段映射 |
+| `model/dto` | 领域内跨层数据 `record` | 持久化字段映射 |
+| `model/enums` | 落库 / 出参的枚举（`code` + `desc`） | 散落字符串比较 |
 | `model/entity` | DB 行对象（XML `resultMap` 指向） | 业务判断、直接当 HTTP 出参 |
 | `common/util/` | 无状态静态方法 | 持有 Spring Bean、实例状态 |
 
@@ -173,7 +175,7 @@ com.lender.assistant
 
 - [ ] 已搜过并复用现有公共方法 / SQL 片段
 - [ ] 新类已归位（领域 + 层），未建平行 / 近义包
-- [ ] 模型类落在正确的四分包子包，后缀与角色一致（`Entity` / `DTO` / `Request` / `Response`）
+- [ ] 模型类落在正确的五分包子包，后缀与角色一致（`Entity` / `DTO` / `Request` / `Response`，枚举原名）
 - [ ] 入参有校验与兜底；异常走全局处理，无吞异常
 - [ ] 非原子写有事务；线程池走工厂且可关闭；SSE 立即 return
 
@@ -187,7 +189,3 @@ com.lender.assistant
 ❌ 无 HTTP 入口的包建 `controller/`　❌ 顶层建技术包　❌ 空包 / 死代码
 ❌ 业务代码 `if-else` 判实现类　❌ 复制粘贴改名　❌ 改签名不同步调用方与测试
 ❌ 批量重命名对裸词做大小写不敏感全量替换——改完必须逐项核对配置键、字符串常量、注解参数、prompt 文本与测试显示名
-
-## 变更记录
-
-- 2026-11-13：合并重复条目并压缩冗长段落；修正 §5.7 的 401/403 错误引用（改指 spec）；`AccountStatus` / `PermissionCode` 迁至 `account/enums/`；三条鉴权条目分别处置为压成一行、压成指针、提升为 §11 红线。更早历史见 git log。
