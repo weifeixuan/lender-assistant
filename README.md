@@ -116,6 +116,9 @@ java -jar target/lender-assistant-0.1.0-SNAPSHOT.jar --server.port=8080
 | `RAG_EMBEDDING_PROVIDER` | `hash` | `hash` 本地哈希向量 / `zhipu` 智谱 embedding-3 |
 | `ZHIPU_API_KEY`          | 无 | 仅 `RAG_EMBEDDING_PROVIDER=zhipu` 时必填，缺失时启动失败 |
 | `RAG_PLAN_TOOLS_SAMPLE_ENABLED` | `false` | 打开后计划白名单追加 `customer.profile` / `lender.product`（本地样例数据源） |
+| `AUTH_SESSION_TTL_DAYS` | `7` | 登录态固定有效期（天），不做滑动续期 |
+| `AUTH_BOOTSTRAP_ADMIN_USERNAME` | `admin` | 初始管理员用户名；仅首次创建时使用 |
+| `AUTH_BOOTSTRAP_ADMIN_PASSWORD` | 空 | 初始管理员口令；为空则跳过建号并记录 WARN，应用仍可启动 |
 
 对话、路由、计划、抽取、草稿五处模型调用全部走真实 API，仓库内不再保留业务模型 mock。
 `docker compose` 会自动读取项目根 `.env`；本地 `mvn spring-boot:run` / `java -jar` 不会自动加载 `.env`，需先自行导出环境变量。
@@ -139,6 +142,7 @@ LLM_API_KEY=sk-xxx  LLM_BASE_URL=https://api.deepseek.com  LLM_MODEL=deepseek-ch
 | SSE 禁重试                         | token 已推给用户，重放即重复播报事故                              | `docs/adr/0005-streaming-and-error-semantics.md` |
 | 抽取/草稿"宁缺勿编"                     | 缺失字段渲染 TODO 而非编造值；错误参数的调用比不调用更糟                    | `extract/service/impl/ExtractGeneratorServiceImpl.java` |
 | pgvector + MyBatis（不用 JPA） | 需要大量 PG 扩展语法（HNSW/trigram/`<=>`），JPA 抽象反而挡路        | `docs/adr/0004-data-access-mybatis-conventions.md` |
+| 登录态用不透明令牌（随机串 + SHA-256 摘要），不签 JWT | JWT 无法即时踢下线；改密 / 禁用 / 登出需要立刻失效全部会话。令牌有效期 7 天，权限点共 5 个（查看文档 / 上传文档 / 使用知识库对话 / 管理账户 / 管理角色） | `docs/adr/0019-account-session-and-roles.md` |
 
 ## 技术栈
 
@@ -148,8 +152,8 @@ Spring Boot 3.5 · Spring AI 1.1（ChatClient / @Tool）· PostgreSQL 16 + pgvec
 
 - 单测：JUnit 5 + Mockito，mock 数据访问层，不连真库。
 - 真库测试：Testcontainers 起 `pgvector/pgvector:pg16`，测试类标 `@Tag("docker")`。
-- 默认档 `mvn test`：256 个用例，不跑真库测试，无 Docker 也可执行。
-- 集成档 `mvn test -Pintegration-tests`：265 个用例，含 9 个真库用例；无 Docker 的机器上这 9 个跳过，不判失败。
+- 默认档 `mvn test`：345 个用例，不跑真库测试，无 Docker 也可执行。
+- 集成档 `mvn test -Pintegration-tests`：354 个用例，含 9 个真库用例；无 Docker 的机器上这 9 个跳过，不判失败。
 
 ## 项目文档
 

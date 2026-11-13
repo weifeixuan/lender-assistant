@@ -13,7 +13,7 @@
 2. 会话与消息持久化到 PostgreSQL，服务重启、刷新页面、换标签页后历史仍在。
 3. 提供会话列表、删除、历史消息读取接口；**不提供显式新建会话接口**，会话在首问受理时懒创建。
 4. `POST /api/qa` 改造为多轮 SSE 接口：`conversationId` 可选，缺省表示新会话；首个 `meta` 事件回传新建的 `conversationId`、本轮 `roundId`、用户消息 id 与助手消息 id。
-5. 用户标识通过 `X-User-Id` 请求头传递，后端统一解析；跨用户访问会话一律返回 404。
+5. 用户身份由后端从登录令牌解析（`Authorization: Bearer <token>`，见 `docs/prd/auth-and-login.md`）；跨账户访问会话一律返回 404。
 6. 保留现有 SSE 真流式实现与 `sources → delta* → done` 事件语义，仅新增 `meta` 首事件。
 7. 删除旧操作台静态页 `src/main/resources/static/index.html`（删除项，不改造）。
 
@@ -22,7 +22,7 @@
 - 模型自动生成会话标题。
 - 会话手动改名。
 - LLM 改写检索 query 的开关（本次仅使用规则拼接）。
-- 多用户鉴权与真实登录体系（`X-User-Id` 仍是开发期标识，前端写死）。
+- ~~多用户鉴权与真实登录体系~~（已由 `docs/prd/auth-and-login.md` 落地：登录页、令牌、账户与角色管理）。
 - 会话分页、会话搜索、软删恢复、导出。
 - 多实例部署下的分布式并发锁（本次并发控制仅在单实例进程内生效）。
 - 首问幂等（`clientRequestId` 等机制，见 1.3）。
@@ -41,11 +41,11 @@
 | `conversationId` | 后端 | UUID v4，36 字符 | **首问受理时生成**，通过 SSE `meta` 回传；前端不得自行生成或提前持有 |
 | `messageId` | 后端 | UUID v4，36 字符 | 每条历史消息唯一；SSE `meta` 分别回传本轮 `userMessageId` 与 `assistantMessageId` |
 | `roundId` | 后端 | UUID v4，36 字符 | **一轮问答的关联键**：同一轮的用户消息与助手消息共享同一个 `roundId`；SSE `meta` 回传 |
-| `userId` | 前端 | `[A-Za-z0-9_-]{1,64}` | 通过请求头 `X-User-Id` 传递；开发期固定值 `dev-user-001` |
+| `userId` | 后端 | UUID 字符串 | 从登录令牌解析并写入请求上下文；前端不得自行生成或传递 |
 
 - JSON 字段统一使用驼峰（`conversationId`、`messageId`、`roundId`、`userId`）。
 - 数据库列统一使用下划线（`conversation_id`、`message_id`、`round_id`、`user_id`）。
-- 会话归属校验：携带 `conversationId` 时，不存在、已软删、或 `user_id` 与请求头不一致，一律返回 `404 CONVERSATION_NOT_FOUND`，不暴露会话是否存在。
+- 会话归属校验：携带 `conversationId` 时，不存在、已软删、或 `user_id` 与当前账户不一致，一律返回 `404 CONVERSATION_NOT_FOUND`，不暴露会话是否存在。
 - **新建路径（未携带 `conversationId`）不做归属校验，也不会返回 404**；后端直接创建新会话。
 
 ### 2.2 标识的使用边界
@@ -115,7 +115,7 @@
 
 | code | HTTP | 场景 |
 |---|---|---|
-| `PARAM_INVALID` = 400 | 400 | `X-User-Id` 缺失/空白/格式非法；`conversationId` 传了但不是 UUID；`question` 空白；`topK` ≤ 0；JSON 不可解析 |
+| `PARAM_INVALID` = 400 | 400 | `conversationId` 传了但不是 UUID；`question` 空白；`topK` ≤ 0；JSON 不可解析 |
 | `CONVERSATION_NOT_FOUND` = 404 | 404 | **仅当请求携带 `conversationId`**：会话不存在 / 已删除 / 不属于当前 `userId` |
 | `CONVERSATION_BUSY` = 409 | 409 | 携带的 `conversationId` 已有进行中的流式问答 |
 | `INTERNAL_ERROR` = 500 | 500 | 未预期异常 |
@@ -211,7 +211,7 @@ rag:
 
 ## 4. 接口契约
 
-所有接口（除 SSE 流本身外）返回统一包装 `{code, msg, data}`；所有接口必须携带 `X-User-Id`。
+所有接口（除 SSE 流本身外）返回统一包装 `{code, msg, data}`；所有接口必须携带 `Authorization: Bearer <token>`（登录取令牌），身份由后端解析。
 
 ### 4.1 会话列表
 
@@ -337,11 +337,10 @@ data: {"provider":"deepseek-chat","elapsedMillis":1234,"sourceCount":3}
   - `CONVERSATION_BUSY(409, "会话正在生成回答，请等待本轮结束后再提问")`
 - 现有 `GlobalExceptionHandler` 无需改动：`HttpStatus.resolve(409)` 可直接映射 HTTP 409。
 
-### 5.3 用户标识解析
+### 5.3 身份解析
 
-- 新增 `common/web/UserIdInterceptor`：校验 `X-User-Id` 请求头，合法则写入 request attribute `userId`，非法抛 `BizException(PARAM_INVALID)`。
-- 新增 `config/WebMvcConfig` 注册拦截器，作用路径：`/api/conversations/**`、`/api/qa`。
-- Controller 通过 `@RequestAttribute("userId") String userId` 取用户标识；不使用 ThreadLocal，避免异步线程泄漏。
+- 由全局 `common/web/AuthInterceptor` 校验 `Authorization: Bearer <token>`，解析出的账户标识写入 request attribute `userId`；缺失或失效返回 401 `UNAUTHORIZED`（见 `docs/prd/auth-and-login.md`）。
+- Controller 通过 `@RequestAttribute("userId") String userId` 取账户标识；不使用 ThreadLocal，避免异步线程泄漏。
 
 ### 5.4 会话领域
 
@@ -430,10 +429,10 @@ void generate(String systemPrompt, List<ChatTurn> history, String question,
 ### 6.1 会话接口
 
 1. 空库调用 `GET /api/conversations` 返回 `[]`；不存在任何隐式创建的会话。
-2. 列表只返回当前 `X-User-Id` 的 `ACTIVE` 会话，按 `updateTime` 倒序。
-3. 用户 A 的会话不出现在用户 B 的列表中。
+2. 列表只返回当前登录账户的 `ACTIVE` 会话，按 `updateTime` 倒序。
+3. 账户 A 的会话不出现在账户 B 的列表中。
 4. `DELETE` 后该会话从列表消失；再次 `DELETE` 返回 404；数据库 `status = 'DELETED'`，`message` 行仍存在。
-5. 缺少 `X-User-Id` 时任一接口返回 400；头值为空白或含非法字符同样 400。
+5. 未登录（缺少或无效令牌）时任一接口返回 401；令牌有效但会话不属于当前账户返回 404。
 
 ### 6.2 懒创建与会话列表
 
@@ -483,7 +482,7 @@ void generate(String systemPrompt, List<ChatTurn> history, String question,
 
 ## 7. 跨端契约：前端必须遵守的部分
 
-1. 所有会话接口与 `/api/qa` 必须携带 `X-User-Id` 请求头，值来自前端唯一常量，不得在请求体重复传 `userId`。
+1. 所有会话接口与 `/api/qa` 必须携带 `Authorization: Bearer <token>`，账户标识由后端从令牌解析，不得在请求体重复传 `userId`。
 2. 前端不得自行生成 `conversationId` 或 `messageId`；新建会话由用户点击后进入本地草稿态（无 id、不落库），首问请求不带 `conversationId`。
 3. 首问的 `conversationId` 只能从 `meta` 获取；收到 `meta` 后立即把草稿态转为真实会话，并用 `assistantMessageId` 替换本地临时 key。
 4. `meta` 是首个事件，固定读取 `conversationId`、`roundId`、`userMessageId`、`assistantMessageId`；`done` 只读取现有三字段。
@@ -502,7 +501,7 @@ void generate(String systemPrompt, List<ChatTurn> history, String question,
 | 阶段 | 后端 | 前端 | 并行关系 |
 |---|---|---|---|
 | P0 | 本文档定稿 | 本文档 + 前端文档定稿 | 已完成 |
-| P1 | schema 新增表、ErrorCode、常量枚举、`UserIdInterceptor` | 共享类型、`DEV_USER_ID` 常量、请求头注入 | ★ 前后端可同时开工 |
+| P1 | schema 新增表、ErrorCode、常量枚举、`AuthInterceptor` | 共享类型、`token.ts`、登录令牌注入 | ★ 前后端可同时开工 |
 | P2 | 会话列表、软删、历史消息接口 + 单测（不含懒创建） | 会话侧栏、草稿态、切换/删除、历史渲染 | ★ P2 阶段双方并行，依赖 P1 契约 |
 | P3 | 首问懒创建、`meta` 四字段、`AnswerGeneratorStrategy` 带 history、落库与锁 | 首问流程、`meta` 解析、临时 key 替换、草稿转正、列表刷新 | ★ P2 完成后双方并行开发，联调放在 P4 |
 | P4 | 前后端联调：懒创建、SSE 全序列、停止、并发 409、归属 404 | 同左 | 联调，不并行 |

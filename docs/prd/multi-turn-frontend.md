@@ -12,7 +12,7 @@
 1. 对话页从单轮升级为多轮：会话列表、新建（本地草稿）、删除、切换会话。
 2. 每个会话展示并继续自己的历史消息，刷新页面后历史仍在。
 3. 会话标识使用后端返回的 `conversationId`：首问前不存在，首问后从 SSE `meta` 获取。
-4. 用户标识使用请求头 `X-User-Id`，开发期写死常量。
+4. 用户身份来自登录态：请求统一携带登录令牌，账户标识由后端解析，前端不生成、不传递身份。
 5. 解析 SSE `meta` 首事件，把草稿态转为真实会话，并用服务端 `assistantMessageId` 替换本地临时 key。
 6. 历史消息完整渲染：用户提问、助手回答、【来源N】引用、右侧检索来源面板。
 7. 保留现有停止、失败、未召回、重试的交互能力，并补齐 404 / 409 分支。
@@ -42,7 +42,7 @@
 | `conversationId` | 后端 | UUID v4，36 字符 | **首问受理时生成**，通过 SSE `meta` 回传；前端不得自行生成或提前持有 |
 | `messageId` | 后端 | UUID v4，36 字符 | 每条历史消息唯一；SSE `meta` 分别回传本轮 `userMessageId` 与 `assistantMessageId` |
 | `roundId` | 后端 | UUID v4，36 字符 | **一轮问答的关联键**：同一轮的用户消息与助手消息共享同一个 `roundId`；SSE `meta` 回传 |
-| `userId` | 前端 | `[A-Za-z0-9_-]{1,64}` | 通过请求头 `X-User-Id` 传递；开发期固定值 `dev-user-001` |
+| `userId` | 后端 | UUID 字符串 | 从登录令牌解析；前端不得自行生成或传递 |
 
 - JSON 字段统一使用驼峰（`conversationId`、`messageId`、`roundId`、`userId`）。
 - 数据库列统一使用下划线（`conversation_id`、`message_id`、`round_id`、`user_id`）。
@@ -125,14 +125,14 @@ export interface MessageItem {
 
 | code | HTTP | 前端处理 |
 |---|---|---|
-| `PARAM_INVALID` = 400 | 400 | 展示服务端 `msg`；`X-User-Id` 缺失属于开发期配置错误 |
+| `PARAM_INVALID` = 400 | 400 | 展示服务端 `msg`；身份缺失不走此码（未登录返回 401，由登录态统一处理） |
 | `CONVERSATION_NOT_FOUND` = 404 | 404 | 仅出现在携带已有 id 的请求：移除该会话、提示"会话不存在或已删除"，回到最近会话或空态 |
 | `CONVERSATION_BUSY` = 409 | 409 | 仅出现在已有会话：提示"该会话正在生成回答，请稍后"；恢复输入框内容，不自动重试 |
 | `INTERNAL_ERROR` = 500 | 500 | 沿用现有失败展示，可手动重试 |
 
 ## 3. 接口契约（前端消费侧）
 
-所有请求必须携带 `X-User-Id`；除 SSE 外均走现有 `request<T>()`（解包 `{code,msg,data}`）。**不存在新建会话接口。**
+所有请求必须携带登录令牌（`Authorization: Bearer <token>`）；除 SSE 外均走现有 `request<T>()`（解包 `{code,msg,data}`）。**不存在新建会话接口。**
 
 ### 3.1 会话列表
 
@@ -311,17 +311,10 @@ AppShell 左侧导航(224px) | 会话侧栏(240px，可折叠) | 对话主区(1f
 
 ## 5. 改动面与代码位置
 
-### 5.1 用户标识常量
+### 5.1 登录令牌注入
 
-- 新增 `src/lib/identity.ts`：
-
-```ts
-/** 开发期固定用户标识；接入登录后仅替换此处的来源 */
-export const DEV_USER_ID = 'dev-user-001';
-```
-
-- `src/api/client.ts` 增加统一的请求头构造（如 `authHeaders()`），`request()` 与 SSE 的 `fetch` 都必须使用它注入 `X-User-Id`。
-- 除 `identity.ts` 外，任何文件不得出现字面量 `dev-user-001`。
+- 令牌由登录页写入本地存储，`src/api/client.ts` 统一从 `src/lib/token.ts` 读取并拼装 `Authorization: Bearer <token>`；`request()` 与 SSE 的 `fetch` 都必须使用它。
+- 收到 401 时清除令牌并跳转登录页；不在此处自行生成任何身份标识。
 
 ### 5.2 API 封装
 
@@ -409,7 +402,7 @@ export interface QaMeta {
 
 ### 6.6 流式与错误
 
-25. 所有请求头携带 `X-User-Id: dev-user-001`（可用浏览器 Network 面板核对），草稿态首问也不例外。
+25. 所有请求头携带 `Authorization: Bearer <token>`（可用浏览器 Network 面板核对），草稿态首问也不例外。
 26. 收到 409 时展示"该会话正在生成回答，请稍后"，并将原问题恢复到输入框，不自动重试。
 27. 收到 404 时移除该会话并提示，后续不再向该 id 发请求。
 28. 用户点击停止后，正文保留并显示"已停止"；再次提问可正常开始。
@@ -435,7 +428,7 @@ export interface QaMeta {
 
 1. 后端**不提供** `POST /api/conversations`；会话在首问受理时创建。
 2. `conversationId`、`messageId` 均由后端生成 UUID v4；首问前不要求前端持有 id。
-3. 所有会话接口与 `/api/qa` 必须接受并校验 `X-User-Id`；缺失/非法返回 400。
+3. 所有会话接口与 `/api/qa` 必须校验登录令牌；未登录或令牌失效返回 401。
 4. `/api/qa` 的 `conversationId` 必须可选：缺省即懒创建，且新路径不得返回 404 / 409。
 5. 成功 SSE 的第一个事件必须是 `meta`，固定包含 `conversationId`、`roundId`、`userMessageId`、`assistantMessageId`。
 6. `done` 载荷保持 `{provider, elapsedMillis, sourceCount}` 三字段，不新增字段。
@@ -454,7 +447,7 @@ export interface QaMeta {
 | 阶段 | 前端 | 后端 | 并行关系 |
 |---|---|---|---|
 | P0 | 本文档定稿 | 后端文档定稿 | 已完成 |
-| P1 | `types.ts`、`identity.ts`、请求头注入 | schema、ErrorCode、枚举、`UserIdInterceptor` | ★ 前后端可同时开工 |
+| P1 | `types.ts`、`token.ts`、请求头注入 | schema、ErrorCode、枚举、`AuthInterceptor` | ★ 前后端可同时开工 |
 | P2 | 会话侧栏、草稿态、切换/删除、历史加载与渲染 | 会话列表、软删、历史消息接口 | ★ P2 阶段双方并行，依赖 P1 契约 |
 | P3 | 首问流程、`meta` 解析、临时 key 替换、草稿转正 | 懒创建、`meta` 四字段、带 history 的策略签名、落库与锁 | ★ P2 完成后双方并行开发，联调放在 P4 |
 | P4 | 联调：懒创建、SSE 全序列、停止、409、404、标题刷新 | 同左 | 联调，不并行 |

@@ -25,6 +25,7 @@ com.lender.assistant
 ├── extract/          # controller / service(+impl) / mapper / strategy(+impl) / model(entity,request,response)
 ├── draft/            # controller / service(+impl) / strategy(+impl) / model(response)
 ├── conversation/     # controller / service(+impl) / mapper / model(entity,dto,response)
+├── account/          # 账户、角色、登录态：controller / service(+impl) / mapper / model(entity,request,response)
 ├── aitools/          # 模型可自主调用的 Function Calling 工具（无 HTTP 入口）
 ├── resilience/       # ResilientLlmExecutor / LlmCallLogger（+ mapper/ + model/entity）
 ├── ops/              # controller/HealthController（GET /health）
@@ -119,6 +120,7 @@ com.lender.assistant
 4. 日志用 SLF4J 占位符，异常 `log.error("上下文", e)` 带堆栈；禁止 `e.printStackTrace()` / `System.out`；级别 ERROR=需人处理 / WARN=自动恢复但有异常 / INFO=关键节点 / DEBUG=细节；禁止打印身份证 / 卡号 / 密钥，关键上下文带 `docId` / `chunkId`。
 5. 对外响应统一 `ApiResponse{code, msg, data}`（`ApiResponseBodyAdvice` 包装，失败 `data` 为 null），不暴露堆栈 / 内部类名 / SQL；SSE 与探针接口用 `@RawResponse` 排除包装（见 [ADR-0001](../adr/0001-unified-response-envelope.md)、[ADR-0007](../adr/0007-wrap-aspect-and-json-logging.md)）。
 6. MVC 客户端错误按 HTTP 语义归位，不得兜成 500：路由不存在 → 404；报文不可解析 / 参数类型不匹配 / 必填缺失 → 400，且不回声框架技术信息（见 [ADR-0005](../adr/0005-streaming-and-error-semantics.md)）。
+7. 登录与权限错误各自归位：未携带令牌、令牌无效或已失效 → 401 `UNAUTHORIZED`；已登录但缺少所需权限 → 403 `FORBIDDEN`；两种情况都不跳登录、不兜成 400/500。SSE 接口在鉴权失败时也返回普通 JSON 401（见 [ADR-0019](../adr/0019-account-session-and-roles.md)）。
 
 ## 6. 数据访问与事务（MyBatis）
 
@@ -150,6 +152,8 @@ com.lender.assistant
 - 可配置项走 `@Value` / 配置类，集中 `application.yml`；新增配置必须给默认值且可开关（如 `rag.search.max-distance` 默认关闭）。
 - 密钥 / 口令走环境变量，禁止入库；占位假值须显式标注。
 - 新增依赖能不加就不加。
+- 登录鉴权不引 `spring-boot-starter-security`：只引 `spring-security-crypto` 使用 BCrypt；令牌为随机不透明串，库中只存 SHA-256 摘要（`user_session.token_hash`），不签 JWT（见 [ADR-0019](../adr/0019-account-session-and-roles.md)）。
+- 初始管理员口令只从环境变量 `AUTH_BOOTSTRAP_ADMIN_PASSWORD` 读取，禁止写进配置文件或提交入库；缺省时只告警跳过建号，不阻断启动。
 
 ## 9. 单元测试
 
