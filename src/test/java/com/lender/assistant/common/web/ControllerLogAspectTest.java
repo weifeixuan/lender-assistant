@@ -15,6 +15,7 @@ import org.slf4j.LoggerFactory;
 import java.util.List;
 import java.util.Map;
 
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -87,5 +88,28 @@ class ControllerLogAspectTest {
         String line = loggedLine("接口调用进入");
         assertTrue(line.contains("\"password\":\"<masked>\""), "敏感 key 应脱敏后再 JSON 化，实际: " + line);
         assertTrue(line.contains("\"question\":\"q\""), "非敏感 key 应原样保留，实际: " + line);
+    }
+
+    @Test
+    @DisplayName("入参：含口令的 record 也脱敏，用户名保持可检索")
+    void masksPasswordOnRecordArgs() throws Throwable {
+        aspect.logControllerCall(joinPointOf(null,
+                new com.lender.assistant.account.model.request.LoginRequest("admin", "p1")));
+
+        String line = loggedLine("接口调用进入");
+        assertTrue(line.contains("\"password\":\"<masked>\""),
+                "登录报文的口令不得进日志，实际: " + line);
+        assertTrue(line.contains("\"username\":\"admin\""), "用户名应原样保留，实际: " + line);
+    }
+
+    @Test
+    @DisplayName("出参：登录响应中的令牌不得进日志")
+    void masksTokenOnResponse() throws Throwable {
+        aspect.logControllerCall(joinPointOf(new com.lender.assistant.account.model.response.LoginResponse(
+                "secret-token", "2026-11-20 10:00:00", null)));
+
+        String line = loggedLine("接口调用返回");
+        assertTrue(line.contains("\"token\":\"<masked>\""), "令牌不得进日志，实际: " + line);
+        assertFalse(line.contains("secret-token"), "令牌原文不得出现在日志里，实际: " + line);
     }
 }

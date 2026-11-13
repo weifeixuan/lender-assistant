@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<!-- 账户-角色绑定：ON CONFLICT DO NOTHING 让启动自举与重复绑定天然幂等。 -->
+<mapper namespace="com.lender.assistant.account.mapper.UserRoleMapper">
+
+    <insert id="insertIfAbsent">
+        INSERT INTO user_role (user_id, role_id)
+        VALUES (#{userId}, #{roleId})
+        ON CONFLICT (user_id, role_id) DO NOTHING
+    </insert>
+</mapper>

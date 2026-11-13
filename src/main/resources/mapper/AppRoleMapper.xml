@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<!-- app_role 读写：角色名比较按 lower(name)，与函数唯一索引口径一致。 -->
+<mapper namespace="com.lender.assistant.account.mapper.AppRoleMapper">
+
+    <resultMap id="roleRowMap" type="com.lender.assistant.account.model.entity.AppRoleEntity">
+        <constructor>
+            <arg column="role_id" javaType="java.lang.String"/>
+            <arg column="name" javaType="java.lang.String"/>
+            <arg column="description" javaType="java.lang.String"/>
+            <arg column="builtin" javaType="java.lang.Boolean"/>
+            <arg column="create_time" javaType="java.lang.String"/>
+            <arg column="update_time" javaType="java.lang.String"/>
+        </constructor>
+    </resultMap>
+
+    <select id="findByNameIgnoreCase" resultMap="roleRowMap">
+        SELECT role_id, name, description, builtin,
+               TO_CHAR(create_time, 'YYYY-MM-DD HH24:MI:SS') AS create_time,
+               TO_CHAR(update_time, 'YYYY-MM-DD HH24:MI:SS') AS update_time
+        FROM app_role
+        WHERE lower(name) = lower(#{name})
+    </select>
+
+    <insert id="insert">
+        INSERT INTO app_role (role_id, name, description, builtin)
+        VALUES (#{roleId}, #{name}, #{description}, #{builtin})
+    </insert>
+</mapper>

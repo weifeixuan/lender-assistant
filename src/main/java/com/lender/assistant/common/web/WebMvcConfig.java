@@ -5,22 +5,24 @@ import org.springframework.web.servlet.config.annotation.InterceptorRegistry;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 
 /**
- * 注册用户标识拦截器。
+ * 注册认证拦截器。
  *
- * 覆盖会话查询接口与问答接口：问答已接入多轮，首问需要 userId 才能懒创建会话。
+ * 覆盖全部 /api/**：默认需要登录；只有登录接口匿名。
+ * /health 不在 /api 前缀下，天然不受影响。
  */
 @Configuration
 public class WebMvcConfig implements WebMvcConfigurer {
 
-    private final UserIdInterceptor userIdInterceptor;
+    private final AuthInterceptor authInterceptor;
 
-    public WebMvcConfig(UserIdInterceptor userIdInterceptor) {
-        this.userIdInterceptor = userIdInterceptor;
+    public WebMvcConfig(AuthInterceptor authInterceptor) {
+        this.authInterceptor = authInterceptor;
     }
 
     @Override
     public void addInterceptors(InterceptorRegistry registry) {
-        registry.addInterceptor(userIdInterceptor)
-                .addPathPatterns("/api/conversations/**", "/api/qa");
+        registry.addInterceptor(authInterceptor)
+                .addPathPatterns("/api/**")
+                .excludePathPatterns("/api/auth/login");
     }
 }

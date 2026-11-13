@@ -1,10 +1,14 @@
 package com.lender.assistant.rag.controller;
 
+import com.lender.assistant.account.model.dto.AuthenticatedAccountDTO;
+import com.lender.assistant.account.service.AuthService;
+import com.lender.assistant.common.constant.AuthConstants;
+import com.lender.assistant.common.constant.PermissionCode;
 import com.lender.assistant.common.exception.BizException;
 import com.lender.assistant.common.exception.ErrorCode;
 import com.lender.assistant.common.web.ApiResponseBodyAdvice;
+import com.lender.assistant.common.web.AuthInterceptor;
 import com.lender.assistant.common.web.GlobalExceptionHandler;
-import com.lender.assistant.common.web.UserIdInterceptor;
 import com.lender.assistant.rag.service.QaService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -13,6 +17,8 @@ import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
+
+import java.util.List;
 
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
@@ -24,11 +30,12 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
- * 问答接口的 HTTP 层契约：400 / 404 / 409 都在返回 SseEmitter 之前同步抛出，
+ * 问答接口的 HTTP 层契约：400 / 404 / 409 与鉴权失败都在返回 SseEmitter 之前同步抛出，
  * 因此必须是普通 JSON 错误体，而不是半开 SSE 流。
  */
 class QaControllerTest {
 
+    private static final String TOKEN = "test-token";
     private static final String USER_ID = "dev-user-001";
     private static final String CONVERSATION_ID = "11111111-1111-1111-1111-111111111111";
 
@@ -38,17 +45,33 @@ class QaControllerTest {
     @BeforeEach
     void setUp() {
         qaService = mock(QaService.class);
+        AuthService authService = mock(AuthService.class);
+        when(authService.authenticate(TOKEN)).thenReturn(new AuthenticatedAccountDTO(USER_ID,
+                "admin", "管理员", "hash", List.of(),
+                List.of(PermissionCode.KNOWLEDGE_CHAT_USE.code())));
         mockMvc = MockMvcBuilders.standaloneSetup(new QaController(qaService))
                 .setControllerAdvice(new ApiResponseBodyAdvice(), new GlobalExceptionHandler())
-                .addInterceptors(new UserIdInterceptor())
+                .addInterceptors(new AuthInterceptor(authService))
                 .build();
+    }
+
+    @Test
+    @DisplayName("无令牌访问流式问答：普通 JSON 401，不建立事件流")
+    void missingTokenReturnsJsonUnauthorized() throws Exception {
+        mockMvc.perform(post("/api/qa")
+                        .accept(MediaType.TEXT_EVENT_STREAM)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"question\":\"问题\"}"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value(401))
+                .andExpect(jsonPath("$.msg").value("登录已失效，请重新登录"));
     }
 
     @Test
     @DisplayName("conversationId 非 UUID → 400 PARAM_INVALID，普通 JSON")
     void invalidConversationIdReturns400() throws Exception {
         mockMvc.perform(post("/api/qa")
-                        .header("X-User-Id", USER_ID)
+                        .header(AuthConstants.AUTHORIZATION_HEADER, "Bearer " + TOKEN)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"conversationId\":\"conv-1\",\"question\":\"问题\"}"))
                 .andExpect(status().isBadRequest())
@@ -59,7 +82,7 @@ class QaControllerTest {
     @DisplayName("question 为空白 → 400 PARAM_INVALID，普通 JSON 而非 500")
     void blankQuestionReturns400() throws Exception {
         mockMvc.perform(post("/api/qa")
-                        .header("X-User-Id", USER_ID)
+                        .header(AuthConstants.AUTHORIZATION_HEADER, "Bearer " + TOKEN)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"question\":\"   \"}"))
                 .andExpect(status().isBadRequest())
@@ -73,7 +96,7 @@ class QaControllerTest {
                 .thenThrow(new BizException(ErrorCode.CONVERSATION_NOT_FOUND));
 
         mockMvc.perform(post("/api/qa")
-                        .header("X-User-Id", USER_ID)
+                        .header(AuthConstants.AUTHORIZATION_HEADER, "Bearer " + TOKEN)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"conversationId\":\"" + CONVERSATION_ID + "\",\"question\":\"问题\"}"))
                 .andExpect(status().isNotFound())
@@ -87,7 +110,7 @@ class QaControllerTest {
                 .thenThrow(new BizException(ErrorCode.CONVERSATION_BUSY));
 
         mockMvc.perform(post("/api/qa")
-                        .header("X-User-Id", USER_ID)
+                        .header(AuthConstants.AUTHORIZATION_HEADER, "Bearer " + TOKEN)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"conversationId\":\"" + CONVERSATION_ID + "\",\"question\":\"问题\"}"))
                 .andExpect(status().isConflict())
@@ -101,7 +124,7 @@ class QaControllerTest {
                 .thenReturn(new SseEmitter());
 
         mockMvc.perform(post("/api/qa")
-                        .header("X-User-Id", USER_ID)
+                        .header(AuthConstants.AUTHORIZATION_HEADER, "Bearer " + TOKEN)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"conversationId\":\"" + CONVERSATION_ID + "\",\"question\":\"  问题  \"}"))
                 .andExpect(status().isOk());

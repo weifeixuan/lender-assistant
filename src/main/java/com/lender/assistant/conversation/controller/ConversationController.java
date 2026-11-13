@@ -1,6 +1,6 @@
 package com.lender.assistant.conversation.controller;
 
-import com.lender.assistant.common.web.UserIdInterceptor;
+import com.lender.assistant.common.constant.AuthConstants;
 import com.lender.assistant.conversation.service.ConversationService;
 import com.lender.assistant.conversation.model.response.ConversationMessagesResponse;
 import com.lender.assistant.conversation.model.response.ConversationSummaryResponse;
@@ -29,21 +29,21 @@ public class ConversationController {
 
     @GetMapping
     public List<ConversationSummaryResponse> list(
-            @RequestAttribute(UserIdInterceptor.USER_ID_ATTRIBUTE) String userId) {
+            @RequestAttribute(AuthConstants.USER_ID_ATTRIBUTE) String userId) {
         return conversationService.listConversations(userId);
     }
 
     @GetMapping("/{conversationId}/messages")
     public ConversationMessagesResponse messages(
             @PathVariable("conversationId") String conversationId,
-            @RequestAttribute(UserIdInterceptor.USER_ID_ATTRIBUTE) String userId) {
+            @RequestAttribute(AuthConstants.USER_ID_ATTRIBUTE) String userId) {
         return conversationService.getMessages(conversationId, userId);
     }
 
     @DeleteMapping("/{conversationId}")
     public DeleteConversationResponse delete(
             @PathVariable("conversationId") String conversationId,
-            @RequestAttribute(UserIdInterceptor.USER_ID_ATTRIBUTE) String userId) {
+            @RequestAttribute(AuthConstants.USER_ID_ATTRIBUTE) String userId) {
         return conversationService.deleteConversation(conversationId, userId);
     }
 }

@@ -163,7 +163,7 @@ CREATE INDEX IF NOT EXISTS idx_conversation_user_status_update
 
 COMMENT ON TABLE conversation IS '会话：一轮或多轮问答的归属单元，首问受理时懒创建';
 COMMENT ON COLUMN conversation.conversation_id IS '对外会话标识（UUID v4），SSE meta 回传';
-COMMENT ON COLUMN conversation.user_id IS '会话归属用户，来自 X-User-Id';
+COMMENT ON COLUMN conversation.user_id IS '会话归属账户，值为 app_user.user_id';
 COMMENT ON COLUMN conversation.title IS '会话标题，取首问正文去空白后的前 20 个 Unicode code point';
 COMMENT ON COLUMN conversation.status IS '会话状态：ACTIVE / DELETED（软删）';
 COMMENT ON COLUMN conversation.create_time IS '创建时间';
@@ -217,3 +217,96 @@ COMMENT ON COLUMN message.elapsed_ms IS '生成耗时（毫秒）';
 COMMENT ON COLUMN message.error_msg IS 'FAILED 时的错误说明';
 COMMENT ON COLUMN message.create_time IS '消息创建时间';
 COMMENT ON COLUMN message.update_time IS '消息最近更新时间';
+
+-- ========== 账户体系：账户、角色、授权与会话 ==========
+-- 取舍见 ADR-0019：账户主键用应用生成的 UUID（TEXT），角色是数据，会话为服务端 opaque token。
+
+CREATE TABLE IF NOT EXISTS app_user (
+    user_id       TEXT        PRIMARY KEY,
+    username      TEXT        NOT NULL,
+    display_name  TEXT        NOT NULL,
+    password_hash TEXT        NOT NULL,
+    status        TEXT        NOT NULL DEFAULT 'ENABLED',
+    create_time   TIMESTAMPTZ NOT NULL DEFAULT now(),
+    update_time   TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- 用户名唯一且不区分大小写；与 app_role.name 口径一致
+CREATE UNIQUE INDEX IF NOT EXISTS uk_app_user_username_lower ON app_user (lower(username));
+
+COMMENT ON TABLE app_user IS '账户：可登录的系统实体';
+COMMENT ON COLUMN app_user.user_id IS '账户标识（UUID v4），应用生成，全链路唯一；conversation.user_id 引用此值';
+COMMENT ON COLUMN app_user.username IS '登录名，3-32 位字母数字下划线连字符，比较不区分大小写';
+COMMENT ON COLUMN app_user.display_name IS '展示名，1-32 字符';
+COMMENT ON COLUMN app_user.password_hash IS 'BCrypt 口令摘要，永不返回前端';
+COMMENT ON COLUMN app_user.status IS '账户状态：ENABLED / DISABLED';
+COMMENT ON COLUMN app_user.create_time IS '创建时间';
+COMMENT ON COLUMN app_user.update_time IS '最近更新时间';
+
+CREATE TABLE IF NOT EXISTS app_role (
+    role_id      TEXT        PRIMARY KEY,
+    name         TEXT        NOT NULL,
+    description  TEXT,
+    builtin      BOOLEAN     NOT NULL DEFAULT false,
+    create_time  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    update_time  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS uk_app_role_name_lower ON app_role (lower(name));
+
+COMMENT ON TABLE app_role IS '角色：权限点的集合，可自定义增删改；系统管理员为内置角色';
+COMMENT ON COLUMN app_role.role_id IS '角色标识（UUID v4），应用生成';
+COMMENT ON COLUMN app_role.name IS '角色名，1-32 字符，比较不区分大小写';
+COMMENT ON COLUMN app_role.description IS '角色描述，可空';
+COMMENT ON COLUMN app_role.builtin IS '是否内置角色；内置角色不可删除、改名、改权限，隐式拥有全部权限点';
+COMMENT ON COLUMN app_role.create_time IS '创建时间';
+COMMENT ON COLUMN app_role.update_time IS '最近更新时间';
+
+CREATE TABLE IF NOT EXISTS user_role (
+    user_id TEXT NOT NULL,
+    role_id TEXT NOT NULL,
+    PRIMARY KEY (user_id, role_id),
+    CONSTRAINT fk_user_role_user FOREIGN KEY (user_id)
+        REFERENCES app_user (user_id) ON DELETE CASCADE,
+    CONSTRAINT fk_user_role_role FOREIGN KEY (role_id)
+        REFERENCES app_role (role_id) ON DELETE RESTRICT
+);
+
+-- 角色删除前统计引用账户数
+CREATE INDEX IF NOT EXISTS idx_user_role_role ON user_role (role_id);
+
+COMMENT ON TABLE user_role IS '账户与角色的多对多分配；账户权限取所有角色并集';
+COMMENT ON COLUMN user_role.user_id IS '账户标识，外键指向 app_user.user_id，账户删除时级联';
+COMMENT ON COLUMN user_role.role_id IS '角色标识，外键指向 app_role.role_id，仍被引用时禁止删除角色';
+
+-- 不建 app_permission 表：权限点目录固定在代码枚举中，
+-- 避免出现「库里有的码后端不认识」的第二套真相（见 PRD 2.3）。
+CREATE TABLE IF NOT EXISTS role_permission (
+    role_id         TEXT NOT NULL,
+    permission_code TEXT NOT NULL,
+    PRIMARY KEY (role_id, permission_code),
+    CONSTRAINT fk_role_permission_role FOREIGN KEY (role_id)
+        REFERENCES app_role (role_id) ON DELETE CASCADE
+);
+
+COMMENT ON TABLE role_permission IS '角色与权限点的关联；permission_code 取代码枚举的码值';
+COMMENT ON COLUMN role_permission.role_id IS '角色标识，外键指向 app_role.role_id，角色删除时级联';
+COMMENT ON COLUMN role_permission.permission_code IS '权限点码值，如 knowledge.chat.use；解析时未识别的码直接拒绝';
+
+CREATE TABLE IF NOT EXISTS user_session (
+    token_hash  TEXT PRIMARY KEY,
+    user_id     TEXT        NOT NULL,
+    expire_time TIMESTAMPTZ NOT NULL,
+    create_time TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CONSTRAINT fk_user_session_user FOREIGN KEY (user_id)
+        REFERENCES app_user (user_id) ON DELETE CASCADE
+);
+
+-- 登出全端、登录清理过期会话按账户读取
+CREATE INDEX IF NOT EXISTS idx_user_session_user ON user_session (user_id);
+
+COMMENT ON TABLE user_session IS '登录会话：服务端 opaque token，删除即失效';
+COMMENT ON COLUMN user_session.token_hash IS '令牌的 SHA-256 十六进制摘要，不存原文';
+COMMENT ON COLUMN user_session.user_id IS '会话归属账户，外键指向 app_user.user_id，账户删除时级联';
+COMMENT ON COLUMN user_session.expire_time IS '到期时间：创建时间 + 固定有效期，不滑动续期';
+COMMENT ON COLUMN user_session.create_time IS '登录时间';

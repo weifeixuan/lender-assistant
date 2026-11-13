@@ -93,6 +93,14 @@
             <scope>runtime</scope>
         </dependency>
 
+        <!-- 只取 BCrypt 口令编码器。不引 spring-boot-starter-security：
+             全家桶的自动配置会改掉 /health、SSE 与既有 curl 脚本的对外行为，
+             而本期用不到它的方法级授权/CSRF 等能力（取舍见 ADR-0019） -->
+        <dependency>
+            <groupId>org.springframework.security</groupId>
+            <artifactId>spring-security-crypto</artifactId>
+        </dependency>
+
         <!-- Apache POI：解析资方接口文档（.docx）。Tika 暂不引入——
              当前没有 PDF 场景，Tika 全家桶 20MB+，需要时再加 -->
         <dependency>

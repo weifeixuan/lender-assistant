@@ -1,11 +1,11 @@
 package com.lender.assistant.rag.controller;
 
 import com.lender.assistant.common.annotation.RawResponse;
+import com.lender.assistant.common.constant.AuthConstants;
 import com.lender.assistant.common.constant.SearchConstants;
 import com.lender.assistant.common.exception.BizException;
 import com.lender.assistant.common.exception.ErrorCode;
 import com.lender.assistant.common.util.TopKUtils;
-import com.lender.assistant.common.web.UserIdInterceptor;
 import com.lender.assistant.rag.model.request.QaRequest;
 import com.lender.assistant.rag.service.QaService;
 import org.springframework.http.MediaType;
@@ -44,7 +44,7 @@ public class QaController {
 
     @PostMapping(value = "/api/qa", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public SseEmitter qa(@RequestBody QaRequest request,
-                         @RequestAttribute(UserIdInterceptor.USER_ID_ATTRIBUTE) String userId) {
+                         @RequestAttribute(AuthConstants.USER_ID_ATTRIBUTE) String userId) {
         String question = request.question();
         if (question == null || question.isBlank()) {
             throw new BizException(ErrorCode.PARAM_INVALID, "question 不能为空");

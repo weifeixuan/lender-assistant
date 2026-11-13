@@ -119,4 +119,56 @@ class SchemaContractTest {
         assertTrue(SCHEMA.contains("COMMENT ON TABLE message"),
                 "message 缺少表注释");
     }
+
+    @Test
+    @DisplayName("账户体系五张表均已声明")
+    void accountTablesAreDeclared() {
+        String[] tables = {"app_user", "app_role", "user_role", "role_permission", "user_session"};
+        for (String table : tables) {
+            assertTrue(SCHEMA.contains("CREATE TABLE IF NOT EXISTS " + table + " ("),
+                    "缺少 " + table + " 建表语句");
+            assertTrue(SCHEMA.contains("COMMENT ON TABLE " + table),
+                    table + " 缺少表注释");
+        }
+    }
+
+    @Test
+    @DisplayName("用户名与角色名按 lower() 函数索引唯一，不区分大小写")
+    void accountNamesAreCaseInsensitiveUnique() {
+        assertTrue(SCHEMA.contains(
+                        "CREATE UNIQUE INDEX IF NOT EXISTS uk_app_user_username_lower ON app_user (lower(username))"),
+                "用户名必须按 lower(username) 唯一");
+        assertTrue(SCHEMA.contains(
+                        "CREATE UNIQUE INDEX IF NOT EXISTS uk_app_role_name_lower ON app_role (lower(name))"),
+                "角色名必须按 lower(name) 唯一");
+    }
+
+    @Test
+    @DisplayName("会话表只存令牌摘要，账户侧级联删除")
+    void sessionStoresTokenDigestOnly() {
+        assertTrue(SCHEMA.contains("token_hash TEXT PRIMARY KEY"),
+                "user_session 主键必须是令牌摘要");
+        assertTrue(SCHEMA.contains(
+                        "REFERENCES app_user (user_id) ON DELETE CASCADE"),
+                "会话随账户级联删除");
+        assertTrue(SCHEMA.contains("COMMENT ON COLUMN user_session.token_hash"),
+                "token_hash 必须有注释说明只存摘要");
+    }
+
+    @Test
+    @DisplayName("角色被引用时不可删除：user_role 角色侧为 RESTRICT")
+    void roleDeletionIsRestricted() {
+        assertTrue(SCHEMA.contains(
+                        "REFERENCES app_role (role_id) ON DELETE RESTRICT"),
+                "角色侧外键必须是 RESTRICT，避免删掉仍被账户使用的角色");
+    }
+
+    @Test
+    @DisplayName("conversation.user_id 注释指向账户表主键")
+    void conversationOwnerCommentPointsToAccount() {
+        assertTrue(SCHEMA.contains("COMMENT ON COLUMN conversation.user_id"),
+                "conversation.user_id 缺少列注释");
+        assertTrue(SCHEMA.contains("app_user.user_id"),
+                "conversation.user_id 注释必须写明值为 app_user.user_id");
+    }
 }

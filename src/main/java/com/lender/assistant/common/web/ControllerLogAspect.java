@@ -1,6 +1,8 @@
 package com.lender.assistant.common.web;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.aspectj.lang.ProceedingJoinPoint;
 import org.aspectj.lang.annotation.Around;
 import org.aspectj.lang.annotation.Aspect;
@@ -33,7 +35,9 @@ import java.util.Set;
  * service / strategy 的日志由各自代码按需打印。
  *
  * 脱敏：入参若是 Map（请求体的常见形态）按 key 名脱敏（password/token/secret/key/idCard/bankCard → &lt;masked&gt;），
- * 脱敏发生在 JSON 序列化之前；出参由服务端生成、非外部输入，不做脱敏。
+ * 脱敏发生在 JSON 序列化之前；record 入参（如登录报文）把对象树逐层按字段名脱敏，
+ * 覆盖 record 内嵌对象与集合；登录响应里的令牌同理不会进日志。
+ * 出参不改字段语义，只对敏感字段名做脱敏。
  *
  * 序列化兜底：个别对象 getter 抛异常 / 循环引用会导致 Jackson 序列化失败，必须 catch 降级为
  * String.valueOf——日志组件绝不能因序列化问题影响业务请求。
@@ -41,8 +45,8 @@ import java.util.Set;
  * 截断策略：超长 JSON 整体省略、只留原始长度。半截 JSON 无法被日志采集端解析，
  * 与其留"看似可解析实则残缺"的文本，不如干净给出长度指标。
  *
- * 已知边界：当前控制器入参只有 Map（可脱敏）与不含敏感字段的 record（JSON 序列化）。
- * 若未来新增"含敏感字段的 record 入参"，需把脱敏扩展为按 record 字段名处理。
+ * 已知边界：Map 只按顶层 key 脱敏（请求体嵌套敏感字段的场景尚未出现）；
+ * record 入参/出参递归脱敏，普通 POJO 仍原样序列化。
  */
 @Aspect
 @Component
@@ -59,7 +63,6 @@ public class ControllerLogAspect {
     /** 命中任一片段即脱敏（key 先小写、去分隔符再 contains 匹配） */
     private static final Set<String> SENSITIVE_KEY_FRAGMENTS =
             Set.of("password", "passwd", "token", "secret", "key", "idcard", "bankcard");
-
     /** 容器注入：与响应序列化共用同一份 ObjectMapper 配置，保证日志 JSON 与 HTTP body 格式一致 */
     private final ObjectMapper objectMapper;
 
@@ -107,7 +110,7 @@ public class ControllerLogAspect {
         return truncateLog(toJson(jsonSafe));
     }
 
-    private static List<Object> arrayAsJsonSafe(Object[] array) {
+    private List<Object> arrayAsJsonSafe(Object[] array) {
         List<Object> list = new ArrayList<>(array.length);
         for (Object element : array) {
             list.add(jsonSafe(element));
@@ -117,9 +120,9 @@ public class ControllerLogAspect {
 
     /**
      * 特殊类型替换成 JSON 可描述的替身：文件只留元信息、流式响应只记占位、Map 先按 key 脱敏；
-     * 其余类型原样交给 ObjectMapper 序列化。
+     * record 走对象树脱敏（登录报文/登录响应含口令与令牌），其余类型原样交给 ObjectMapper。
      */
-    private static Object jsonSafe(Object value) {
+    private Object jsonSafe(Object value) {
         if (value instanceof MultipartFile file) {
             return Map.of("fileName", String.valueOf(file.getOriginalFilename()), "size", file.getSize());
         }
@@ -129,7 +132,36 @@ public class ControllerLogAspect {
         if (value instanceof Map<?, ?> map) {
             return maskMap(map);
         }
+        if (value != null && value.getClass().isRecord()) {
+            return maskRecord(value);
+        }
         return value;
+    }
+
+    /** record 转成对象树后逐层脱敏；转换失败时原样返回，日志绝不能影响业务 */
+    private Object maskRecord(Object value) {
+        try {
+            return maskNode(objectMapper.valueToTree(value));
+        } catch (Exception e) {
+            return value;
+        }
+    }
+
+    private JsonNode maskNode(JsonNode node) {
+        if (node instanceof ObjectNode objectNode) {
+            List<String> sensitiveFields = new ArrayList<>();
+            objectNode.fields().forEachRemaining(entry -> {
+                if (isSensitiveKey(entry.getKey())) {
+                    sensitiveFields.add(entry.getKey());
+                } else {
+                    maskNode(entry.getValue());
+                }
+            });
+            sensitiveFields.forEach(field -> objectNode.put(field, MASKED));
+        } else if (node.isArray()) {
+            node.forEach(this::maskNode);
+        }
+        return node;
     }
 
     /** 序列化失败必须降级：getter 抛异常 / 循环引用等场景回退 toString，不影响业务请求 */

@@ -6,6 +6,7 @@ import com.lender.assistant.common.exception.ErrorCode;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.MissingServletRequestParameterException;
@@ -43,6 +44,9 @@ public class GlobalExceptionHandler {
         // WARN：业务异常是"预期内的失败"，但仍需留痕，便于回溯调用方传了什么
         log.warn("业务异常: code={}, msg={}", errorCode.code(), e.getMessage());
         return ResponseEntity.status(httpStatusOf(errorCode))
+                // 显式声明 JSON：流式接口在鉴权失败时没有 SSE 响应体，Accept 可能是 text/event-stream，
+                // 不指定内容类型会被内容协商判为不可产出而变成 406
+                .contentType(MediaType.APPLICATION_JSON)
                 .body(ApiResponse.fail(errorCode, e.getMessage()));
     }
 

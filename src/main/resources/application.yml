@@ -79,6 +79,16 @@ rag:
 server:
   port: 8080
 
+# 认证与账户体系（见 docs/design/auth-and-login-spec.md）
+auth:
+  # 会话固定有效期（天），不做滑动续期
+  session-ttl-days: ${AUTH_SESSION_TTL_DAYS:7}
+  bootstrap:
+    # 初始管理员：仅首次创建时使用；已有同名账户时不会覆盖其口令
+    admin-username: ${AUTH_BOOTSTRAP_ADMIN_USERNAME:admin}
+    # 为空则不创建管理员，只记录一条 WARN，应用仍可启动
+    admin-password: ${AUTH_BOOTSTRAP_ADMIN_PASSWORD:}
+
 logging:
   file:
     # 日志落盘目录：本地为工作目录下 logs/，容器内为 /app/logs（compose 挂回宿主 ./logs）。

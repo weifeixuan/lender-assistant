@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<!-- 会话表读写：只存令牌摘要；过期判定交给数据库做绝对时间比较。 -->
+<mapper namespace="com.lender.assistant.account.mapper.UserSessionMapper">
+
+    <resultMap id="sessionRowMap" type="com.lender.assistant.account.model.entity.UserSessionEntity">
+        <constructor>
+            <arg column="token_hash" javaType="java.lang.String"/>
+            <arg column="user_id" javaType="java.lang.String"/>
+            <arg column="username" javaType="java.lang.String"/>
+            <arg column="display_name" javaType="java.lang.String"/>
+            <arg column="status" javaType="java.lang.String"/>
+            <arg column="expire_time" javaType="java.lang.String"/>
+        </constructor>
+    </resultMap>
+
+    <insert id="insert">
+        INSERT INTO user_session (token_hash, user_id, expire_time)
+        VALUES (#{tokenHash}, #{userId}, #{expireTime})
+    </insert>
+
+    <select id="findByTokenHash" resultMap="sessionRowMap">
+        SELECT s.token_hash, s.user_id, u.username, u.display_name, u.status,
+               TO_CHAR(s.expire_time, 'YYYY-MM-DD HH24:MI:SS') AS expire_time
+        FROM user_session s
+        JOIN app_user u ON u.user_id = s.user_id
+        WHERE s.token_hash = #{tokenHash}
+          AND s.expire_time > now()
+    </select>
+
+    <delete id="deleteByTokenHash">
+        DELETE FROM user_session WHERE token_hash = #{tokenHash}
+    </delete>
+
+    <delete id="deleteExpiredByUser">
+        DELETE FROM user_session
+        WHERE user_id = #{userId}
+          AND expire_time &lt;= now()
+    </delete>
+</mapper>

@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<!--
+  app_user 读写与账户权限读取。结果映射用位置式 <constructor>
+  （select 列顺序 == record 组件顺序）；时间列统一 TO_CHAR 成 YYYY-MM-DD HH24:MI:SS。
+-->
+<mapper namespace="com.lender.assistant.account.mapper.AppUserMapper">
+
+    <resultMap id="userRowMap" type="com.lender.assistant.account.model.entity.AppUserEntity">
+        <constructor>
+            <arg column="user_id" javaType="java.lang.String"/>
+            <arg column="username" javaType="java.lang.String"/>
+            <arg column="display_name" javaType="java.lang.String"/>
+            <arg column="password_hash" javaType="java.lang.String"/>
+            <arg column="status" javaType="java.lang.String"/>
+            <arg column="create_time" javaType="java.lang.String"/>
+            <arg column="update_time" javaType="java.lang.String"/>
+        </constructor>
+    </resultMap>
+
+    <resultMap id="roleRowMap" type="com.lender.assistant.account.model.entity.AppRoleEntity">
+        <constructor>
+            <arg column="role_id" javaType="java.lang.String"/>
+            <arg column="name" javaType="java.lang.String"/>
+            <arg column="description" javaType="java.lang.String"/>
+            <arg column="builtin" javaType="java.lang.Boolean"/>
+            <arg column="create_time" javaType="java.lang.String"/>
+            <arg column="update_time" javaType="java.lang.String"/>
+        </constructor>
+    </resultMap>
+
+    <sql id="userColumns">
+        user_id, username, display_name, password_hash, status,
+        TO_CHAR(create_time, 'YYYY-MM-DD HH24:MI:SS') AS create_time,
+        TO_CHAR(update_time, 'YYYY-MM-DD HH24:MI:SS') AS update_time
+    </sql>
+
+    <select id="findByUsernameIgnoreCase" resultMap="userRowMap">
+        SELECT <include refid="userColumns"/>
+        FROM app_user
+        WHERE lower(username) = lower(#{username})
+    </select>
+
+    <select id="findById" resultMap="userRowMap">
+        SELECT <include refid="userColumns"/>
+        FROM app_user
+        WHERE user_id = #{userId}
+    </select>
+
+    <insert id="insert">
+        INSERT INTO app_user (user_id, username, display_name, password_hash, status)
+        VALUES (#{userId}, #{username}, #{displayName}, #{passwordHash}, #{status})
+    </insert>
+
+    <select id="listRolesByUser" resultMap="roleRowMap">
+        SELECT r.role_id, r.name, r.description, r.builtin,
+               TO_CHAR(r.create_time, 'YYYY-MM-DD HH24:MI:SS') AS create_time,
+               TO_CHAR(r.update_time, 'YYYY-MM-DD HH24:MI:SS') AS update_time
+        FROM app_role r
+        JOIN user_role ur ON ur.role_id = r.role_id
+        WHERE ur.user_id = #{userId}
+        ORDER BY r.create_time, r.role_id
+    </select>
+
+    <select id="listPermissionCodesByUser" resultType="java.lang.String">
+        SELECT DISTINCT rp.permission_code
+        FROM role_permission rp
+        JOIN user_role ur ON ur.role_id = rp.role_id
+        WHERE ur.user_id = #{userId}
+        ORDER BY rp.permission_code
+    </select>
+</mapper>
