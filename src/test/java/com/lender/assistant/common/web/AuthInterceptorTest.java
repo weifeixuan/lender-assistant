@@ -4,7 +4,7 @@ import com.lender.assistant.account.model.dto.AuthenticatedAccountDTO;
 import com.lender.assistant.account.model.dto.RoleBriefDTO;
 import com.lender.assistant.account.service.AuthService;
 import com.lender.assistant.common.constant.AuthConstants;
-import com.lender.assistant.common.constant.PermissionCode;
+import com.lender.assistant.account.enums.PermissionCode;
 import com.lender.assistant.common.exception.BizException;
 import com.lender.assistant.common.exception.ErrorCode;
 import org.junit.jupiter.api.DisplayName;

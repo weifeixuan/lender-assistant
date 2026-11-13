@@ -6,7 +6,7 @@ import com.lender.assistant.account.mapper.UserRoleMapper;
 import com.lender.assistant.account.model.entity.AppRoleEntity;
 import com.lender.assistant.account.model.entity.AppUserEntity;
 import com.lender.assistant.account.service.AuthBootstrapService;
-import com.lender.assistant.common.constant.AccountStatus;
+import com.lender.assistant.account.enums.AccountStatus;
 import com.lender.assistant.common.constant.AuthConstants;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;

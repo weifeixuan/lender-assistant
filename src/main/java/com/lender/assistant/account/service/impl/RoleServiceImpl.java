@@ -8,7 +8,7 @@ import com.lender.assistant.account.model.request.UpdateRoleRequest;
 import com.lender.assistant.account.model.response.PermissionResponse;
 import com.lender.assistant.account.model.response.RoleResponse;
 import com.lender.assistant.account.service.RoleService;
-import com.lender.assistant.common.constant.PermissionCode;
+import com.lender.assistant.account.enums.PermissionCode;
 import com.lender.assistant.common.exception.BizException;
 import com.lender.assistant.common.exception.ErrorCode;
 import org.springframework.stereotype.Service;
