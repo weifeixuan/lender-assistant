@@ -9,4 +9,8 @@
         VALUES (#{userId}, #{roleId})
         ON CONFLICT (user_id, role_id) DO NOTHING
     </insert>
+
+    <delete id="deleteByUser">
+        DELETE FROM user_role WHERE user_id = #{userId}
+    </delete>
 </mapper>

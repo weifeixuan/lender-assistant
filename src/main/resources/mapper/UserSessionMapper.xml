@@ -38,4 +38,14 @@
         WHERE user_id = #{userId}
           AND expire_time &lt;= now()
     </delete>
+
+    <delete id="deleteByUser">
+        DELETE FROM user_session WHERE user_id = #{userId}
+    </delete>
+
+    <delete id="deleteByUserExceptToken">
+        DELETE FROM user_session
+        WHERE user_id = #{userId}
+          AND token_hash &lt;&gt; #{tokenHash}
+    </delete>
 </mapper>

@@ -34,6 +34,10 @@ public class AuthInterceptor implements HandlerInterceptor {
 
     /** 有页面入口的接口；未列出的 /api/** 仅要求登录（如抽取、起草、评测） */
     private static final List<PathPermission> RULES = List.of(
+            // 改自己的口令只要求登录：必须排在 /api/accounts/** 之前
+            new PathPermission("PUT", "/api/accounts/me/password", null),
+            new PathPermission(null, "/api/accounts", PermissionCode.SETTINGS_ACCOUNTS_MANAGE),
+            new PathPermission(null, "/api/accounts/**", PermissionCode.SETTINGS_ACCOUNTS_MANAGE),
             new PathPermission("GET", "/api/admin/documents", PermissionCode.KNOWLEDGE_DOCUMENTS_VIEW),
             new PathPermission("GET", "/api/admin/documents/**", PermissionCode.KNOWLEDGE_DOCUMENTS_VIEW),
             new PathPermission("POST", "/api/admin/documents/search", PermissionCode.KNOWLEDGE_DOCUMENTS_VIEW),

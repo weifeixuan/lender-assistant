@@ -27,4 +27,26 @@
         INSERT INTO app_role (role_id, name, description, builtin)
         VALUES (#{roleId}, #{name}, #{description}, #{builtin})
     </insert>
+
+    <select id="listByIds" resultMap="roleRowMap">
+        SELECT role_id, name, description, builtin,
+               TO_CHAR(create_time, 'YYYY-MM-DD HH24:MI:SS') AS create_time,
+               TO_CHAR(update_time, 'YYYY-MM-DD HH24:MI:SS') AS update_time
+        FROM app_role
+        WHERE role_id IN
+        <foreach collection="roleIds" item="roleId" open="(" separator="," close=")">
+            #{roleId}
+        </foreach>
+        ORDER BY create_time, role_id
+    </select>
+
+    <select id="listPermissionCodesByRoles" resultType="java.lang.String">
+        SELECT DISTINCT permission_code
+        FROM role_permission
+        WHERE role_id IN
+        <foreach collection="roleIds" item="roleId" open="(" separator="," close=")">
+            #{roleId}
+        </foreach>
+        ORDER BY permission_code
+    </select>
 </mapper>

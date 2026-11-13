@@ -42,7 +42,9 @@ class AccountMapperXmlContractTest {
     void userMapperParses() {
         Configuration configuration = parse(USER_MAPPER);
         for (String statement : new String[]{"findByUsernameIgnoreCase", "findById",
-                "insert", "listRolesByUser", "listPermissionCodesByUser"}) {
+                "insert", "listRolesByUser", "listPermissionCodesByUser", "listAll",
+                "updateProfile", "updatePassword", "updateStatus",
+                "countEnabledAccountManagersExcluding"}) {
             assertTrue(configuration.hasStatement(USER_NS + "." + statement),
                     "缺少 " + statement + " 语句");
         }
@@ -55,6 +57,9 @@ class AccountMapperXmlContractTest {
         assertTrue(configuration.hasStatement(ROLE_NS + ".findByNameIgnoreCase"),
                 "缺少 findByNameIgnoreCase 语句");
         assertTrue(configuration.hasStatement(ROLE_NS + ".insert"), "缺少 insert 语句");
+        assertTrue(configuration.hasStatement(ROLE_NS + ".listByIds"), "缺少 listByIds 语句");
+        assertTrue(configuration.hasStatement(ROLE_NS + ".listPermissionCodesByRoles"),
+                "缺少 listPermissionCodesByRoles 语句");
     }
 
     @Test
@@ -66,6 +71,8 @@ class AccountMapperXmlContractTest {
         String sql = configuration.getMappedStatement(statementId)
                 .getBoundSql(new Object[]{"u1", "r1"}).getSql();
         assertTrue(sql.contains("ON CONFLICT"), "重复绑定必须幂等，用 ON CONFLICT 忽略");
+        assertTrue(configuration.hasStatement(USER_ROLE_NS + ".deleteByUser"),
+                "改角色集合需要先清空旧绑定");
     }
 
     @Test
@@ -77,6 +84,10 @@ class AccountMapperXmlContractTest {
         String sql = configuration.getMappedStatement(statementId)
                 .getBoundSql("hash").getSql();
         assertTrue(sql.contains("expire_time > now()"), "过期判定必须交给数据库，避免时区换算偏差");
+        assertTrue(configuration.hasStatement(SESSION_NS + ".deleteByUser"),
+                "重置口令/禁用账户需失效该账户全部会话");
+        assertTrue(configuration.hasStatement(SESSION_NS + ".deleteByUserExceptToken"),
+                "改自己的口令需保留当前令牌");
     }
 
     @Test

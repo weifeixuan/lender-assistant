@@ -104,6 +104,32 @@ class AuthInterceptorTest {
     }
 
     @Test
+    @DisplayName("账户管理接口需要管理账户权限，改自己的口令只需登录")
+    void accountPermissions() throws Exception {
+        when(authService.authenticate(TOKEN)).thenReturn(account(List.of()));
+
+        MockHttpServletRequest list = new MockHttpServletRequest("GET", "/api/accounts");
+        list.addHeader(AuthConstants.AUTHORIZATION_HEADER, "Bearer " + TOKEN);
+        assertThrows(BizException.class, () -> interceptor.preHandle(list, response, handler),
+                "没有管理账户权限不能读账户列表");
+
+        MockHttpServletRequest ownPassword =
+                new MockHttpServletRequest("PUT", "/api/accounts/me/password");
+        ownPassword.addHeader(AuthConstants.AUTHORIZATION_HEADER, "Bearer " + TOKEN);
+        assertTrue(interceptor.preHandle(ownPassword, response, handler),
+                "改自己的口令只要求登录，不要求管理账户权限");
+
+        MockHttpServletRequest reset = new MockHttpServletRequest("PUT", "/api/accounts/u2/password");
+        reset.addHeader(AuthConstants.AUTHORIZATION_HEADER, "Bearer " + TOKEN);
+        assertThrows(BizException.class, () -> interceptor.preHandle(reset, response, handler),
+                "重置他人口令仍需管理账户权限");
+
+        when(authService.authenticate(TOKEN)).thenReturn(account(
+                List.of(PermissionCode.SETTINGS_ACCOUNTS_MANAGE.code())));
+        assertTrue(interceptor.preHandle(list, response, handler), "有管理账户权限应放行");
+    }
+
+    @Test
     @DisplayName("无页面入口的接口只要登录即可")
     void loginOnlyEndpointsPassWithAnyToken() throws Exception {
         when(authService.authenticate(TOKEN)).thenReturn(account(List.of()));

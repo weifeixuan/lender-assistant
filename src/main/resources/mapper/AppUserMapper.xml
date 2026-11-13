@@ -53,6 +53,47 @@
         VALUES (#{userId}, #{username}, #{displayName}, #{passwordHash}, #{status})
     </insert>
 
+    <select id="listAll" resultMap="userRowMap">
+        SELECT <include refid="userColumns"/>
+        FROM app_user
+        ORDER BY create_time, user_id
+    </select>
+
+    <update id="updateProfile">
+        UPDATE app_user
+        SET display_name = #{displayName}, update_time = now()
+        WHERE user_id = #{userId}
+    </update>
+
+    <update id="updatePassword">
+        UPDATE app_user
+        SET password_hash = #{passwordHash}, update_time = now()
+        WHERE user_id = #{userId}
+    </update>
+
+    <update id="updateStatus">
+        UPDATE app_user
+        SET status = #{status}, update_time = now()
+        WHERE user_id = #{userId}
+    </update>
+
+    <!--
+      硬约束 2 的判定依据：排除目标账户后，仍启用且具备账户管理能力的账户数。
+      具备管理能力 = 有内置管理员角色，或其任一角色含指定权限码。
+    -->
+    <select id="countEnabledAccountManagersExcluding" resultType="int">
+        SELECT count(DISTINCT u.user_id)
+        FROM app_user u
+        JOIN user_role ur ON ur.user_id = u.user_id
+        JOIN app_role r ON r.role_id = ur.role_id
+        WHERE u.status = 'ENABLED'
+          AND u.user_id &lt;&gt; #{excludedUserId}
+          AND (r.builtin = TRUE
+               OR EXISTS (SELECT 1 FROM role_permission rp
+                          WHERE rp.role_id = r.role_id
+                            AND rp.permission_code = #{permissionCode}))
+    </select>
+
     <select id="listRolesByUser" resultMap="roleRowMap">
         SELECT r.role_id, r.name, r.description, r.builtin,
                TO_CHAR(r.create_time, 'YYYY-MM-DD HH24:MI:SS') AS create_time,

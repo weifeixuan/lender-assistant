@@ -28,4 +28,11 @@ public interface UserSessionMapper {
 
     /** 登录时顺手清理该账户已过期会话，不引入定时任务 */
     int deleteExpiredByUser(@Param("userId") String userId);
+
+    /** 失效该账户全部会话：重置口令、禁用账户 */
+    int deleteByUser(@Param("userId") String userId);
+
+    /** 失效该账户除当前令牌外的会话：改自己的口令后其他设备退出 */
+    int deleteByUserExceptToken(@Param("userId") String userId,
+                                @Param("tokenHash") String tokenHash);
 }

@@ -28,6 +28,26 @@ public interface AppUserMapper {
                @Param("passwordHash") String passwordHash,
                @Param("status") String status);
 
+    /** 账户列表，按创建时间升序 */
+    List<AppUserEntity> listAll();
+
+    /** 改显示名 */
+    int updateProfile(@Param("userId") String userId, @Param("displayName") String displayName);
+
+    /** 改口令摘要 */
+    int updatePassword(@Param("userId") String userId, @Param("passwordHash") String passwordHash);
+
+    /** 改账户状态 */
+    int updateStatus(@Param("userId") String userId, @Param("status") String status);
+
+    /**
+     * 统计「除目标账户外」仍处于启用状态且具备账户管理能力的账户数。
+     * 具备管理能力 = 拥有内置管理员角色，或其任一角色含指定权限码。
+     * 供硬约束 2 按操作完成后的状态判定。
+     */
+    int countEnabledAccountManagersExcluding(@Param("excludedUserId") String excludedUserId,
+                                             @Param("permissionCode") String permissionCode);
+
     /** 账户拥有的角色（含 builtin 标记） */
     List<AppRoleEntity> listRolesByUser(@Param("userId") String userId);
 
