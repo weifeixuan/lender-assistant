@@ -1,4 +1,4 @@
-package com.lender.assistant.account.enums;
+package com.lender.assistant.account.model.enums;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;

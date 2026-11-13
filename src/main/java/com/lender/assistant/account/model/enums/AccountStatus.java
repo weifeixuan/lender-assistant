@@ -1,4 +1,4 @@
-package com.lender.assistant.account.enums;
+package com.lender.assistant.account.model.enums;
 
 /**
  * 账户状态：落库值与比较口径唯一来源，避免各层散落字符串。

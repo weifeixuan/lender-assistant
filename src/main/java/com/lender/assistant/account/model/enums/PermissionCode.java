@@ -1,4 +1,4 @@
-package com.lender.assistant.account.enums;
+package com.lender.assistant.account.model.enums;
 
 /**
  * 权限点目录：v1 固定 5 个，是授权的唯一最小单位。
