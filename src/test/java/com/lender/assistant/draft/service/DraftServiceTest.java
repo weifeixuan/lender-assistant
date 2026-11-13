@@ -4,7 +4,7 @@ import com.lender.assistant.common.constant.LlmScene;
 import com.lender.assistant.common.exception.BizException;
 import com.lender.assistant.common.exception.ErrorCode;
 import com.lender.assistant.draft.service.impl.DraftServiceImpl;
-import com.lender.assistant.draft.strategy.DraftGeneratorStrategy;
+import com.lender.assistant.draft.service.DraftGeneratorService;
 import com.lender.assistant.draft.model.response.DraftResponse;
 import com.lender.assistant.extract.model.entity.FieldMappingEntity;
 import com.lender.assistant.extract.service.ExtractService;
@@ -28,14 +28,14 @@ import static org.mockito.Mockito.*;
  */
 class DraftServiceTest {
 
-    private DraftGeneratorStrategy generator;
+    private DraftGeneratorService generator;
     private ExtractService extractService;
     private LlmCallLogger logger;
     private DraftService service;
 
     @BeforeEach
     void setUp() {
-        generator = mock(DraftGeneratorStrategy.class);
+        generator = mock(DraftGeneratorService.class);
         extractService = mock(ExtractService.class);
         // 真实留痕器（supplier 真执行、异常真上抛）+ mock 掉 JDBC；
         // 韧性执行器也用真实实例（chaos=false），验证 scene=draft 确实经过它

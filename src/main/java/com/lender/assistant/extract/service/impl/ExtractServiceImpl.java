@@ -10,7 +10,7 @@ import com.lender.assistant.extract.model.entity.FieldMappingRow;
 import com.lender.assistant.extract.model.entity.InternalFieldEntity;
 import com.lender.assistant.extract.service.ExtractService;
 import com.lender.assistant.extract.service.InternalFieldCatalog;
-import com.lender.assistant.extract.strategy.ExtractGeneratorStrategy;
+import com.lender.assistant.extract.service.ExtractGeneratorService;
 import com.lender.assistant.rag.model.dto.DocContentDTO;
 import com.lender.assistant.rag.service.DocumentService;
 import com.lender.assistant.resilience.ResilientLlmExecutor;
@@ -30,12 +30,12 @@ import java.util.List;
 @Service
 public class ExtractServiceImpl implements ExtractService {
 
-    private final ExtractGeneratorStrategy generator;
+    private final ExtractGeneratorService generator;
     private final DocumentService documentService;
     private final FieldMappingMapper mapper;
     private final ResilientLlmExecutor executor;
 
-    public ExtractServiceImpl(ExtractGeneratorStrategy generator, DocumentService documentService,
+    public ExtractServiceImpl(ExtractGeneratorService generator, DocumentService documentService,
                               FieldMappingMapper mapper, ResilientLlmExecutor executor) {
         this.generator = generator;
         this.documentService = documentService;

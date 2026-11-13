@@ -74,8 +74,8 @@ com.lender.assistant
 | `common/util/` | 无状态静态方法 | 持有 Spring Bean、实例状态 |
 
 - 依赖方向 `controller → service → mapper | client`，禁止反向与跨层；跨领域只允许 service → 另一个领域的 service。
-- 可替换实现必须接口 + `@ConditionalOnProperty` 切换（`EmbeddingStrategy` / `AnswerGeneratorStrategy` / `ExtractGeneratorStrategy` / `DraftGeneratorStrategy` / `DocumentParserStrategy` / `ChunkSplitterStrategy`）；实现选择交给 Spring 装配，**禁止业务代码 `if-else` 判 mock / deepseek**。
-- 编排型 Service 统一 `XxxService` + `service/impl/XxxServiceImpl`；策略接口以 `Strategy` 结尾，实现「策略名 + 接口名」放 `strategy/impl/`。
+- 可替换实现必须接口 + `@ConditionalOnProperty` 切换（`EmbeddingStrategy` / `DocumentParserStrategy` / `ChunkSplitterStrategy`）；实现选择交给 Spring 装配，**禁止业务代码 `if-else` 判实现类**。
+- 模型调用接口统一 `XxxService` + `service/impl/XxxServiceImpl`（当前 `AnswerGeneratorService` / `ExtractGeneratorService` / `DraftGeneratorService`）；其余可替换实现仍以 `Strategy` 结尾，实现「策略名 + 接口名」放 `strategy/impl/`。
 - 跨层传值一律 `record`，禁止可变 DTO + setter。
 
 ## 2. 命名
@@ -182,4 +182,5 @@ com.lender.assistant
 ❌ `System.out` / `e.printStackTrace()`　❌ 吞异常 / 空 catch　❌ 拼接 SQL / `${}` / `SELECT *`
 ❌ `Map<String,Object>` 作跨层 / 对外契约（唯一例外：`@RawResponse` 探针 `HealthController.health()`，compose 验收脚本按其结构解析）　❌ 魔法值 / 硬编码密钥　❌ `Executors` 建池
 ❌ 无 HTTP 入口的包建 `controller/`　❌ 顶层建技术包　❌ 空包 / 死代码
-❌ 业务代码 `if-else` 判 mock / deepseek　❌ 复制粘贴改名　❌ 改签名不同步调用方与测试
+❌ 业务代码 `if-else` 判实现类　❌ 复制粘贴改名　❌ 改签名不同步调用方与测试
+❌ 批量重命名对裸词做大小写不敏感全量替换——改完必须逐项核对配置键、字符串常量、注解参数、prompt 文本与测试显示名

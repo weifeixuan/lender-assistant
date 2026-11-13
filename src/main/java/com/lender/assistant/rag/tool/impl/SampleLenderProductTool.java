@@ -15,21 +15,23 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * lender.product（mock）：按产品编码返回费率、期限、放款条件与支持的接口类型。
+ * lender.product（本地样例数据源）：按产品编码返回费率、期限、放款条件与支持的接口类型。
  *
- * 本地固定数据、无网络请求、无密钥；chunkIds 恒为空。
- * 默认关闭，只有 rag.plan.tools.mock-enabled=true 时才注册进 PlanToolRegistry。
+ * 数据来自 resources/sample/lender-products.json 的固定样例，
+ * 不是真实资方系统、不是模型调用——这是可替换的业务数据源，不是模型的 mock。
+ * 本地读取、无网络请求、无密钥；chunkIds 恒为空。
+ * 默认关闭，只有 rag.plan.tools.sample-enabled=true 时才注册进 PlanToolRegistry。
  */
 @Component
-@ConditionalOnProperty(name = "rag.plan.tools.mock-enabled", havingValue = "true")
-public class MockLenderProductTool implements AgentTool {
+@ConditionalOnProperty(name = "rag.plan.tools.sample-enabled", havingValue = "true")
+public class SampleLenderProductTool implements AgentTool {
 
     private static final String NAME = "lender.product";
-    private static final String DATA_PATH = "/mock/lender-products.json";
+    private static final String DATA_PATH = "/sample/lender-products.json";
 
     private final JsonNode products;
 
-    public MockLenderProductTool(ObjectMapper objectMapper) {
+    public SampleLenderProductTool(ObjectMapper objectMapper) {
         this.products = load(objectMapper);
     }
 

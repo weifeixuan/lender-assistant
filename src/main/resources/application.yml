@@ -16,8 +16,8 @@ spring:
       # 切换其他兼容厂商：填对应 base-url（需包含到 /v1 这一级）与模型名即可
       # base-url 末尾不要带 /chat/completions，starter 会自行拼接请求路径
       base-url: ${LLM_BASE_URL:https://api.deepseek.com}
-      # key 只从环境变量读取，不写进代码库（红线：仓库将来开源）；占位值保证无 key 也能启动
-      api-key: ${LLM_API_KEY:sk-fake-openai-compatible-key}
+      # key 只从环境变量读取，不写进代码库（红线：仓库将来开源）；缺失时启动直接失败
+      api-key: ${LLM_API_KEY:}
       chat:
         options:
           model: ${LLM_MODEL:deepseek-chat}
@@ -37,21 +37,12 @@ mybatis:
 
 # 应用自定义配置（RAG 链路参数集中在这里，阶段 3 调优只动这里）
 rag:
-  chat:
-    # provider: openai=真实模型(OpenAI 兼容协议，默认) / mock=本地Mock(无key时联调)
-    provider: ${RAG_CHAT_PROVIDER:openai}
   embedding:
-    # provider: hash=本地Mock(开发联调) / zhipu=智谱API(有key后切换)
+    # provider: hash=本地哈希向量(开发联调) / zhipu=智谱API(需 ZHIPU_API_KEY)
     provider: ${RAG_EMBEDDING_PROVIDER:hash}
     dimension: 1024
-    # TODO 待录入真实智谱 API key（provider=zhipu 时生效）；当前为假值占位
-    api-key: ${ZHIPU_API_KEY:fake-zhipu-api-key}
-  extract:
-    # provider: mock=规则抽取(无key联调) / openai=JSON Schema抽取(有key后切换)
-    provider: ${RAG_EXTRACT_PROVIDER:mock}
-  draft:
-    # provider: mock=模板渲染(无key联调) / openai=模型生成(有key后切换)
-    provider: ${RAG_DRAFT_PROVIDER:mock}
+    # 仅 provider=zhipu 时校验；缺失时启动直接失败
+    api-key: ${ZHIPU_API_KEY:}
   qa:
     # 追问回放给模型的历史上限：最近 6 个完整轮次、总字符 2000（超限从最旧一轮整轮丢弃）
     history-max-rounds: ${RAG_QA_HISTORY_MAX_ROUNDS:6}
@@ -68,8 +59,8 @@ rag:
     min-steps: ${RAG_PLAN_MIN_STEPS:2}
     max-steps: ${RAG_PLAN_MAX_STEPS:5}
     tools:
-      # mock 业务工具开关：生产必须关闭，只有联调需要 customer.profile / lender.product 时打开
-      mock-enabled: ${RAG_PLAN_TOOLS_MOCK_ENABLED:false}
+      # 本地样例数据源开关：默认关闭；只有联调需要 customer.profile / lender.product 时打开
+      sample-enabled: ${RAG_PLAN_TOOLS_SAMPLE_ENABLED:false}
   search:
     # 向量通道余弦距离阈值：> 该值的召回丢弃；-1 表示关闭（默认）。是否开启由阶段3评估数据决定
     max-distance: -1

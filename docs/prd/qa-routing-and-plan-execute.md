@@ -33,12 +33,12 @@ flowchart LR
     ROUTER -->|PLAN| P["PlanAndExecuteService<br/>线性计划 2–5 步"]
     P --> REG["PlanToolRegistry<br/>Map&lt;String, AgentTool&gt;"]
     REG --> KB["kb.search"]
-    REG --> CP["customer.profile（mock）"]
-    REG --> LP["lender.product（mock）"]
+    REG --> CP["customer.profile（本地样例）"]
+    REG --> LP["lender.product（本地样例）"]
     KB --> UNION["sources 并集去重<br/>全局 idx"]
     CP --> UNION
     LP --> UNION
-    UNION --> SYN["一次汇总合成<br/>AnswerGeneratorStrategy 流式"]
+    UNION --> SYN["一次汇总合成<br/>AnswerGeneratorService 流式"]
     IR --> SSE["SSE 事件"]
     RAG --> SSE
     SYN --> SSE
@@ -51,7 +51,7 @@ flowchart LR
 要点：
 
 - 路由、计划、汇总统一经 `ResilientLlmExecutor`，新增 `LlmScene.ROUTE` / `PLAN` / `SYNTHESIS`。
-- **执行步只做确定性调用**：`kb.search` 与两个 mock 业务工具都不调用模型；一轮的 LLM 调用恒定为「路由 1 + 计划 1 + 汇总 1」。
+- **执行步只做确定性调用**：`kb.search` 与两个本地样例数据工具都不调用模型；一轮的 LLM 调用恒定为「路由 1 + 计划 1 + 汇总 1」。
 - 检索入口仍只有 `SearchService.hybridSearch`；`kb.search` 只是编排层适配器（ADR-0012）。
 - 工具调用由代码按计划 `order` 发起，模型不能自行挑工具或加步（ADR-0014）。
 
@@ -65,7 +65,7 @@ sequenceDiagram
     participant R as QuestionRoutingService
     participant P as PlanAndExecuteService
     participant T as PlanToolRegistry
-    participant G as AnswerGeneratorStrategy
+    participant G as AnswerGeneratorService
 
     C->>Q: POST /api/qa
     Q-->>C: event: meta（首事件，四字段）
@@ -127,7 +127,7 @@ sequenceDiagram
 - 无关固定提示由 `rag.routing.irrelevant-reply` 单一控制，默认「我只回答资方接入相关的资料问题，可以换个问法再试试。」；该轮消息 `DONE`、`sources=[]`、`sourceCount=0`、`done.provider="rule"`（非模型生成）。
 - **固定提示轮不参与历史回放**：`ConversationHistoryAssembler` 现规则是「USER + ASSISTANT 都 `DONE` 即整轮进上下文」（[ConversationHistoryAssembler.java](file:///e:/project/lender-assistant/src/main/java/com/lender/assistant/conversation/service/ConversationHistoryAssembler.java#L44-L66)），会把固定提示与无关问题一起喂给下一轮检索/生成。为此约定：`provider="rule"` 的轮次整轮跳过，既不做回放，也不作为 `previousQuestion` 来源（`lastUserContent` 同步跳过）。该轮仍正常出现在历史消息接口里。
 - **`previousRoute` 取值**：只取最近一条状态 `DONE` 的助手消息的 `route`；若最近一条是 `FAILED` / `STOPPED`，视为无 `previousRoute`（不向前回溯，不做追问继承保护）。
-- **mock 模式跳过路由与计划**：`rag.chat.provider=mock` 时不发路由/计划调用，直接走现有 `KNOWLEDGE` 单步链路，事件序列与今天一致（`meta → sources → delta* → done`），**不发** `route` / `plan` / `step`。mock 只保证对话能走通；这三个事件的联调与验收**必须在真实 provider 下进行**。
+- **每轮都走真实模型**：对话、路由、计划、抽取、草稿全部走真实模型 API，不再有 mock provider 分支；`LLM_API_KEY` 缺失时启动直接失败（见 ADR-0018）。
 - 实现形态：`QuestionRoutingService` + `QuestionRoutingServiceImpl`（普通 Service，不建 Strategy）。
 
 ```mermaid
@@ -197,14 +197,14 @@ flowchart TD
 | `tool` | 作用 | `args` | 产物 | 来源 |
 |---|---|---|---|---|
 | `kb.search` | 混合检索（`SearchService.hybridSearch`） | `{query ≤200 字, topK? 1–20}` | 命中列表 + `chunkIds` | 真实 |
-| `customer.profile` | 按客户号返回授信总额/已用/可用、风险等级、合作状态 | `{customerId: "C\d{5}"}` | 文本摘要 | **mock** |
-| `lender.product` | 按产品编码返回费率、期限、放款条件、支持的接口类型 | `{productCode 必填}` | 文本摘要 | **mock** |
+| `customer.profile` | 按客户号返回授信总额/已用/可用、风险等级、合作状态 | `{customerId: "C\d{5}"}` | 文本摘要 | 本地样例 |
+| `lender.product` | 按产品编码返回费率、期限、放款条件、支持的接口类型 | `{productCode 必填}` | 文本摘要 | 本地样例 |
 
 - `kb.search` 执行时调用 `hybridSearch(args.query, null, topK)`：`query` 由 planner 结合上一轮问题写成**自包含**查询，不能再把 `previousQuestion` 二次拼进去（否则「恒昌」会被重复，向量与关键词召回都会偏）。
-- 两个 mock 工具读 `resources/mock/customer-profiles.json`、`resources/mock/lender-products.json`（本地假数据），**不发真实网络请求、不需要密钥**；实现类名带 `Mock`（`MockCustomerProfileTool` / `MockLenderProductTool`）。
-- 开关 `rag.plan.tools.mock-enabled` 默认 `false`（生产关闭）；开启后才注册进 `PlanToolRegistry`，计划 Prompt 里才会出现这两个工具。
+- 两个样例工具读 `resources/sample/customer-profiles.json`、`resources/sample/lender-products.json`（本地固定样例，不是真实客户/资方系统），**不发真实网络请求、不需要密钥**；实现类名如实标明数据来源（`SampleCustomerProfileTool` / `SampleLenderProductTool`）。
+- 开关 `rag.plan.tools.sample-enabled`（环境变量 `RAG_PLAN_TOOLS_SAMPLE_ENABLED`）默认 `false`（生产关闭）；开启后才注册进 `PlanToolRegistry`，计划 Prompt 里才会出现这两个工具。
 - `args` 不合法 → 该步 `FAILED`（`errorCode=ARGS_INVALID`），不抛异常；超时 2s、不重试；`chunkIds` 为空，不影响 `sources` 并集。
-- 工具白名单 `rag.plan.allowed-tools` 默认 `kb.search`；开启 mock 后为 `kb.search,customer.profile,lender.product`。
+- 工具白名单取 `PlanToolRegistry` 已注册工具：默认只有 `kb.search`；开启 `sample-enabled` 后为 `kb.search,customer.profile,lender.product`。
 
 工具判定（计划生成时由同一个 LLM 直接输出 `tool` + `args`，执行期不再判定）：
 
@@ -229,7 +229,7 @@ flowchart TD
 | 步骤 | `tool` | `args` | 产物 |
 |---|---|---|---|
 | s1 | `kb.search` | `{"query":"华信银行单笔代收接口 支持的币种"}` | 币种说明片段 + `chunkIds` |
-| s2 | `customer.profile` | `{"customerId":"C10001"}` | 「授信 500 万 / 已用 320 万 / 可用 180 万；风险 B；合作中」 |
+| s2 | `customer.profile` | `{"customerId":"C10001"}` | 「授信 500 万 / 已用 320 万 / 可用 180 万；风险 B；合作中」（本地样例数据） |
 | 汇总 | 非步骤 | `goal` + 上述两段产物 + 全局来源 | 一段接入建议正文，引用【来源N】 |
 
 ### 5.3 计划校验（整单原子）
@@ -244,12 +244,12 @@ flowchart TD
 
 1. 按 `order` 串行执行全部步骤；每步发 `step(RUNNING)`，结束发 `step(DONE / DEGRADED / FAILED)`；**本阶段不推 `delta`**。
 2. **不做重跑、不做重新计划**：某步 `FAILED` 或 `DEGRADED` 只记录结果，继续后续步骤。
-3. `kb.search` 零召回 → `DEGRADED`，产物记「资料中未提及」；`kb.search` 异常/超时 → `FAILED`；mock 工具 `args` 非法/超时 → `FAILED`。
+3. `kb.search` 零召回 → `DEGRADED`，产物记「资料中未提及」；`kb.search` 异常/超时 → `FAILED`；样例工具 `args` 非法/超时 → `FAILED`。
 4. 汇总合成时把失败/降级步骤原样告知模型（「s2 未召回」「s3 参数非法」），要求回答里**明确说明缺哪块信息**；不编造。
 5. 若所有 `kb.search` 都无命中且没有可用业务产物 → 沿用现有「资料库中没有检索到相关内容」提示，`sourceCount=0`。
 6. **预算覆盖整轮**：`rag.plan.total-budget-ms`（90s）从**路由调用开始**计时，一直覆盖到**汇总合成结束**；步骤循环、计划重试、路由重试都算在内。实测 SSE 超时是 `QaServiceImpl` 的硬编码常量 120s（[QaServiceImpl.java](file:///e:/project/lender-assistant/src/main/java/com/lender/assistant/rag/service/impl/QaServiceImpl.java#L57-L58)），因此整轮上限 90s 保留 **30s 余量**（≥15s 要求）。
 7. **提前收尾**：当剩余预算 < `SYNTHESIS_RESERVE`（20s）时，跳过剩余步骤（`SKIPPED`），立即进入汇总合成；合成超时取 `min(现有问答流超时 60s, 剩余预算)`。这是兜底而非异常：只要合成能产出正文，就正常发 `done`、消息 `DONE`（`execution_plan` 标记 `BUDGET_EXHAUSTED`）；若剩余时间连合成都跑不完 → `error` + `FAILED`。
-8. **单步超时**：每步工具调用统一受 `TOOL_TIMEOUT`（10s）约束；mock 工具 2s 在工具内部处理。
+8. **单步超时**：每步工具调用统一受 `TOOL_TIMEOUT`（10s）约束；样例工具 2s 在工具内部处理。
 9. 路由 / 计划单次非流式调用统一受 `NON_STREAM_CALL_TIMEOUT`（10s）约束，计入同一预算；**现状 `ResilientLlmExecutor` 没有非流式超时**（[ResilientLlmExecutor.java](file:///e:/project/lender-assistant/src/main/java/com/lender/assistant/resilience/ResilientLlmExecutor.java#L20-L21)），该常量需新增实现。
 
 步骤状态（执行态，不写进 `message.status`）：
@@ -265,7 +265,7 @@ flowchart TD
 ### 5.5 汇总合成（唯一的生成调用）
 
 - `message.content` = 本次合成的完整输出；不拼接多段步骤正文，不插入步骤标题。
-- 由 `PlanAndExecuteService` 直接调用 `AnswerGeneratorStrategy`，**不是工具**；`AnswerGenerationRequest` 增加 `List<StepOutput> priorStepOutputs`。
+- 由 `PlanAndExecuteService` 直接调用 `AnswerGeneratorService`，**不是工具**；`AnswerGenerationRequest` 增加 `List<StepOutput> priorStepOutputs`。
 - Prompt 组成：公共三铁律 + `goal`；各步骤产物（按 `order`）；全局来源编号表；失败/降级步骤说明。**不带多轮历史**（追问的指代已在 `goal` 与步骤产物中体现）。
 - 上下文受 `rag.plan.max-context-chars`（默认 **6000**）截断，从最旧产物开始截断，并置 `execution_plan.contextTruncated=true`。
 - 引用一律用全局 `idx`；合成不重试（已推 token）。
@@ -298,9 +298,9 @@ public class PlanToolRegistry {
 
 - `ToolContext` 只带必要字段（`conversationId`、`roundId`、`previousQuestion`、`topK`、`cancellation`）。
 - 步骤执行器：`registry.get(step.tool())` 取工具，直接 `call(step.args(), ctx)`；查不到 → 该步 `FAILED`（`TOOL_NOT_FOUND`）。
-- 包落位：`AgentTool` / `ToolResult` / `PlanToolRegistry` 放 `rag/tool`，实现放 `rag/tool/impl`（`KbSearchPlanTool`、`MockCustomerProfileTool`、`MockLenderProductTool`）；mock 数据放 `resources/mock/customer-profiles.json`、`resources/mock/lender-products.json`。`aitools/` 包（`LenderQueryTools` / `ToolIntentRouter`）仍只承载模型可自主调用的 Function Calling 面，不放计划工具（ADR-0012）。
+- 包落位：`AgentTool` / `ToolResult` / `PlanToolRegistry` 放 `rag/tool`，实现放 `rag/tool/impl`（`KbSearchPlanTool`、`SampleCustomerProfileTool`、`SampleLenderProductTool`）；样例数据放 `resources/sample/customer-profiles.json`、`resources/sample/lender-products.json`。`aitools/` 包（`LenderQueryTools`）只承载模型可自主调用的 Function Calling 面，不放计划工具（ADR-0012）。
 - 不给工具任何推流能力：没有 `mayStream`、没有 `deltaSink`，流式只发生在汇总合成。
-- `mock-enabled=false` 时 mock 工具不注册；计划里出现也不在白名单，整单降级。
+- `sample-enabled=false` 时样例工具不注册；计划里出现也不在白名单，整单降级。
 
 ## 7. SSE 契约与前端影响
 
@@ -322,7 +322,6 @@ public class PlanToolRegistry {
 4. 首个 `delta` 比现状晚，需要用 `step` 表达进度。
 5. `sources` 仍先于首个 `delta`，引用面板可照旧渲染；`sourceCount` = 并集长度。
 6. `IRRELEVANT` 轮的 `done.provider` 固定为 `"rule"`（固定提示不是模型生成）；若前端把它当模型名展示，需要映射为「规则提示」或隐藏。
-7. `mock` 模式（`rag.chat.provider=mock`）跳过路由与计划，**不发** `route` / `plan` / `step`，事件序列与现状一致；这三个事件的联调与验收必须在真实 provider 下进行。
 
 ## 8. 数据模型
 
@@ -367,8 +366,7 @@ ALTER TABLE message ADD COLUMN IF NOT EXISTS execution_plan JSONB;
 | `rag.routing.confidence-threshold` | `0.6` | 低于阈值降级 `KNOWLEDGE`；阈值须用评估集校准（§11 P4） |
 | `rag.routing.irrelevant-reply` | 见 §4.3 | 固定提示 |
 | `rag.plan.min-steps` / `max-steps` | `2` / `5` | 越界降级；上限受整轮预算与 `TOOL_TIMEOUT` 约束 |
-| `rag.plan.allowed-tools` | `kb.search` | 白名单；mock 开启后追加两个工具 |
-| `rag.plan.tools.mock-enabled` | `false` | 是否注册 mock 业务工具 |
+| `rag.plan.tools.sample-enabled` | `false` | 是否注册两个本地样例数据工具（`RAG_PLAN_TOOLS_SAMPLE_ENABLED`） |
 | `rag.plan.total-budget-ms` | `90000` | **唯一超时配置**：整轮预算，路由开始 → 合成结束，含所有调用与重试 |
 | `rag.plan.max-context-chars` | `6000` | 合成 Prompt 产物上限 |
 | SSE 超时 | `120000` | 代码常量，非新增配置；整轮 90s 结束 → 保留 30s 余量 |
@@ -378,7 +376,7 @@ ALTER TABLE message ADD COLUMN IF NOT EXISTS execution_plan JSONB;
 | 常量 | 值 | 用途 |
 |---|---|---|
 | `NON_STREAM_CALL_TIMEOUT` | 10s | 路由与计划的单次非流式调用上限 |
-| `TOOL_TIMEOUT` | 10s | 每个步骤的工具调用上限（mock 工具 2s 各自内部处理） |
+| `TOOL_TIMEOUT` | 10s | 每个步骤的工具调用上限（样例工具 2s 各自内部处理） |
 | `SYNTHESIS_RESERVE` | 20s | 剩余预算低于此值不再开启新步骤，直接进合成 |
 
 合成超时 = `min(现有问答流超时 60s, 剩余预算)`，复用既有能力，不新增参数。
@@ -424,11 +422,11 @@ ALTER TABLE message ADD COLUMN IF NOT EXISTS execution_plan JSONB;
 |---|---|
 | P1 | 路由（`IRRELEVANT` / `KNOWLEDGE`）、`route` 事件、固定提示、`message.route` 落库、追问保护、路由评估集 |
 | P2 | `PLAN` 判定、计划生成与整单校验、`PlanToolRegistry` + `kb.search`、`plan` / `step` 事件、执行、`sources` 并集、汇总合成、`execution_plan` 落库 |
-| P3 | 两个 mock 业务工具（开关默认关）、工具级超时、预算收尾、失败说明增强 |
+| P3 | 两个本地样例数据工具（开关默认关）、工具级超时、预算收尾、失败说明增强 |
 | P4 | 路由/计划评估入口；**用路由评估集校准 `confidence-threshold`**（模型自报置信度不可直接当概率，需按评估集的准/误判分布选阈值），再调步骤上限与 `max-context-chars`；计划评估集补一类「指代型追问」用例（如「那恒昌呢」），验收动作为「计划不得引入与当前问题无关的步骤」 |
 | P5 | 前端进度展示、联调、端到端回归 |
 
-P2 上线前 `PLAN` 一律按 `KNOWLEDGE` 处理。P3 未上线时 `allowed-tools=kb.search`，计划里出现 mock 工具按白名单外降级。
+P2 上线前 `PLAN` 一律按 `KNOWLEDGE` 处理。P3 未上线时只有 `kb.search` 注册，计划里出现样例工具按白名单外降级。
 
 ## 12. 开放问题
 
@@ -442,7 +440,7 @@ P2 上线前 `PLAN` 一律按 `KNOWLEDGE` 处理。P3 未上线时 `allowed-tool
 8. 是否引入 JSON Schema 校验库统一校验 `args`；当前各工具手写。
 9. 是否支持工具参数的动态引用（如 `"${s1.output}"`）；第一版只允许字面量，支持它需要模板求值与二次校验。
 10. 是否把检索暴露为模型可调用的 `@Tool`；当前只做编排层 `AgentTool`。
-11. mock 工具的数据是否要覆盖更多资方与客户；当前各 5–10 条样例。
+11. 样例工具的数据是否要覆盖更多资方与客户；当前各 5–10 条样例。
 12. `max-context-chars=6000` 是否够用；取消中间推理步后比较/汇总全压到一次合成，需实测。
 13. 指代跨两轮以上时只带上一轮用户问题不够；预期行为是路由回退 `KNOWLEDGE`（该链路有完整多轮历史），本版不解决，也不为 `PLAN` 扩历史。
 
@@ -458,13 +456,12 @@ P2 上线前 `PLAN` 一律按 `KNOWLEDGE` 处理。P3 未上线时 `allowed-tool
 8. 计划校验失败 → `plan(degraded=true, steps=[])` 并走 `KNOWLEDGE`。
 9. 某步 `FAILED` / `DEGRADED` 不重跑、不中断，后续步骤继续；合成回答明确说明缺哪块信息。
 10. 整轮（路由开始 → 合成结束）≤90s；SSE 120s 前至少留 30s；剩余 < `SYNTHESIS_RESERVE`（20s）时强制收尾并仍发 `done`。
-11. 多步 `sources` 按 `chunkId` 去重、全局 `idx` 连续；mock 工具不产出来源。
+11. 多步 `sources` 按 `chunkId` 去重、全局 `idx` 连续；样例工具不产出来源。
 12. 汇总合成超时 → `error` + `FAILED`（保留已推正文）。
 13. 客户端断开 → `STOPPED`，会话锁释放。
-14. mock 模式跳过路由与计划，直接走 `KNOWLEDGE` 单步链路，**不发** `route` / `plan` / `step`；这三个事件的联调与验收必须在真实 provider 下进行。
-15. 历史接口形状不变；`message.route` / `execution_plan` 已落库。
-16. `docs/schema.sql` 已同步；空库可启动。
-17. 单测不连真库；路由/计划/合成用 stub LLM，不依赖真实 key。
-18. `mvn test` 全绿。
+14. 历史接口形状不变；`message.route` / `execution_plan` 已落库。
+15. `docs/schema.sql` 已同步；空库可启动。
+16. 单测不连真库；路由/计划/合成用 stub LLM，不依赖真实 key。
+17. `mvn test` 全绿。
 
-**实现约束（一行话说清）**：不引入 Spring AI，沿用 `AnswerGeneratorStrategy` + `ResilientLlmExecutor` + `llm_call_log` 与 Jackson 解析；工具方法签名必须与调用方式一致；`route` 与步骤状态用枚举而不是字符串；未知路由降级不抛异常；方法 ≤40 行、参数 ≤4 个、禁 `var`。
+**实现约束（一行话说清）**：不引入 Spring AI，沿用 `AnswerGeneratorService` + `ResilientLlmExecutor` + `llm_call_log` 与 Jackson 解析；工具方法签名必须与调用方式一致；`route` 与步骤状态用枚举而不是字符串；未知路由降级不抛异常；方法 ≤40 行、参数 ≤4 个、禁 `var`。

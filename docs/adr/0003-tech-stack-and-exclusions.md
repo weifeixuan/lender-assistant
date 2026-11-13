@@ -5,7 +5,7 @@
 
 ## 背景
 
-JVM 生态里 JPA / Lombok / MyBatis-Plus / WebFlux 常被当作默认选型。本项目有若干具体约束：向量检索需要 pgvector 专用语法（`<=>`、`SIMILARITY`、`CAST(... AS vector)`）；模型调用需要「Mock / 真实」可切换且失败可留痕；并发量小、无响应式需求；跨层数据载体统一用 Java 21 的 `record`。
+JVM 生态里 JPA / Lombok / MyBatis-Plus / WebFlux 常被当作默认选型。本项目有若干具体约束：向量检索需要 pgvector 专用语法（`<=>`、`SIMILARITY`、`CAST(... AS vector)`）；模型调用需要失败可留痕（当时还要求「Mock / 真实」可切换，该要求已由 [ADR-0018](0018-remove-business-model-mocks.md) 取消）；并发量小、无响应式需求；跨层数据载体统一用 Java 21 的 `record`。
 
 ## 决策
 

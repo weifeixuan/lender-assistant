@@ -1,7 +1,7 @@
-package com.lender.assistant.rag.strategy.impl;
+package com.lender.assistant.rag.service.impl;
 
 import com.lender.assistant.rag.model.dto.AnswerGenerationRequestDTO;
-import com.lender.assistant.rag.strategy.AnswerGeneratorStrategy;
+import com.lender.assistant.rag.service.AnswerGeneratorService;
 import com.lender.assistant.rag.model.dto.ChatTurnDTO;
 import com.lender.assistant.rag.model.response.SearchItemResponse;
 import com.lender.assistant.aitools.LenderQueryTools;
@@ -12,7 +12,6 @@ import org.springframework.ai.chat.messages.Message;
 import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Sinks;
@@ -35,8 +34,7 @@ import java.util.List;
  * - api-key 由 starter 从 LLM_API_KEY 环境变量读取，不进代码库。
  */
 @Component
-@ConditionalOnProperty(name = "rag.chat.provider", havingValue = "openai")
-public class OpenAiCompatibleAnswerGeneratorStrategy implements AnswerGeneratorStrategy {
+public class AnswerGeneratorServiceImpl implements AnswerGeneratorService {
 
     /** 流式兜底超时：模型偶发长时间不吐 token 时防 SSE 连接被无限挂着 */
     private static final Duration STREAM_TIMEOUT = Duration.ofSeconds(60);
@@ -46,10 +44,10 @@ public class OpenAiCompatibleAnswerGeneratorStrategy implements AnswerGeneratorS
     private final LlmCallLogger llmCallLogger;
     private final String model;
 
-    public OpenAiCompatibleAnswerGeneratorStrategy(ChatClient.Builder builder,
-                                                   LenderQueryTools lenderTools,
-                                                   LlmCallLogger llmCallLogger,
-                                                   @Value("${spring.ai.openai.chat.options.model}") String model) {
+    public AnswerGeneratorServiceImpl(ChatClient.Builder builder,
+                                      LenderQueryTools lenderTools,
+                                      LlmCallLogger llmCallLogger,
+                                      @Value("${spring.ai.openai.chat.options.model}") String model) {
         this.chatClient = builder.build();
         this.lenderTools = lenderTools;
         this.llmCallLogger = llmCallLogger;
@@ -76,8 +74,7 @@ public class OpenAiCompatibleAnswerGeneratorStrategy implements AnswerGeneratorS
         Flux<ChatResponse> flux = chatClient.prompt()
                 .system(request.systemPrompt())
                 .messages(messages)
-                // Function Calling：把业务查询工具挂给模型，由模型按工具 description
-                // 自主决定是否调用（真 Function Calling）。Mock 版的规则模拟见 ToolIntentRouter。
+                // Function Calling：把业务查询工具挂给模型，由模型按工具 description 自主决定是否调用
                 .tools(lenderTools)
                 .stream()
                 .chatResponse()

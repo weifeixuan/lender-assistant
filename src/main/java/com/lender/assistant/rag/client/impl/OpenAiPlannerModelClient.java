@@ -7,7 +7,6 @@ import com.lender.assistant.resilience.ResilientLlmExecutor;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
@@ -19,7 +18,6 @@ import java.time.Duration;
  * 单次超时与路由侧一致（10s），与 {@code rag.plan.total-budget-ms} 由执行器统一核算。
  */
 @Component
-@ConditionalOnProperty(name = "rag.chat.provider", havingValue = "openai")
 public class OpenAiPlannerModelClient implements PlannerModelClient {
 
     private static final Duration NON_STREAM_TIMEOUT = Duration.ofSeconds(10);

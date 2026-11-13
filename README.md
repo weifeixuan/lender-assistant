@@ -12,8 +12,8 @@
 | ------------------------ | ----------------------------------------------------- | ------------------------------------------------------------------ |
 | 混合检索问答                   | 向量 + 关键词双通道，RRF 融合排序，SSE 流式回答带【来源N】溯源                 | 20 条评估集（FACT 9 / RULE 10 / NEGATIVE 1，负例不计分）；三种检索模式对比见 `docs/eval/评估报告_baseline_v1.md` |
 | 路由 + 计划执行                 | 三分支路由；PLAN 2–5 步串行执行后一次合成；校验不过整单降级 KNOWLEDGE        | 单测覆盖降级、超时与零召回短路；契约见 ADR-0010 / ADR-0014 / ADR-0015                |
-| 字段映射抽取                   | 新资方文档 → 12 个内部标准字段的映射表 → 界面人工确认/修正                     | 3 份样例文档、12 个字段全量走「抽取 → 人工确认/修正」；Mock 规则抽取，仓库暂无量化评估报告               |
-| Function Calling（回答链路）    | 真实模型可自主调用"查已入库文件 / 查文档 chunk 数"两个业务查询；mock 模式由关键词规则模拟决策 | 真库联调验证两个意图均可触发                                                     |
+| 字段映射抽取                   | 新资方文档 → 12 个内部标准字段的映射表 → 界面人工确认/修正                     | 3 份样例文档、12 个字段全量走「抽取 → 人工确认/修正」；真实模型抽取，仓库暂无量化评估报告               |
+| Function Calling（回答链路）    | 真实模型可自主调用"查已入库文件 / 查文档 chunk 数"两个业务查询                     | 真库联调验证两个意图均可触发                                                     |
 | 韧性与留痕                    | 熔断 + 重试（编程式 Resilience4j）+ 每次模型调用留痕；熔断走人工降级            | chaos 演练：连续 3 次失败 → OPEN → 快速失败，系统不崩                                |
 | 代码草稿生成                   | 字段映射表 + 策略模式骨架 → Java 适配层草稿 + 人工复核声明                   | 样例映射表生成草稿：无 `{{...}}` 占位符残留，缺失字段渲染 `// TODO 人工补充`                |
 
@@ -29,7 +29,7 @@ flowchart TD
 
     P --> V{"整单校验：2–5 步 / order 连续<br/>stepId=s1..sN / 工具在白名单<br/>args 仅字面量 / 至少 1 个 kb.search"}
     V -->|不通过，degraded=true| K
-    V -->|通过| X["按 order 串行执行<br/>每步 1 次工具调用<br/>kb.search / customer.profile / lender.product<br/>→ 每步 SSE step：RUNNING + 终态"]
+    V -->|通过| X["按 order 串行执行<br/>每步 1 次工具调用（当前仅 kb.search）<br/>→ 每步 SSE step：RUNNING + 终态"]
 
     X --> U["步骤来源并集<br/>按 chunkId 去重"]
     K --> U
@@ -43,10 +43,9 @@ flowchart TD
 
 - `IRRELEVANT` 直接固定回复，不检索、不调用生成模型。
 - `KNOWLEDGE` 走一次混合检索（向量 + 关键词 → RRF 融合）后流式作答。
-- `PLAN` 先由计划模型产出步骤，再按 `order` 严格串行执行，每步一次工具调用（`kb.search` / `customer.profile` / `lender.product`）。
+- `PLAN` 先由计划模型产出步骤，再按 `order` 严格串行执行，每步一次工具调用（默认白名单只有 `kb.search`）。打开 `RAG_PLAN_TOOLS_SAMPLE_ENABLED` 后额外注册两个**本地样例数据源**工具（`customer.profile` / `lender.product`，读 `resources/sample/` 固定 JSON，非真实业务系统）。
 - 所有步骤结束后统一做一次流式合成，中间步骤不输出正文，用户只看到一段流式回答。
 - 零召回时不调用合成模型：只推引导文案，PLAN 轮同样短路（见 ADR-0015）。
-- `customer.profile` / `lender.product` 是 Mock 业务工具，需 `RAG_PLAN_TOOLS_MOCK_ENABLED=true` 才注册；默认只有 `kb.search`。
 
 ## 架构
 
@@ -55,11 +54,11 @@ flowchart TD
                 │                                                                      │
 docx/txt 上传 ─▶ 解析(POI) ─▶ 切分(按章节/固定) ─▶ 向量化(Hash/智谱) ─▶ doc_chunk (pgvector, HNSW+trigram)
                                                                       │
-提问 ─▶ SearchService（向量⇄关键词 双通道）─▶ RRF 融合排序 ─▶ QaService 拼 Prompt ─▶ AnswerGeneratorStrategy(Mock/OpenAI兼容) ─▶ SSE
+提问 ─▶ SearchService（向量⇄关键词 双通道）─▶ RRF 融合排序 ─▶ QaService 拼 Prompt ─▶ AnswerGeneratorService(OpenAI兼容) ─▶ SSE
                                             │
-新资方文档 ─▶ ExtractService ─▶ ExtractGeneratorStrategy(Mock规则/OpenAI兼容) ─▶ field_mapping（人工确认状态机）
+新资方文档 ─▶ ExtractService ─▶ ExtractGeneratorService(OpenAI兼容) ─▶ field_mapping（人工确认状态机）
                                             │
-映射表 ─▶ DraftService ─▶ DraftGeneratorStrategy(模板渲染/OpenAI兼容) ─▶ Java 适配层草稿 + 人工复核声明
+映射表 ─▶ DraftService ─▶ DraftGeneratorService(OpenAI兼容) ─▶ Java 适配层草稿 + 人工复核声明
                                             │
                             LenderQueryTools（@Tool：查入库文件/chunk数，Function Calling）
 ```
@@ -107,37 +106,38 @@ java -jar target/lender-assistant-0.1.0-SNAPSHOT.jar --server.port=8080
 
 前端（可选）本地起：`npm install && npm run dev`，端口 5173，Vite 已把 `/api` 代理到 8080。
 
-### 接入真实模型（可选）
+### 配置模型（`LLM_API_KEY` 必填）
 
-| 开关                       | 值                | 说明   |
-| ------------------------ | ---------------- | ---- |
-| `RAG_CHAT_PROVIDER`      | `mock` / `openai` | 对话模型 |
-| `RAG_EMBEDDING_PROVIDER` | `hash` / `zhipu`  | 向量化  |
-| `RAG_EXTRACT_PROVIDER`   | `mock` / `openai` | 字段抽取 |
-| `RAG_DRAFT_PROVIDER`     | `mock` / `openai` | 代码草稿 |
+| 环境变量                     | 默认值   | 说明                                     |
+| ------------------------ | ----- | -------------------------------------- |
+| `LLM_API_KEY`            | 无，必填  | 对话 / 路由 / 计划 / 抽取 / 草稿共用的模型密钥；缺失时启动直接失败 |
+| `LLM_BASE_URL`           | OpenAI 兼容端点 | 换厂商只改这里                              |
+| `LLM_MODEL`              | `deepseek-chat` | 模型名                                    |
+| `RAG_EMBEDDING_PROVIDER` | `hash` | `hash` 本地哈希向量 / `zhipu` 智谱 embedding-3 |
+| `ZHIPU_API_KEY`          | 无 | 仅 `RAG_EMBEDDING_PROVIDER=zhipu` 时必填，缺失时启动失败 |
+| `RAG_PLAN_TOOLS_SAMPLE_ENABLED` | `false` | 打开后计划白名单追加 `customer.profile` / `lender.product`（本地样例数据源） |
 
-对话模型默认已走 `openai`，配 `LLM_API_KEY` / `LLM_BASE_URL` / `LLM_MODEL` 三个环境变量即可接入真实模型，key 不进代码库；无 key 时模型调用会失败并触发熔断，问答降级为可读提示（召回来源仍展示）——注意这与 `fail-open` 不是一回事，`fail-open` 专指路由判定失败时降级 `KNOWLEDGE`。本地联调可显式设 `RAG_CHAT_PROVIDER=mock`。抽取/草稿仍是 `mock`，切换需设 `RAG_EXTRACT_PROVIDER`、`RAG_DRAFT_PROVIDER`。
+对话、路由、计划、抽取、草稿五处模型调用全部走真实 API，仓库内不再保留业务模型 mock。
 `docker compose` 会自动读取项目根 `.env`；本地 `mvn spring-boot:run` / `java -jar` 不会自动加载 `.env`，需先自行导出环境变量。
-真实模型走 OpenAI 兼容协议，切换 DeepSeek / Kimi / 通义 / GLM 等只改这三个变量，代码不动：
 
 ```bash
 # DeepSeek 官方
-LLM_BASE_URL=https://api.deepseek.com  LLM_MODEL=deepseek-chat
+LLM_API_KEY=sk-xxx  LLM_BASE_URL=https://api.deepseek.com  LLM_MODEL=deepseek-chat
 # 其他兼容厂商：base-url 填到 /v1 这一级，模型名按厂商文档
 ```
 
-向量化需单独把 `RAG_EMBEDDING_PROVIDER` 切成 `zhipu`，并配 `ZHIPU_API_KEY`（智谱 embedding-3）。
+向量化需单独把 `RAG_EMBEDDING_PROVIDER` 切成 `zhipu`，并配 `ZHIPU_API_KEY`。
 
 ## 设计决策（为什么）
 
 | 决策                              | 理由                                                 | 详见                  |
 | ------------------------------- | -------------------------------------------------- | ------------------- |
 | RRF 融合替代"双通道优先"硬排序              | 硬排序让单一通道的宽泛命中挤掉双通道命中；RRF 按排名倒数求和，逐条对比见报告（20 条评估集，FACT/RULE 计分、NEGATIVE 不计分） | `docs/eval/评估报告_baseline_v1.md` |
-| 全链路 Mock 先行（端口双实现）              | key 没到位也能开发、调试、验收链路本身；真实效果单独复测不混数据                 | `aitools/ToolIntentRouter.java`（类注释） |
+| 业务模型只留真实实现              | 双实现长期只有一条被用到，mock 分支的维护与误用成本高于收益；无 key 场景由「启动失败」显式暴露 | `docs/adr/0018-remove-business-model-mocks.md` |
 | 编程式熔断（decorateSupplier）而非注解     | 单测不起容器即可驱动熔断状态机红绿循环                                | `docs/adr/0003-tech-stack-and-exclusions.md` |
 | CB 在外 Retry 在内                  | 重试的每次尝试计入熔断统计，避免重试掩盖故障导致熔断永不打开                     | `resilience/ResilientLlmExecutor.java` |
 | SSE 禁重试                         | token 已推给用户，重放即重复播报事故                              | `docs/adr/0005-streaming-and-error-semantics.md` |
-| 抽取/草稿"宁缺勿编"                     | 缺失字段渲染 TODO 而非编造值；错误参数的调用比不调用更糟                    | `extract/strategy/impl/OpenAiCompatibleExtractGeneratorStrategy.java` |
+| 抽取/草稿"宁缺勿编"                     | 缺失字段渲染 TODO 而非编造值；错误参数的调用比不调用更糟                    | `extract/service/impl/ExtractGeneratorServiceImpl.java` |
 | pgvector + MyBatis（不用 JPA） | 需要大量 PG 扩展语法（HNSW/trigram/`<=>`），JPA 抽象反而挡路        | `docs/adr/0004-data-access-mybatis-conventions.md` |
 
 ## 技术栈
@@ -148,8 +148,8 @@ Spring Boot 3.5 · Spring AI 1.1（ChatClient / @Tool）· PostgreSQL 16 + pgvec
 
 - 单测：JUnit 5 + Mockito，mock 数据访问层，不连真库。
 - 真库测试：Testcontainers 起 `pgvector/pgvector:pg16`，测试类标 `@Tag("docker")`。
-- 默认档 `mvn test`：277 个用例，不跑真库测试，无 Docker 也可执行。
-- 集成档 `mvn test -Pintegration-tests`：286 个用例，含 9 个真库用例；无 Docker 的机器上这 9 个跳过，不判失败。
+- 默认档 `mvn test`：256 个用例，不跑真库测试，无 Docker 也可执行。
+- 集成档 `mvn test -Pintegration-tests`：265 个用例，含 9 个真库用例；无 Docker 的机器上这 9 个跳过，不判失败。
 
 ## 项目文档
 

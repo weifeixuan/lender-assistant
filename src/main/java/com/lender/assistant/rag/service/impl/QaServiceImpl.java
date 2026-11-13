@@ -31,7 +31,7 @@ import com.lender.assistant.rag.service.QaService;
 import com.lender.assistant.rag.service.SearchService;
 import com.lender.assistant.rag.model.dto.AnswerCancellationDTO;
 import com.lender.assistant.rag.model.dto.AnswerGenerationRequestDTO;
-import com.lender.assistant.rag.strategy.AnswerGeneratorStrategy;
+import com.lender.assistant.rag.service.AnswerGeneratorService;
 import com.lender.assistant.rag.model.dto.ChatTurnDTO;
 import com.lender.assistant.rag.model.response.QaDoneResponse;
 import com.lender.assistant.rag.model.response.QaMetaResponse;
@@ -87,7 +87,7 @@ public class QaServiceImpl implements QaService {
     private static final long SYNTHESIS_MAX_MILLIS = 60_000L;
 
     private final SearchService searchService;
-    private final AnswerGeneratorStrategy generator;
+    private final AnswerGeneratorService generator;
     private final com.lender.assistant.resilience.ResilientLlmExecutor executor;
     private final ConversationService conversationService;
     private final ConversationLockRegistry lockRegistry;
@@ -127,7 +127,7 @@ public class QaServiceImpl implements QaService {
     private ObjectMapper objectMapper;
 
     @Autowired
-    public QaServiceImpl(SearchService searchService, AnswerGeneratorStrategy generator,
+    public QaServiceImpl(SearchService searchService, AnswerGeneratorService generator,
                          com.lender.assistant.resilience.ResilientLlmExecutor executor,
                          ConversationService conversationService,
                          ConversationLockRegistry lockRegistry,
@@ -138,7 +138,7 @@ public class QaServiceImpl implements QaService {
     }
 
     /** 测试可注入受控线程池（例如已 shutdown 的池，用于验证拒绝路径） */
-    public QaServiceImpl(SearchService searchService, AnswerGeneratorStrategy generator,
+    public QaServiceImpl(SearchService searchService, AnswerGeneratorService generator,
                          com.lender.assistant.resilience.ResilientLlmExecutor executor,
                          ConversationService conversationService,
                          ConversationLockRegistry lockRegistry,
@@ -249,20 +249,18 @@ public class QaServiceImpl implements QaService {
             RoundRequest request = new RoundRequest(question, lastUser, topK, round, stream,
                     new PlanBudget(totalBudgetMillis, System::currentTimeMillis));
             PlanRoundOutcome planOutcome = null;
-            if (!isMockMode()) {
-                RoutingDecisionDTO decision = routeRound(emitter, request, rows);
-                if (decision == null) {
+            RoutingDecisionDTO decision = routeRound(emitter, request, rows);
+            if (decision == null) {
+                return;
+            }
+            if (decision.route() == QuestionRoute.IRRELEVANT) {
+                events.irrelevant(emitter, irrelevantReply, stream);
+                return;
+            }
+            if (decision.route() == QuestionRoute.PLAN) {
+                planOutcome = runPlanRound(emitter, request);
+                if (stream.isDisconnected()) {
                     return;
-                }
-                if (decision.route() == QuestionRoute.IRRELEVANT) {
-                    events.irrelevant(emitter, irrelevantReply, stream);
-                    return;
-                }
-                if (decision.route() == QuestionRoute.PLAN) {
-                    planOutcome = runPlanRound(emitter, request);
-                    if (stream.isDisconnected()) {
-                        return;
-                    }
                 }
             }
             // PLAN 轮用多步并集命中；计划弃用或无计划服务时退回单次检索（KNOWLEDGE 兜底）
@@ -399,14 +397,9 @@ public class QaServiceImpl implements QaService {
                                 ConversationRoundDTO round, RoundStateServiceImpl stream, PlanBudget budget) {
     }
 
-    /** mock 只保证对话能走通：跳过路由/计划，事件序列与现状一致；判定依据实际 Bean 能力而非配置字符串 */
-    private boolean isMockMode() {
-        return generator.isMock();
-    }
-
     /**
      * 调模型并把 token 增量推给前端，同时累积完整回答用于落库。
-     * AnswerGeneratorStrategy 契约：generate 返回时生成已结束，token 在调用线程上依次回调。
+     * AnswerGeneratorService 契约：generate 返回时生成已结束，token 在调用线程上依次回调。
      * 韧性（阶段4）：经 ResilientLlmExecutor 走 qa 链路——留痕 + 熔断；
      * allowRetry=false：SSE token 已推给用户，重试会导致内容重放。
      */

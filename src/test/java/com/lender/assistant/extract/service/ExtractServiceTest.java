@@ -8,7 +8,7 @@ import com.lender.assistant.extract.model.entity.FieldMappingEntity;
 import com.lender.assistant.extract.model.entity.FieldMappingRaw;
 import com.lender.assistant.extract.model.entity.FieldMappingRow;
 import com.lender.assistant.extract.service.impl.ExtractServiceImpl;
-import com.lender.assistant.extract.strategy.ExtractGeneratorStrategy;
+import com.lender.assistant.extract.service.ExtractGeneratorService;
 import com.lender.assistant.resilience.LlmCallLogger;
 import com.lender.assistant.resilience.ResilientLlmExecutor;
 import com.lender.assistant.resilience.mapper.LlmCallLogMapper;
@@ -39,7 +39,7 @@ import static org.mockito.Mockito.*;
  */
 class ExtractServiceTest {
 
-    private ExtractGeneratorStrategy generator;
+    private ExtractGeneratorService generator;
     private DocumentService documentService;
     private FieldMappingMapper mapper;
     private ResilientLlmExecutor executor;
@@ -47,7 +47,7 @@ class ExtractServiceTest {
 
     @BeforeEach
     void setUp() {
-        generator = mock(ExtractGeneratorStrategy.class);
+        generator = mock(ExtractGeneratorService.class);
         documentService = mock(DocumentService.class);
         mapper = mock(FieldMappingMapper.class);
         // 真实韧性执行器（chaos=false 直通）+ mock JDBC 的留痕器：

@@ -1,6 +1,7 @@
 # ADR-0011：复用 `POST /api/qa` SSE，增量扩展 route / plan / step 事件
 
 - 状态：提议中（待 PRD 评审后转已采纳）
+- 部分内容已被 [ADR-0018](0018-remove-business-model-mocks.md) 取代：mock provider 跳过路由/计划的约定已移除
 - 相关：`docs/prd/qa-routing-and-plan-execute.md §11`、`docs/adr/0005-streaming-and-error-semantics.md`、`docs/prd/multi-turn-backend.md §4.4`
 
 ## 背景
@@ -18,10 +19,10 @@
 - `meta` 仍是每轮首事件，四字段不变；`done` 仍是 `{provider, elapsedMillis, sourceCount}`，不新增字段。
 - 在 `meta` 之后新增 `route`（生效后的路由结果 + 置信度）；`PLAN` 再新增 `plan` 与 `step`。
 - `plan` **只发送一次**：`{degraded, goal, steps:[{stepId, order, title, tool}]}`；`steps` 只暴露必要字段，不暴露 `args`。
-- `sources` 仍是**一个数组、先于首个 `delta`**；复杂轮次为所有 `kb.search` 步骤的并集去重结果，元素结构不变；mock 业务工具不产出来源。
+- `sources` 仍是**一个数组、先于首个 `delta`**；复杂轮次为所有 `kb.search` 步骤的并集去重结果，元素结构不变；样例数据工具不产出来源。
 - 计划只读可见，不支持人工改写，也不做失败重规划；某步失败只发 `step(FAILED/DEGRADED)` 并继续。
 - 前端对未知事件必须忽略；新增事件用于可选的进度展示，不阻塞现有渲染。
-- `rag.chat.provider=mock` 时**不发** `route` / `plan` / `step`（mock 跳过路由与计划，只走 `KNOWLEDGE` 单步链路）；这三个事件的联调与验收**必须在真实 provider 下进行**，mock 只保证对话能走通。
+- （历史）`rag.chat.provider=mock` 时不发 `route` / `plan` / `step`；该模式已由 ADR-0018 删除，三个事件在所有环境均由真实模型产生。
 
 ## 理由
 

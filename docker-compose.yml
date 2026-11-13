@@ -46,16 +46,13 @@ services:
       SPRING_DATASOURCE_URL: jdbc:postgresql://lender-pg:5432/lender_assistant
       SPRING_DATASOURCE_USERNAME: postgres
       SPRING_DATASOURCE_PASSWORD: ${PG_PASSWORD:-lender123}
-      # 默认与 application.yml 一致（openai）；没有 key 时运行期会降级并在 llm_call_log 留 FAIL
-      RAG_CHAT_PROVIDER: ${RAG_CHAT_PROVIDER:-openai}
+      # 模型调用全部走真实 API：LLM_API_KEY 缺失时应用启动失败并点名该变量
       RAG_EMBEDDING_PROVIDER: ${RAG_EMBEDDING_PROVIDER:-hash}
-      RAG_EXTRACT_PROVIDER: ${RAG_EXTRACT_PROVIDER:-mock}
-      RAG_DRAFT_PROVIDER: ${RAG_DRAFT_PROVIDER:-mock}
       # OpenAI 兼容协议：换模型只改这三个变量，代码不用动
-      LLM_API_KEY: ${LLM_API_KEY:-sk-fake-openai-compatible-key}
+      LLM_API_KEY: ${LLM_API_KEY:-}
       LLM_BASE_URL: ${LLM_BASE_URL:-https://api.deepseek.com}
       LLM_MODEL: ${LLM_MODEL:-deepseek-chat}
-      ZHIPU_API_KEY: ${ZHIPU_API_KEY:-fake-zhipu-api-key}
+      ZHIPU_API_KEY: ${ZHIPU_API_KEY:-}
     ports:
       # 只绑回环：应用不对局域网开放
       - "127.0.0.1:8080:8080"

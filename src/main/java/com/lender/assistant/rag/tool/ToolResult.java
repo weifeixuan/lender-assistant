@@ -9,8 +9,8 @@ import java.util.List;
  *
  * @param ok       调用是否成功（零命中仍算成功）
  * @param content  给汇总合成用的文本产物
- * @param chunkIds 命中的知识库块 id；mock 工具恒为空
- * @param sources  命中的完整来源条目；只有 kb.search 会填充，mock 工具恒为空
+ * @param chunkIds 命中的知识库块 id；样例数据工具恒为空
+ * @param sources  命中的完整来源条目；只有 kb.search 会填充，样例数据工具恒为空
  * @param errorCode 失败时的固定错误码；成功为 null
  */
 public record ToolResult(boolean ok, String content, List<Long> chunkIds,

@@ -20,7 +20,7 @@ import java.util.function.Supplier;
  *
  * 这是简历数字"单次接入推理成本 XX 元"的数据来源：
  * llm_call_log 按行累计 prompt/completion token，成本 = token × 单价（配置价目）。
- * Mock 调用 token 记 NULL——mock 没有真实计量，诚实留空比编个数字好。
+ * 拿不到 Usage 时 token 记 NULL——诚实留空比编个数字好。
  *
  * 数据访问已迁到 LlmCallLogMapper（§11）：本类只保留"包住一次调用 + 旁路降级"的编排职责，
  * 不再持有 JdbcTemplate。旁路降级（catch 后不上抛）是刻意的——见 write()。
@@ -67,7 +67,7 @@ public class LlmCallLogger {
 
     /**
      * 真实模型实现回填 token 计量（同一调用线程、在 record() 包裹的 supplier 内）。
-     * 拿不到 Usage 就不填：留 NULL 比编数字诚实（Mock 调用同理）。
+     * 拿不到 Usage 就不填：留 NULL 比编数字诚实。
      */
     public void captureUsage(Integer promptTokens, Integer completionTokens) {
         if (promptTokens == null && completionTokens == null) {

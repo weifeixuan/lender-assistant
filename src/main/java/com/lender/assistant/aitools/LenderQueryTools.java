@@ -14,9 +14,9 @@ import java.util.List;
  * 两个工具都直查 lender-pg 真实数据——工具返回的是真东西，
  * "模型自主决定调用"这层才值得验证。
  *
- * @Tool 注解由 Spring AI 扫描：真实模型版把本类对象挂到 ChatClient.tools()，
+ * @Tool 注解由 Spring AI 扫描：把本类对象挂到 ChatClient.tools()，
  * 模型按 description 自主决定何时调用（真 Function Calling）；
- * Mock 版由 ToolIntentRouter 规则模拟这个决策（见该类诚实声明）。
+ * 是否调用、调用哪个，由模型的工具描述与用户问题共同决定。
  */
 @Component
 public class LenderQueryTools {
@@ -48,7 +48,7 @@ public class LenderQueryTools {
         return n == 0 ? docId + " 未入库或无内容。" : docId + " 已入库 " + n + " 个切片。";
     }
 
-    /** 供 ToolIntentRouter 做 docId 匹配（非工具方法，不暴露给模型） */
+    /** 已知 docId 清单（非工具方法，不暴露给模型） */
     public List<String> knownDocIds() {
         return documentService.listDocuments().stream().map(DocSummaryDTO::docId).toList();
     }

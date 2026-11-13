@@ -9,7 +9,7 @@ import com.lender.assistant.rag.model.dto.QuestionRoute;
 import com.lender.assistant.rag.model.dto.RoutingDecisionDTO;
 import com.lender.assistant.rag.service.impl.QaServiceImpl;
 import com.lender.assistant.rag.model.dto.AnswerGenerationRequestDTO;
-import com.lender.assistant.rag.strategy.AnswerGeneratorStrategy;
+import com.lender.assistant.rag.service.AnswerGeneratorService;
 import com.lender.assistant.rag.model.response.SearchItemResponse;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -49,18 +49,7 @@ class QaRoutingFlowTest {
     private ConversationRoundDTO round;
     private final RecordingEmitter emitter = new RecordingEmitter();
 
-    static class FixedGenerator implements AnswerGeneratorStrategy {
-        private boolean mock;
-
-        FixedGenerator mockMode() {
-            this.mock = true;
-            return this;
-        }
-
-        @Override
-        public boolean isMock() {
-            return mock;
-        }
+    static class FixedGenerator implements AnswerGeneratorService {
 
         @Override
         public void generate(AnswerGenerationRequestDTO request) {
@@ -151,19 +140,6 @@ class QaRoutingFlowTest {
                 emitter.eventNames());
         verify(conversationService).completeRound(argThat(
                 completion -> completion.status().equals("DONE")));
-    }
-
-    @Test
-    @DisplayName("mock 生成策略跳过路由：不发 route/plan/step（按 Bean 能力判定，不看配置字符串）")
-    void mockProviderSkipsRouting() {
-        generator.mockMode();
-
-        qaService.streamAnswer(emitter, "单笔代收限额", 4, USER_ID, round, System.currentTimeMillis());
-
-        assertEquals(List.of("event:meta", "event:sources", "event:delta", "event:done"),
-                emitter.eventNames());
-        assertTrue(emitter.eventNames().stream().noneMatch("event:route"::equals));
-        org.mockito.Mockito.verifyNoInteractions(routing);
     }
 
     static class RecordingEmitter extends SseEmitter {

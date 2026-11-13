@@ -18,7 +18,7 @@ import com.lender.assistant.rag.model.dto.QuestionRoute;
 import com.lender.assistant.rag.model.dto.RoutingDecisionDTO;
 import com.lender.assistant.rag.service.impl.QaServiceImpl;
 import com.lender.assistant.rag.model.dto.AnswerGenerationRequestDTO;
-import com.lender.assistant.rag.strategy.AnswerGeneratorStrategy;
+import com.lender.assistant.rag.service.AnswerGeneratorService;
 import com.lender.assistant.rag.model.response.SearchItemResponse;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -270,7 +270,7 @@ class QaSynthesisFlowTest {
         return new SearchItemResponse(chunkId, "doc", "标题", "节", "内容", null, null, false, null);
     }
 
-    static class CapturingGenerator implements AnswerGeneratorStrategy {
+    static class CapturingGenerator implements AnswerGeneratorService {
         final List<AnswerGenerationRequestDTO> requests = new ArrayList<>();
         RuntimeException failure;
         long delayMillis;

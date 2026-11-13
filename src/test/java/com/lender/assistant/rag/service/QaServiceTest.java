@@ -10,7 +10,7 @@ import com.lender.assistant.rag.model.dto.ChatTurnDTO;
 import com.lender.assistant.rag.model.response.SearchItemResponse;
 import com.lender.assistant.rag.service.SearchService;
 import com.lender.assistant.rag.service.impl.QaServiceImpl;
-import com.lender.assistant.rag.strategy.AnswerGeneratorStrategy;
+import com.lender.assistant.rag.service.AnswerGeneratorService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -42,10 +42,10 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
- * 阶段 4 开工前的测试基线：锁住 QaService → AnswerGeneratorStrategy 的入参契约。
+ * 阶段 4 开工前的测试基线：锁住 QaService → AnswerGeneratorService 的入参契约。
  *
  * 测的是公共契约而非私有方法：QaService.answer 内部把 systemPrompt、问题与召回结果
- * 交给 AnswerGeneratorStrategy——用桩生成器把入参抓出来断言。
+ * 交给 AnswerGeneratorService——用桩生成器把入参抓出来断言。
  * Prompt 三铁律和结构化召回顺序是模型行为的根基，改动前必须先有这道护栏。
  *
  * 异步契约（2026-10-17 SSE 真流式改造后）：answer() 立即 return emitter，检索/生成/send
@@ -65,8 +65,8 @@ class QaServiceTest {
     private QaServiceImpl qaService;
     private ConversationRoundDTO round;
 
-    /** 测试专用 AnswerGeneratorStrategy：记录入参，不做任何模型调用 */
-    static class RecordingGenerator implements AnswerGeneratorStrategy {
+    /** 测试专用 AnswerGeneratorService：记录入参，不做任何模型调用 */
+    static class RecordingGenerator implements AnswerGeneratorService {
         String system;
         String question;
         List<ChatTurnDTO> history;
@@ -215,7 +215,7 @@ class QaServiceTest {
     void generatorExceptionDoesNotPropagate() {
         when(searchService.hybridSearch(any(), any(), anyInt()))
                 .thenReturn(List.of(hit(1, "某文档", "某节", "内容")));
-        AnswerGeneratorStrategy broken = new AnswerGeneratorStrategy() {
+        AnswerGeneratorService broken = new AnswerGeneratorService() {
             @Override
             public void generate(com.lender.assistant.rag.model.dto.AnswerGenerationRequestDTO request) {
                 throw new RuntimeException("模拟模型超时");
@@ -373,7 +373,7 @@ class QaServiceTest {
     void persistsFailedRoundOnModelException() {
         when(searchService.hybridSearch(any(), any(), anyInt()))
                 .thenReturn(List.of(hit(1, "某文档", "某节", "内容")));
-        AnswerGeneratorStrategy broken = new AnswerGeneratorStrategy() {
+        AnswerGeneratorService broken = new AnswerGeneratorService() {
             @Override
             public void generate(com.lender.assistant.rag.model.dto.AnswerGenerationRequestDTO request) {
                 request.onDelta().accept("已生成的一半");
@@ -422,7 +422,7 @@ class QaServiceTest {
         when(searchService.hybridSearch(any(), any(), anyInt()))
                 .thenReturn(List.of(hit(1, "某文档", "某节", "内容")));
         java.util.concurrent.atomic.AtomicInteger emitted = new java.util.concurrent.atomic.AtomicInteger();
-        AnswerGeneratorStrategy longRunning = new AnswerGeneratorStrategy() {
+        AnswerGeneratorService longRunning = new AnswerGeneratorService() {
             @Override
             public void generate(com.lender.assistant.rag.model.dto.AnswerGenerationRequestDTO request) {
                 // 150 片 × 20ms ≈ 3s：这是"不取消就会一直烧 token 到自然结束"的基线
@@ -642,7 +642,7 @@ class QaServiceTest {
         when(searchService.hybridSearch(any(), any(), anyInt()))
                 .thenReturn(List.of(hit(1, "某文档", "某节", "内容")));
         CallbackEmitter emitter = new CallbackEmitter();
-        AnswerGeneratorStrategy slow = new AnswerGeneratorStrategy() {
+        AnswerGeneratorService slow = new AnswerGeneratorService() {
             @Override
             public void generate(com.lender.assistant.rag.model.dto.AnswerGenerationRequestDTO request) {
                 request.onDelta().accept("前半段");

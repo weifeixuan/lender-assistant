@@ -1,6 +1,7 @@
 # ADR-0012：检索登记为编排层计划工具，不进入 `aitools` 包的模型工具面
 
 - 状态：提议中（待 PRD 评审后转已采纳）
+- 部分内容已被 [ADR-0018](0018-remove-business-model-mocks.md) 取代：`ToolIntentRouter` 已移除（唯一调用方是已删除的 mock 生成器），`aitools/` 仅保留 `LenderQueryTools`
 - 相关：`docs/prd/qa-routing-and-plan-execute.md §10`、`rag/service/SearchService`、`aitools/LenderQueryTools`、`aitools/ToolIntentRouter`
 
 ## 背景
@@ -10,14 +11,14 @@
 1. 放进现有 `aitools/`，做成 `@Tool`（模型可自主调用）；
 2. 留在 `rag/`，做成编排层 `PlanTool`（代码按计划顺序调用）。
 
-现有 `aitools/` 的定位是**模型可自主调用**的 Function Calling 面：`LenderQueryTools` 用 `@Tool` 暴露给真实模型，`ToolIntentRouter` 只是 Mock 模式下用关键词模拟「模型要不要调工具」。计划步骤的检索则是由编排代码决定何时、用哪个 query 去调。
+现有 `aitools/` 的定位是**模型可自主调用**的 Function Calling 面：`LenderQueryTools` 用 `@Tool` 暴露给真实模型；`ToolIntentRouter` 曾是 Mock 模式下的关键词旁路（已随 ADR-0018 删除）。计划步骤的检索则是由编排代码决定何时、用哪个 query 去调。
 
 ## 决策
 
 保留原结论，补充限定条件：
 
 - **检索不注册为模型可自主调用的 Function Calling Tool**，不放进 `aitools/`。
-- **检索登记为编排层工具**：`kb.search`（`rag/tool/impl/KbSearchPlanTool`），实现 `AgentTool`，由 `PlanToolRegistry` 管理，调用方是 `PlanAndExecuteService`（ADR-0014）。同层的 `customer.profile` / `lender.product` 只是 mock 业务工具（`mock-enabled` 默认关），与检索同样不进入 `aitools/`。
+- **检索登记为编排层工具**：`kb.search`（`rag/tool/impl/KbSearchPlanTool`），实现 `AgentTool`，由 `PlanToolRegistry` 管理，调用方是 `PlanAndExecuteService`（ADR-0014）。同层的 `customer.profile` / `lender.product` 只是本地样例数据工具（`Sample*`，`rag.plan.tools.sample-enabled` 默认关），与检索同样不进入 `aitools/`。
 - 检索的唯一实现仍是 `SearchService.hybridSearch`；`kb.search` 只是适配器，不新增检索实现。
 - 原 ADR 设想的 `PlanStepExecutorStrategy`（知识 / 推理两个实现 + factory）**被 ADR-0014 的 `AgentTool` + `PlanToolRegistry` 取代**：步骤的单元从「类型」变成「工具名」。
 - `aitools/` 保持现状，不承载计划步骤的工具。

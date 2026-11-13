@@ -109,11 +109,11 @@ ALTER TABLE field_mapping ADD COLUMN IF NOT EXISTS create_time TIMESTAMPTZ NOT N
 ALTER TABLE field_mapping ADD COLUMN IF NOT EXISTS update_time TIMESTAMPTZ NOT NULL DEFAULT now();
 
 -- 模型调用留痕：每次模型调用一行（耗时/token/成本/状态）
--- token 为 NULL 表示 mock 调用（无真实计量）；cost_cny 默认 0，DeepSeek 版按价目折算
+-- token 为 NULL 表示该次调用未返回计量信息；cost_cny 默认 0，DeepSeek 版按价目折算
 CREATE TABLE IF NOT EXISTS llm_call_log (
     id                BIGSERIAL PRIMARY KEY,
     scene             TEXT NOT NULL,              -- 取值见 LlmScene：qa / extract / draft / route / plan / synthesis
-    provider          TEXT NOT NULL,              -- 策略名（如 deepseek-chat / mock）
+    provider          TEXT NOT NULL,              -- 实际模型名（如 deepseek-chat）
     duration_ms       INTEGER,
     prompt_tokens     INTEGER,
     completion_tokens INTEGER,

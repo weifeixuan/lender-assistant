@@ -23,7 +23,8 @@ import java.nio.file.Path;
  * <p>无 Docker 的机器上由 {@code @Testcontainers(disabledWithoutDocker = true)} 整体跳过，
  * 配合 surefire 默认 excludedGroups=docker，{@code mvn test} 不会因环境缺 Docker 而变红。</p>
  */
-@SpringBootTest
+// 集成用例只验证 Mapper 与真实库，不调模型：给一个占位 key 让启动校验通过即可
+@SpringBootTest(properties = "spring.ai.openai.api-key=integration-test-key")
 @Testcontainers(disabledWithoutDocker = true)
 public abstract class PostgresContainerSupport {
 

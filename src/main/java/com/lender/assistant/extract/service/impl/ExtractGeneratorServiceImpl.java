@@ -1,17 +1,16 @@
-package com.lender.assistant.extract.strategy.impl;
+package com.lender.assistant.extract.service.impl;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lender.assistant.extract.model.entity.FieldMappingEntity;
 import com.lender.assistant.extract.model.entity.InternalFieldEntity;
+import com.lender.assistant.extract.service.ExtractGeneratorService;
 import com.lender.assistant.extract.service.InternalFieldCatalog;
-import com.lender.assistant.extract.strategy.ExtractGeneratorStrategy;
 import com.lender.assistant.rag.model.dto.DocContentDTO;
 import com.lender.assistant.resilience.LlmCallLogger;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
@@ -20,18 +19,17 @@ import java.util.List;
 /**
  * 真实模型抽取：JSON Schema 抽取，非流式一锤子调用（OpenAI 兼容协议）。
  *
- * 与 Mock 版同一条红线——宁缺勿编：
+ * 红线——宁缺勿编：
  * - Prompt 明确要求"文档没写的信息不得输出"；
  * - 解析阶段再按 InternalFieldCatalog 过滤：未知 internalFieldId 一律丢弃，
  *   模型幻觉出的字段进不了映射表；
  * - 空值/空串字段同样丢弃——映射表里宁可没有，不可有假值。
  *
- * 韧性（重试/熔断/留痕）不在此类：由 ExtractService 经 ResilientLlmExecutor 统一处理，
- * 与 Mock 版共享同一编排（allowRetry=true，抽取是非流式可安全重试）。
+ * 韧性（重试/熔断/留痕）不在此类：由 ExtractService 经 ResilientLlmExecutor 统一处理
+ * （allowRetry=true，抽取是非流式可安全重试）。
  */
 @Component
-@ConditionalOnProperty(name = "rag.extract.provider", havingValue = "openai")
-public class OpenAiCompatibleExtractGeneratorStrategy implements ExtractGeneratorStrategy {
+public class ExtractGeneratorServiceImpl implements ExtractGeneratorService {
 
     private static final double DEFAULT_CONFIDENCE = 0.8;
 
@@ -40,10 +38,10 @@ public class OpenAiCompatibleExtractGeneratorStrategy implements ExtractGenerato
     private final LlmCallLogger llmCallLogger;
     private final String model;
 
-    public OpenAiCompatibleExtractGeneratorStrategy(ChatClient.Builder builder,
-                                                    ObjectMapper objectMapper,
-                                                    LlmCallLogger llmCallLogger,
-                                                    @Value("${spring.ai.openai.chat.options.model}") String model) {
+    public ExtractGeneratorServiceImpl(ChatClient.Builder builder,
+                                       ObjectMapper objectMapper,
+                                       LlmCallLogger llmCallLogger,
+                                       @Value("${spring.ai.openai.chat.options.model}") String model) {
         this.chatClient = builder.build();
         this.objectMapper = objectMapper;
         this.llmCallLogger = llmCallLogger;

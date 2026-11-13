@@ -1,8 +1,8 @@
 package com.lender.assistant.rag.tool;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.lender.assistant.rag.tool.impl.MockCustomerProfileTool;
-import com.lender.assistant.rag.tool.impl.MockLenderProductTool;
+import com.lender.assistant.rag.tool.impl.SampleCustomerProfileTool;
+import com.lender.assistant.rag.tool.impl.SampleLenderProductTool;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -12,13 +12,13 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/** 两个 mock 业务工具：参数校验、数据命中、无 chunkIds。数据来自 resources/mock 下的固定 JSON。 */
-class MockBusinessToolsTest {
+/** 两个本地样例数据工具：参数校验、数据命中、无 chunkIds。数据来自 resources/sample 下的固定 JSON。 */
+class SampleBusinessToolsTest {
 
     private static final ToolContext CONTEXT = new ToolContext(4);
     private final ObjectMapper mapper = new ObjectMapper();
-    private final MockCustomerProfileTool customerTool = new MockCustomerProfileTool(mapper);
-    private final MockLenderProductTool productTool = new MockLenderProductTool(mapper);
+    private final SampleCustomerProfileTool customerTool = new SampleCustomerProfileTool(mapper);
+    private final SampleLenderProductTool productTool = new SampleLenderProductTool(mapper);
 
     @Test
     @DisplayName("客户号命中返回额度与风险摘要，且不产生来源")

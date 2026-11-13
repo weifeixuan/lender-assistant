@@ -15,22 +15,24 @@ import java.util.Map;
 import java.util.regex.Pattern;
 
 /**
- * customer.profile（mock）：按客户号返回授信与风险摘要。
+ * customer.profile（本地样例数据源）：按客户号返回授信与风险摘要。
  *
- * 本地固定数据、无网络请求、无密钥；chunkIds 恒为空，不参与 sources 并集。
- * 默认关闭，只有 rag.plan.tools.mock-enabled=true 时才注册进 PlanToolRegistry。
+ * 数据来自 resources/sample/customer-profiles.json 的固定样例，
+ * 不是真实客户系统、不是模型调用——这是可替换的业务数据源，不是模型的 mock。
+ * 本地读取、无网络请求、无密钥；chunkIds 恒为空，不参与 sources 并集。
+ * 默认关闭，只有 rag.plan.tools.sample-enabled=true 时才注册进 PlanToolRegistry。
  */
 @Component
-@ConditionalOnProperty(name = "rag.plan.tools.mock-enabled", havingValue = "true")
-public class MockCustomerProfileTool implements AgentTool {
+@ConditionalOnProperty(name = "rag.plan.tools.sample-enabled", havingValue = "true")
+public class SampleCustomerProfileTool implements AgentTool {
 
     private static final String NAME = "customer.profile";
     private static final Pattern CUSTOMER_ID = Pattern.compile("C\\d{5}");
-    private static final String DATA_PATH = "/mock/customer-profiles.json";
+    private static final String DATA_PATH = "/sample/customer-profiles.json";
 
     private final JsonNode profiles;
 
-    public MockCustomerProfileTool(ObjectMapper objectMapper) {
+    public SampleCustomerProfileTool(ObjectMapper objectMapper) {
         this.profiles = load(objectMapper);
     }
 

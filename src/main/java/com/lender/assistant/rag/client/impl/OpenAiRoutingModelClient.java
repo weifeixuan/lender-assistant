@@ -7,7 +7,6 @@ import com.lender.assistant.resilience.ResilientLlmExecutor;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
@@ -21,7 +20,6 @@ import java.time.Duration;
  * 后者需要额外线程池，对单次非流式调用是过度设计；熔断与重试仍在外层执行器。
  */
 @Component
-@ConditionalOnProperty(name = "rag.chat.provider", havingValue = "openai")
 public class OpenAiRoutingModelClient implements RoutingModelClient {
 
     /** 路由单次调用上限：分类输入 200–400 token、输出 ≤30 token，10s 足够宽 */

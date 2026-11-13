@@ -67,7 +67,7 @@ class LenderQueryToolsTest {
     }
 
     @Test
-    @DisplayName("knownDocIds 供意图路由做 docId 匹配")
+    @DisplayName("knownDocIds 返回已入库文档的 docId 清单")
     void knownDocIdsExposed() {
         when(documentService.listDocuments()).thenReturn(List.of(
                 new DocSummaryDTO("ruijin_api_v1", "瑞金", "docs/瑞金.docx", 5, 1200L, "2026-10-29 10:00:00")));

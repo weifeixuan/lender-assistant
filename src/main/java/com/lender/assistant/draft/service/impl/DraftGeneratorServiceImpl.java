@@ -1,12 +1,11 @@
-package com.lender.assistant.draft.strategy.impl;
+package com.lender.assistant.draft.service.impl;
 
-import com.lender.assistant.draft.strategy.DraftGeneratorStrategy;
+import com.lender.assistant.draft.service.DraftGeneratorService;
 import com.lender.assistant.extract.model.entity.FieldMappingEntity;
 import com.lender.assistant.resilience.LlmCallLogger;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
 import java.io.InputStream;
@@ -18,12 +17,9 @@ import java.util.List;
  * Prompt 铁律（呼应 QaService 三铁律的"宁缺勿编"）：
  * - 只依据映射表与骨架生成，映射表没有的信息留 TODO，禁止编造
  * - 只输出 Java 源码（.call().content() 非流式——草稿是整篇产物，无流式需求）
- *
- * 装配条件与 Mock 版互斥：仅在 rag.draft.provider=openai 时创建，Mock 为默认。
  */
 @Component
-@ConditionalOnProperty(name = "rag.draft.provider", havingValue = "openai")
-public class OpenAiCompatibleDraftGeneratorStrategy implements DraftGeneratorStrategy {
+public class DraftGeneratorServiceImpl implements DraftGeneratorService {
 
     private static final String SYSTEM_PROMPT = """
             你是融资租赁资方接入适配层的代码生成助手。规则：
@@ -36,21 +32,17 @@ public class OpenAiCompatibleDraftGeneratorStrategy implements DraftGeneratorStr
     private final LlmCallLogger llmCallLogger;
     private final String model;
 
-    public OpenAiCompatibleDraftGeneratorStrategy(ChatClient.Builder builder,
-                                                  LlmCallLogger llmCallLogger,
-                                                  @Value("${spring.ai.openai.chat.options.model}") String model) {
+    public DraftGeneratorServiceImpl(ChatClient.Builder builder,
+                                     LlmCallLogger llmCallLogger,
+                                     @Value("${spring.ai.openai.chat.options.model}") String model) {
         this.chatClient = builder.build();
         this.llmCallLogger = llmCallLogger;
         this.model = model;
     }
 
-    /**
-     * 骨架单一来源：classpath 下的 draft/ExampleLenderHandler.java（与 Mock 版读同一份文件）。
-     * 注意：这里不能依赖 MockDraftGeneratorStrategy Bean——它只在 rag.draft.provider=mock 时装配，
-     * 本类装配时（provider=openai）该 Bean 不存在，构造函数注入会导致启动失败。
-     */
+    /** 骨架单一来源：classpath 下的 templates/draft/ExampleLenderHandler.java.tmpl */
     static String loadSkeleton() {
-        try (InputStream in = OpenAiCompatibleDraftGeneratorStrategy.class.getResourceAsStream("/templates/draft/ExampleLenderHandler.java.tmpl")) {
+        try (InputStream in = DraftGeneratorServiceImpl.class.getResourceAsStream("/templates/draft/ExampleLenderHandler.java.tmpl")) {
             if (in == null) {
                 throw new IllegalStateException("classpath 缺少 draft/ExampleLenderHandler.java 骨架");
             }
