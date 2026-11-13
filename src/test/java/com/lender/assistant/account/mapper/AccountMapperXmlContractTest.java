@@ -60,6 +60,19 @@ class AccountMapperXmlContractTest {
         assertTrue(configuration.hasStatement(ROLE_NS + ".listByIds"), "缺少 listByIds 语句");
         assertTrue(configuration.hasStatement(ROLE_NS + ".listPermissionCodesByRoles"),
                 "缺少 listPermissionCodesByRoles 语句");
+        assertTrue(configuration.hasStatement(ROLE_NS + ".listAllWithAccountCount"),
+                "角色列表需要带引用账户数");
+        assertTrue(configuration.hasStatement(ROLE_NS + ".findById"), "缺少 findById 语句");
+        assertTrue(configuration.hasStatement(ROLE_NS + ".update"), "缺少 update 语句");
+        assertTrue(configuration.hasStatement(ROLE_NS + ".deleteById"), "缺少 deleteById 语句");
+        assertTrue(configuration.hasStatement(ROLE_NS + ".countAccountsByRole"),
+                "删除前需要引用计数");
+        assertTrue(configuration.hasStatement(ROLE_NS + ".listPermissionCodes"),
+                "角色详情需要单角色权限码");
+        assertTrue(configuration.hasStatement(ROLE_NS + ".deletePermissions"),
+                "编辑角色需要整体替换权限点");
+        assertTrue(configuration.hasStatement(ROLE_NS + ".insertPermission"),
+                "缺少 insertPermission 语句");
     }
 
     @Test

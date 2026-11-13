@@ -130,6 +130,32 @@ class AuthInterceptorTest {
     }
 
     @Test
+    @DisplayName("角色列表允许管理账户或管理角色任一权限，权限点目录只给管理角色")
+    void rolePermissions() throws Exception {
+        MockHttpServletRequest list = new MockHttpServletRequest("GET", "/api/roles");
+        list.addHeader(AuthConstants.AUTHORIZATION_HEADER, "Bearer " + TOKEN);
+        MockHttpServletRequest catalog = new MockHttpServletRequest("GET", "/api/permissions");
+        catalog.addHeader(AuthConstants.AUTHORIZATION_HEADER, "Bearer " + TOKEN);
+        MockHttpServletRequest create = new MockHttpServletRequest("POST", "/api/roles");
+        create.addHeader(AuthConstants.AUTHORIZATION_HEADER, "Bearer " + TOKEN);
+
+        when(authService.authenticate(TOKEN)).thenReturn(account(
+                List.of(PermissionCode.SETTINGS_ACCOUNTS_MANAGE.code())));
+        assertTrue(interceptor.preHandle(list, response, handler),
+                "账户页需要读角色列表来选角色");
+        assertThrows(BizException.class, () -> interceptor.preHandle(catalog, response, handler),
+                "权限点目录只对管理角色开放");
+        assertThrows(BizException.class, () -> interceptor.preHandle(create, response, handler),
+                "只有管理账户不能写角色");
+
+        when(authService.authenticate(TOKEN)).thenReturn(account(
+                List.of(PermissionCode.SETTINGS_ROLES_MANAGE.code())));
+        assertTrue(interceptor.preHandle(list, response, handler), "管理角色也能读列表");
+        assertTrue(interceptor.preHandle(catalog, response, handler), "管理角色可读权限点目录");
+        assertTrue(interceptor.preHandle(create, response, handler), "管理角色可新建角色");
+    }
+
+    @Test
     @DisplayName("无页面入口的接口只要登录即可")
     void loginOnlyEndpointsPassWithAnyToken() throws Exception {
         when(authService.authenticate(TOKEN)).thenReturn(account(List.of()));

@@ -49,4 +49,66 @@
         </foreach>
         ORDER BY permission_code
     </select>
+
+    <resultMap id="roleSummaryRowMap"
+               type="com.lender.assistant.account.model.entity.AppRoleSummaryEntity">
+        <constructor>
+            <arg column="role_id" javaType="java.lang.String"/>
+            <arg column="name" javaType="java.lang.String"/>
+            <arg column="description" javaType="java.lang.String"/>
+            <arg column="builtin" javaType="java.lang.Boolean"/>
+            <arg column="create_time" javaType="java.lang.String"/>
+            <arg column="update_time" javaType="java.lang.String"/>
+            <arg column="account_count" javaType="_int"/>
+        </constructor>
+    </resultMap>
+
+    <select id="findById" resultMap="roleRowMap">
+        SELECT role_id, name, description, builtin,
+               TO_CHAR(create_time, 'YYYY-MM-DD HH24:MI:SS') AS create_time,
+               TO_CHAR(update_time, 'YYYY-MM-DD HH24:MI:SS') AS update_time
+        FROM app_role
+        WHERE role_id = #{roleId}
+    </select>
+
+    <!-- 角色列表：引用账户数用子查询统计，避免与权限码的联表产生笛卡尔积 -->
+    <select id="listAllWithAccountCount" resultMap="roleSummaryRowMap">
+        SELECT r.role_id, r.name, r.description, r.builtin,
+               TO_CHAR(r.create_time, 'YYYY-MM-DD HH24:MI:SS') AS create_time,
+               TO_CHAR(r.update_time, 'YYYY-MM-DD HH24:MI:SS') AS update_time,
+               (SELECT count(*) FROM user_role ur WHERE ur.role_id = r.role_id) AS account_count
+        FROM app_role r
+        ORDER BY r.create_time, r.role_id
+    </select>
+
+    <update id="update">
+        UPDATE app_role
+        SET name = #{name}, description = #{description}, update_time = now()
+        WHERE role_id = #{roleId}
+    </update>
+
+    <delete id="deleteById">
+        DELETE FROM app_role WHERE role_id = #{roleId}
+    </delete>
+
+    <select id="countAccountsByRole" resultType="int">
+        SELECT count(*) FROM user_role WHERE role_id = #{roleId}
+    </select>
+
+    <select id="listPermissionCodes" resultType="java.lang.String">
+        SELECT permission_code
+        FROM role_permission
+        WHERE role_id = #{roleId}
+        ORDER BY permission_code
+    </select>
+
+    <delete id="deletePermissions">
+        DELETE FROM role_permission WHERE role_id = #{roleId}
+    </delete>
+
+    <insert id="insertPermission">
+        INSERT INTO role_permission (role_id, permission_code)
+        VALUES (#{roleId}, #{permissionCode})
+        ON CONFLICT (role_id, permission_code) DO NOTHING
+    </insert>
 </mapper>

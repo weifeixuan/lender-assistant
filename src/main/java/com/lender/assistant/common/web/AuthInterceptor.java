@@ -28,24 +28,33 @@ import java.util.List;
 @Component
 public class AuthInterceptor implements HandlerInterceptor {
 
-    /** 方法为 null 表示不区分方法 */
-    private record PathPermission(String method, String pattern, PermissionCode permission) {
+    /**
+     * 方法为 null 表示不区分方法；permissions 为空表示仅要求登录，
+     * 非空表示「任一命中即可」（角色列表对管理账户与管理角色同时开放）。
+     */
+    private record PathPermission(String method, String pattern, List<PermissionCode> permissions) {
     }
 
     /** 有页面入口的接口；未列出的 /api/** 仅要求登录（如抽取、起草、评测） */
     private static final List<PathPermission> RULES = List.of(
             // 改自己的口令只要求登录：必须排在 /api/accounts/** 之前
-            new PathPermission("PUT", "/api/accounts/me/password", null),
-            new PathPermission(null, "/api/accounts", PermissionCode.SETTINGS_ACCOUNTS_MANAGE),
-            new PathPermission(null, "/api/accounts/**", PermissionCode.SETTINGS_ACCOUNTS_MANAGE),
-            new PathPermission("GET", "/api/admin/documents", PermissionCode.KNOWLEDGE_DOCUMENTS_VIEW),
-            new PathPermission("GET", "/api/admin/documents/**", PermissionCode.KNOWLEDGE_DOCUMENTS_VIEW),
-            new PathPermission("POST", "/api/admin/documents/search", PermissionCode.KNOWLEDGE_DOCUMENTS_VIEW),
-            new PathPermission("POST", "/api/admin/documents", PermissionCode.KNOWLEDGE_DOCUMENTS_WRITE),
-            new PathPermission("DELETE", "/api/admin/documents/**", PermissionCode.KNOWLEDGE_DOCUMENTS_WRITE),
-            new PathPermission("POST", "/api/qa", PermissionCode.KNOWLEDGE_CHAT_USE),
-            new PathPermission(null, "/api/conversations", PermissionCode.KNOWLEDGE_CHAT_USE),
-            new PathPermission(null, "/api/conversations/**", PermissionCode.KNOWLEDGE_CHAT_USE));
+            new PathPermission("PUT", "/api/accounts/me/password", List.of()),
+            new PathPermission(null, "/api/accounts", List.of(PermissionCode.SETTINGS_ACCOUNTS_MANAGE)),
+            new PathPermission(null, "/api/accounts/**", List.of(PermissionCode.SETTINGS_ACCOUNTS_MANAGE)),
+            // 账户页要读角色列表来选角色，所以管理账户也能读；写操作只给管理角色
+            new PathPermission("GET", "/api/roles", List.of(
+                    PermissionCode.SETTINGS_ACCOUNTS_MANAGE, PermissionCode.SETTINGS_ROLES_MANAGE)),
+            new PathPermission(null, "/api/roles", List.of(PermissionCode.SETTINGS_ROLES_MANAGE)),
+            new PathPermission(null, "/api/roles/**", List.of(PermissionCode.SETTINGS_ROLES_MANAGE)),
+            new PathPermission(null, "/api/permissions", List.of(PermissionCode.SETTINGS_ROLES_MANAGE)),
+            new PathPermission("GET", "/api/admin/documents", List.of(PermissionCode.KNOWLEDGE_DOCUMENTS_VIEW)),
+            new PathPermission("GET", "/api/admin/documents/**", List.of(PermissionCode.KNOWLEDGE_DOCUMENTS_VIEW)),
+            new PathPermission("POST", "/api/admin/documents/search", List.of(PermissionCode.KNOWLEDGE_DOCUMENTS_VIEW)),
+            new PathPermission("POST", "/api/admin/documents", List.of(PermissionCode.KNOWLEDGE_DOCUMENTS_WRITE)),
+            new PathPermission("DELETE", "/api/admin/documents/**", List.of(PermissionCode.KNOWLEDGE_DOCUMENTS_WRITE)),
+            new PathPermission("POST", "/api/qa", List.of(PermissionCode.KNOWLEDGE_CHAT_USE)),
+            new PathPermission(null, "/api/conversations", List.of(PermissionCode.KNOWLEDGE_CHAT_USE)),
+            new PathPermission(null, "/api/conversations/**", List.of(PermissionCode.KNOWLEDGE_CHAT_USE)));
 
     private final AuthService authService;
     private final AntPathMatcher pathMatcher = new AntPathMatcher();
@@ -62,8 +71,9 @@ public class AuthInterceptor implements HandlerInterceptor {
         request.setAttribute(AuthConstants.USER_ID_ATTRIBUTE, account.userId());
         request.setAttribute(AuthConstants.TOKEN_HASH_ATTRIBUTE, account.tokenHash());
 
-        PermissionCode required = requiredPermission(request.getMethod(), request.getRequestURI());
-        if (required != null && !account.permissions().contains(required.code())) {
+        List<PermissionCode> required = requiredPermissions(request.getMethod(), request.getRequestURI());
+        if (!required.isEmpty()
+                && required.stream().noneMatch(permission -> account.permissions().contains(permission.code()))) {
             throw new BizException(ErrorCode.FORBIDDEN, AuthConstants.FORBIDDEN_MESSAGE);
         }
         return true;
@@ -81,16 +91,16 @@ public class AuthInterceptor implements HandlerInterceptor {
         return token;
     }
 
-    private PermissionCode requiredPermission(String method, String uri) {
+    private List<PermissionCode> requiredPermissions(String method, String uri) {
         for (PathPermission rule : RULES) {
             if (rule.method() != null && !rule.method().equals(method)) {
                 continue;
             }
             if (pathMatcher.match(rule.pattern(), uri)) {
-                return rule.permission();
+                return rule.permissions();
             }
         }
-        return null;
+        return List.of();
     }
 
     private static BizException invalidSession() {
