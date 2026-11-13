@@ -37,9 +37,9 @@
 
 **四、无 key 场景改为启动失败**
 
-- `LLM_API_KEY` 缺失 → 启动直接失败，异常信息点名环境变量（`common/config/StartupConfigValidator`）。
-- `ZHIPU_API_KEY` 仅在 `rag.embedding.provider=zhipu` 时必需，由 `ZhipuEmbeddingStrategy` 装配期校验。
-- 有默认值的配置项不参与校验。
+- `LLM_API_KEY` 缺失 → 启动直接失败，由 Spring AI 装配 `OpenAiApi` 时抛 `OpenAI API key must be set`（点名 `spring.ai.openai.api-key`），不额外维护自定义校验类。
+- `ZHIPU_API_KEY` 仅在 `rag.embedding.provider=zhipu` 时必需，由 `ZhipuEmbeddingStrategy` 装配期校验；框架对该自定义 HTTP 客户端无校验。
+- 有默认值的配置项缺失时不阻塞启动。
 
 ## 备选方案与否决理由
 

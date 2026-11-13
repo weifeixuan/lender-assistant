@@ -121,6 +121,7 @@ java -jar target/lender-assistant-0.1.0-SNAPSHOT.jar --server.port=8080
 | `AUTH_BOOTSTRAP_ADMIN_PASSWORD` | 空 | 初始管理员口令；为空则跳过建号并记录 WARN，应用仍可启动 |
 
 对话、路由、计划、抽取、草稿五处模型调用全部走真实 API，仓库内不再保留业务模型 mock。
+启动时报 `OpenAI API key must be set`（点名 `spring.ai.openai.api-key`），即等同于未设置 `LLM_API_KEY`；该校验由 Spring AI 装配时完成。
 `docker compose` 会自动读取项目根 `.env`；本地 `mvn spring-boot:run` / `java -jar` 不会自动加载 `.env`，需先自行导出环境变量。
 
 ```bash
