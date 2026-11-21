@@ -1,0 +1,61 @@
+# ELK 观测栈：Elasticsearch + Kibana + Filebeat（直连 ES，无 Logstash）
+# 运行环境：Ubuntu (WSL2) 终端，引擎为 Docker Desktop（WSL Integration 已开启）
+#   cd /mnt/e/project/lender-assistant && docker compose -f elk/docker-compose.yml up -d
+# 镜像前缀与主 compose 同机制：拉不动时 REGISTRY_PREFIX=docker.1ms.run/ docker compose ... up -d
+# 版本统一用一个变量，升级只改一处。8GB 内存适配：ES 堆 512MB（见 README「内存预算」）。
+name: elk
+
+services:
+  elasticsearch:
+    image: ${REGISTRY_PREFIX:-}docker.elastic.co/elasticsearch/elasticsearch:${ELK_VERSION:-8.18.0}
+    container_name: elk-es
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - ES_JAVA_OPTS=-Xms512m -Xmx512m
+    ports:
+      - "127.0.0.1:9200:9200"
+    volumes:
+      - es_data:/usr/share/elasticsearch/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:9200/_cluster/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 40s
+
+  kibana:
+    image: ${REGISTRY_PREFIX:-}docker.elastic.co/kibana/kibana:${ELK_VERSION:-8.18.0}
+    container_name: elk-kibana
+    environment:
+      - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
+    ports:
+      - "127.0.0.1:5601:5601"
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+    mem_limit: 1g
+
+  filebeat:
+    image: ${REGISTRY_PREFIX:-}docker.elastic.co/beats/filebeat:${ELK_VERSION:-8.18.0}
+    container_name: elk-filebeat
+    # --strict.perms=false：Windows 盘 bind mount 出来的文件权限是 0777，
+    # filebeat 默认会因「配置文件不可世界可写」拒绝启动，开发环境关掉该校验
+    command: filebeat -e --strict.perms=false
+    volumes:
+      # 项目自带日志目录（容器跑应用时 ./logs:/app/logs 落盘处）
+      - ../logs:/logs/project:ro
+      # 本机宽日志目录（java -jar 直接跑时 LOG_PATH 默认 E:/project/logs）
+      # Ubuntu 客户端下 /mnt/e 会被 Docker Desktop 自动翻译成 Windows 盘；
+      # 从 Windows 终端运行时用 WIDE_LOGS_DIR=E:/project/logs 覆盖
+      - ${WIDE_LOGS_DIR:-/mnt/e/project/logs}:/logs/wide:ro
+      - ./filebeat.yml:/usr/share/filebeat/filebeat.yml:ro
+      # 采集进度（registry）持久化：容器重建后不会把日志重复灌一遍
+      - filebeat_data:/usr/share/filebeat/data
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+
+volumes:
+  es_data:
+  filebeat_data:

@@ -1,0 +1,45 @@
+# Filebeat 配置：读哪 → 怎么解析 → 发到哪
+#
+# 读哪：/logs/wide（Windows java -jar 落盘的 E:/project/logs，当前唯一活跃输入）
+#       /logs/project（容器跑应用的 ./logs）当前停用——应用已在 Windows 侧运行，
+#       将来若恢复容器跑应用，把下面 enabled 改回 true 即可
+# 解析：应用日志是 logback StructuredLogEncoder 的 logstash JSON（单行一条）。
+#       filestream 输入必须用 parsers.ndjson（旧 json.* 选项属于废弃的 log 输入，
+#       会被静默忽略导致整行进 message）；keys_under_root 展开字段，
+#       overwrite_keys 用日志自身的 @timestamp 覆盖采集时间
+# 发到哪：直连 ES。实际落地为 data stream lender-assistant-logs-2026.11.19
+#       （.ds- 前缀的 backing index 是 8.x 数据流标准形态，Kibana 数据视图
+#       用 lender-assistant-logs-* 可直接匹配），旧数据清理命令见 README
+
+filebeat.inputs:
+  - type: filestream
+    id: lender-project-logs
+    enabled: false
+    paths:
+      - /logs/project/lender-assistant.log
+    parsers:
+      - ndjson:
+          keys_under_root: true
+          overwrite_keys: true
+    tags: ["project"]
+
+  - type: filestream
+    id: lender-wide-logs
+    enabled: true
+    paths:
+      - /logs/wide/lender-assistant.log
+    parsers:
+      - ndjson:
+          keys_under_root: true
+          overwrite_keys: true
+    tags: ["wide"]
+
+setup.template.name: "lender-assistant-logs"
+setup.template.pattern: "lender-assistant-logs-*"
+setup.ilm.enabled: false
+
+output.elasticsearch:
+  hosts: ["http://elasticsearch:9200"]
+  index: "lender-assistant-logs-%{+yyyy.MM.dd}"
+
+logging.level: info

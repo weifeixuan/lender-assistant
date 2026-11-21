@@ -88,18 +88,13 @@ compose 首次启动会自动建库建表（schema SQL 挂载到初始化目录�
 
 ### 方式二：手动起
 
-前置：JDK 21、Maven 3.8+、Docker（跑数据库）。
+前置：JDK 21、Maven 3.8+、Docker。
 
 ```bash
-# 1. 起数据库（pgvector，卷与 compose 共用，密码与 application.yml 默认值一致）
-#    只绑回环，避免数据库暴露到局域网；容器名与卷同 compose，两种方式只能选其一
-docker run -d --name lender-pg -e POSTGRES_PASSWORD=lender123 -e POSTGRES_DB=lender_assistant \
-  -v lender_pgdata:/var/lib/postgresql/data -p 127.0.0.1:5432:5432 pgvector/pgvector:pg16
+# 1. 起数据库（复用 compose 定义，首次创建数据卷时自动建表；容器名/端口与全容器方式相同，勿再手动 docker run 平行实例）
+docker compose up -d lender-pg
 
-# 2. 建表
-docker exec -i lender-pg psql -U postgres -d lender_assistant < docs/schema.sql
-
-# 3. 打包并启动
+# 2. 打包并启动
 mvn package -DskipTests
 java -jar target/lender-assistant-0.1.0-SNAPSHOT.jar --server.port=8080
 ```

@@ -46,6 +46,8 @@ services:
       SPRING_DATASOURCE_URL: jdbc:postgresql://lender-pg:5432/lender_assistant
       SPRING_DATASOURCE_USERNAME: postgres
       SPRING_DATASOURCE_PASSWORD: ${PG_PASSWORD:-lender123}
+      # 日志固定写容器内 /app/logs（经挂载落宿主 ./logs）；application.yml 新默认值指向用户目录，容器内不适用
+      LOG_PATH: /app/logs
       # 模型调用全部走真实 API：LLM_API_KEY 缺失时应用启动失败并点名该变量
       RAG_EMBEDDING_PROVIDER: ${RAG_EMBEDDING_PROVIDER:-hash}
       # OpenAI 兼容协议：换模型只改这三个变量，代码不用动
@@ -57,7 +59,7 @@ services:
       # 只绑回环：应用不对局域网开放
       - "127.0.0.1:8080:8080"
     volumes:
-      # 容器 WORKDIR=/app，日志写 /app/logs；挂回宿主 ./logs 后与本地 java -jar 落盘位置一致
+      # 容器 WORKDIR=/app，日志写 /app/logs；挂回宿主 ./logs 便于查看（gitignore 已忽略，不污染仓库）
       - ./logs:/app/logs
     depends_on:
       lender-pg:

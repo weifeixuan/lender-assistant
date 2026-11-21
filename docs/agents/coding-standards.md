@@ -167,9 +167,10 @@ com.lender.assistant
 ## 10. 提交纪律与自检
 
 1. commit 前 `mvn test` 全绿；测试数量下降必须说明原因。
-2. message 沿用 `type(ticket-xx): 主题`（如 `fix(ticket-06): …`）+ 要点列表；一次改动聚焦一个目标。
-3. 禁止 `git add -A` 夹带无关文件；`app.log` / `target/` 不入库。
-4. 架构级取舍先写 `docs/adr/`。
+2. 改日志 / 启动期配置（`logback-spring.xml`、`logging.*`）时 `mvn test` 全绿不构成验证——单测进程不加载 `logback-spring.xml`，必须真启动一次应用确认落盘位置、格式与滚动行为。
+3. **执行 `git commit` 时**，message 按格式 `type(scope): 主题` 书写：type 取 `feat` / `fix` / `docs` / `refactor` / `test` / `chore`；scope 规则——改动来自本地票（`.scratch/`）时写 `ticket-xx`（如 `fix(ticket-06): 角色管理接口与权限点目录`），无对应票时写领域词（如 `docs(agents)` / `refactor(config)`）；body 列改动要点。一次 commit 只做一件事，不把不相关改动（如修 bug 与改文档）混进同一提交。
+4. 禁止 `git add -A` 夹带无关文件；`app.log` / `target/` 不入库。
+5. 架构级取舍先写 `docs/adr/`。
 
 提交前自检：
 

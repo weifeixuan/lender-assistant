@@ -91,8 +91,8 @@ auth:
 
 logging:
   file:
-    # 日志落盘目录：本地为工作目录下 logs/，容器内为 /app/logs（compose 挂回宿主 ./logs）。
-    # 不拆 application-{local,prod}.yml：本地与生产的差异已由环境变量表达，此处路径天然同构
-    path: ${LOG_PATH:./logs}
+    # 落盘目录：由 logback-spring.xml 经 springProperty 消费（存在自定义 logback 配置时，
+    # Spring Boot 内置日志配置与 file.name / rollingpolicy / structured 三组属性均不生效）
+    path: ${LOG_PATH:E:/project/logs}
   level:
     org.springframework.ai: INFO
