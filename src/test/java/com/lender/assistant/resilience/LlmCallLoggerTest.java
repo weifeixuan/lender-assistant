@@ -15,9 +15,9 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
 /**
- * LlmCallLogger 单元测试：每次模型调用必须留痕（手册阶段4要求）。
- * 场景值 / 状态值 / 耗时落在 llm_call_log 表——这是简历上
- * "调用留痕统计单次接入推理成本" 的数据来源。
+ * LlmCallLogger 单元测试：每次模型调用必须留痕。
+ * 场景值 / 状态值 / 耗时落在 llm_call_log 表——这是"调用留痕统计单次接入推理成本"
+ * 的数据来源。
  */
 class LlmCallLoggerTest {
 

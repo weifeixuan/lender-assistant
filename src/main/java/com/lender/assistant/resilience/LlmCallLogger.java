@@ -18,7 +18,7 @@ import java.util.function.Supplier;
  * 设计：装饰器/旁路模式——业务代码只写 logger.record(scene, provider, () -> ...)，
  * 留痕对主链路零侵入；且留痕写库失败绝不反噬业务（旁路降级）。
  *
- * 这是简历数字"单次接入推理成本 XX 元"的数据来源：
+ * 这是"单次接入推理成本 XX 元"核算的数据来源：
  * llm_call_log 按行累计 prompt/completion token，成本 = token × 单价（配置价目）。
  * 拿不到 Usage 时 token 记 NULL——诚实留空比编个数字好。
  *

@@ -25,10 +25,10 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
- * 阶段 4 开工前的测试基线（特征测试）：把阶段 3 调优后的 RRF 行为锁住。
+ * 特征测试基线：把 RRF 调优后的检索行为锁住。
  *
- * 价值：后续阶段 4 任何人改动 SearchService（比如接入工具调用后重排），
- * 这组测试会立刻报警"RRF 融合被改坏了"——阶段 3 那次排序方向写反导致
+ * 价值：任何人改动 SearchService（比如接入工具调用后重排），
+ * 这组测试会立刻报警"RRF 融合被改坏了"——那次排序方向写反导致
  * recall 崩到 52.6% 的事故，就是这类测试要拦住的。
  */
 class SearchServiceTest {

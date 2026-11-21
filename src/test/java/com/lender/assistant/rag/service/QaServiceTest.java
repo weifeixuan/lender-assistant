@@ -42,7 +42,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
- * 阶段 4 开工前的测试基线：锁住 QaService → AnswerGeneratorService 的入参契约。
+ * 测试基线：锁住 QaService → AnswerGeneratorService 的入参契约。
  *
  * 测的是公共契约而非私有方法：QaService.answer 内部把 systemPrompt、问题与召回结果
  * 交给 AnswerGeneratorService——用桩生成器把入参抓出来断言。
@@ -233,7 +233,7 @@ class QaServiceTest {
                         3, 10, 2, false), conversationService, lockRegistry, historyAssembler);
 
         assertDoesNotThrow(() -> svc.answer("问题", 4, null, USER_ID),
-                "阶段4韧性改造的契约底线：模型故障不允许把异常抛出 answer() 之外");
+                "韧性契约底线：模型故障不允许把异常抛出 answer() 之外");
         // 生成器异常发生在工作线程内：等异步流程跑到检索这一步即证明异常未外泄
         awaitAsyncDone(() -> {
             try { verify(searchService).hybridSearch(any(), any(), anyInt()); return true; }

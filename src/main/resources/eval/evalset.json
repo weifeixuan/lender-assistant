@@ -1,8 +1,8 @@
 {
   "version": "v1",
-  "description": "阶段3标准问答评估集 v1：20 条。ground truth 用 mustContain 关键词判定（任一命中即算相关 chunk）。type=NEGATIVE 的条目是'资料中不存在'的问题，不参与 recall/MRR 统计，用于语义验收时检验模型是否回答'资料中未提及'。",
+  "description": "标准问答评估集 v1：20 条。ground truth 用 mustContain 关键词判定（任一命中即算相关 chunk）。type=NEGATIVE 的条目是'资料中不存在'的问题，不参与 recall/MRR 统计，用于语义验收时检验模型是否回答'资料中未提及'。",
   "items": [
-    {"id": 1,  "type": "FACT", "question": "华信银行的逾期文件第3列是什么？",           "docId": "huaxin_eod_format_v1", "mustContain": ["逾期天数"],        "note": "阶段1验收原题，精确列号"},
+    {"id": 1,  "type": "FACT", "question": "华信银行的逾期文件第3列是什么？",           "docId": "huaxin_eod_format_v1", "mustContain": ["逾期天数"],        "note": "验收原题，精确列号"},
     {"id": 2,  "type": "FACT", "question": "华信银行逾期文件的第6列有哪些取值？",        "docId": "huaxin_eod_format_v1", "mustContain": ["M4PLUS"],          "note": "逾期阶段枚举"},
     {"id": 3,  "type": "RULE", "question": "日末文件的命名规则是什么？",               "docId": "huaxin_eod_format_v1", "mustContain": ["机构编号_yyyyMMdd", "文件类型缩写"], "note": "文件命名格式串"},
     {"id": 4,  "type": "RULE", "question": "日末文件用什么编码和分隔符？",             "docId": "huaxin_eod_format_v1", "mustContain": ["GBK", "竖线"],     "note": "编码+分隔符双要点"},

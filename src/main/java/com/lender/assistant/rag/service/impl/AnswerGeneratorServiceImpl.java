@@ -30,7 +30,7 @@ import java.util.List;
  * - ChatClient.stream() 返回 Reactor Flux<String>，我们用 doOnNext 逐 token 回调、
  *   blockLast() 在调用线程上等流结束——Flux 只在服务内部存活，不污染 Servlet 栈；
  * - timeout(60s)：模型偶发长时间不吐 token 时兜底，防 SSE 连接被无限挂着
- *   （阶段 4 的 Resilience4j 超时/熔断/留痕在它的外层）；
+ *   （Resilience4j 超时/熔断/留痕在它的外层）；
  * - api-key 由 starter 从 LLM_API_KEY 环境变量读取，不进代码库。
  */
 @Component

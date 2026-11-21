@@ -26,7 +26,7 @@ import java.io.IOException;
 import java.util.List;
 
 /**
- * 文档入库与检索的管理接口（阶段 1 文档链路）。
+ * 文档入库与检索的管理接口。
  *
  * 入库是"流水线"（解析 -> 切分 -> 向量化 -> 原子替换入库），编排在 DocumentService；
  * 本类只做参数校验与响应组装。
@@ -89,7 +89,7 @@ public class DocumentAdminController {
     }
 
     /**
-     * 检索测试入口（阶段 2 会挪到面向问答的接口上）。
+     * 检索测试入口（面向问答的检索由 /api/qa 承担，此处保留给联调排查）。
      * previousQuestion 传 null 表示"没有上一轮问题"，只按本次 query 检索；不另加重载。
      */
     @PostMapping("/search")

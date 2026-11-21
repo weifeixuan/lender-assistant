@@ -53,12 +53,12 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
- * 问答编排（阶段 2 核心）：检索 → 拼 Prompt → 模型生成 → SSE 流式推给前端。
+ * 问答编排：检索 → 拼 Prompt → 模型生成 → SSE 流式推给前端。
  *
- * Prompt 三铁律（RAG 的价值所在，面试必讲）：
+ * Prompt 三铁律（RAG 治幻觉的根本约束）：
  * 1. 只准依据召回内容回答——把模型的"自由发挥面"压缩到召回质量上，这是治幻觉的根；
  * 2. 召回内容不足时明确说"资料中未提及"，禁止编造——宁可答不出来，不可答错；
- * 3. 回答引用【来源 N】，为阶段 3 的引用溯源打底。
+ * 3. 回答引用【来源 N】，为引用溯源与效果评估打底。
  *
  * SSE 事件协议（前端按 event 名分发）：
  * - meta:    JSON，{conversationId, roundId, userMessageId, assistantMessageId}（首问懒创建的唯一回传入口）
@@ -400,7 +400,7 @@ public class QaServiceImpl implements QaService {
     /**
      * 调模型并把 token 增量推给前端，同时累积完整回答用于落库。
      * AnswerGeneratorService 契约：generate 返回时生成已结束，token 在调用线程上依次回调。
-     * 韧性（阶段4）：经 ResilientLlmExecutor 走 qa 链路——留痕 + 熔断；
+     * 韧性：经 ResilientLlmExecutor 走 qa 链路——留痕 + 熔断；
      * allowRetry=false：SSE token 已推给用户，重试会导致内容重放。
      */
     private void streamModelAnswer(SseEmitter emitter, String question, List<ChatTurnDTO> history,

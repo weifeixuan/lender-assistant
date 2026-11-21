@@ -23,7 +23,7 @@ import java.util.List;
  * 按它切几乎不会把一张字段表切成两半。
  *
  * 代价：块大小不均匀（有的小节 30 字，有的 800 字）。
- * 面试故事线：阶段 3 用评估集对比 fixed vs section 的召回率，
+ * 调优路径：用同一评估集对比 fixed vs section 的召回率，
  * 这两个类就是对比实验的载体。
  */
 @Component

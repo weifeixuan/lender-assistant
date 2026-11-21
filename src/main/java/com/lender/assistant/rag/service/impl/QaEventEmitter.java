@@ -95,7 +95,7 @@ final class QaEventEmitter {
 
     /** 熔断打开：推送降级提示后断流，终态 FAILED；发送失败说明客户端已断开，不再重复收尾 */
     void circuitOpen(SseEmitter emitter, CallNotPermittedException e, RoundStateServiceImpl state) {
-        // 熔断打开：连续失败触发保护，快速失败。降级而非崩溃（手册验收线）——
+        // 熔断打开：连续失败触发保护，快速失败。降级而非崩溃——
         // sources 已经推给前端，检索能力不受模型故障影响。
         // 记 WARN 不记 ERROR：这是熔断器的正常降级动作，但需有人从日志看到"模型在连续失败"
         log.warn("问答链路熔断打开，已降级为可读提示: {}", e.getMessage());

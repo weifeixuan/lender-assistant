@@ -64,7 +64,7 @@ class QaRoutingFlowTest {
 
     @BeforeEach
     void setUp() {
-        var searchService = mock(com.lender.assistant.rag.service.SearchService.class);
+        SearchService searchService = mock(com.lender.assistant.rag.service.SearchService.class);
         when(searchService.hybridSearch(any(), any(), anyInt()))
                 .thenReturn(List.of(new SearchItemResponse(1L, "doc", "标题", "节", "内容", null, null, false, null)));
         conversationService = mock(ConversationService.class);

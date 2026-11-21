@@ -14,7 +14,7 @@ import org.springframework.stereotype.Service;
 import java.util.List;
 
 /**
- * 代码草稿编排（阶段5）：加载映射表 → 经韧性执行器调生成器 → 附复核声明。
+ * 代码草稿编排：加载映射表 → 经韧性执行器调生成器 → 附复核声明。
  *
  * 与 ExtractService 的关键差异：
  * - 输入不是文档全文而是**已抽取的字段映射表**——没有映射就没有草稿的原料，
@@ -24,7 +24,7 @@ import java.util.List;
 @Service
 public class DraftServiceImpl implements DraftService {
 
-    /** 人工复核声明（手册："展示 + 人工复核提示"）——前端醒目展示，永不省略 */
+    /** 人工复核声明（要求"展示 + 人工复核提示"）——前端醒目展示，永不省略 */
     static final String REVIEW_NOTICE =
             "代码草稿由 AI 依据字段映射表生成，必须逐行人工复核、补全报文组装与签名逻辑后方可使用，严禁直接上生产。";
 

@@ -9,7 +9,7 @@ package com.lender.assistant.rag.strategy;
  * 2. 换模型供应商时不希望业务代码感知——解析/切分/入库只依赖本接口。
  *
  * 实现类由 rag.embedding.provider 配置决定装配哪个：
- * hash  -> HashEmbeddingStrategy（本地 Mock，开发联调）
+ * hash  -> HashEmbeddingStrategy（本地词面基线，开发联调）
  * zhipu -> ZhipuEmbeddingStrategy（真实 API）
  */
 public interface EmbeddingStrategy {

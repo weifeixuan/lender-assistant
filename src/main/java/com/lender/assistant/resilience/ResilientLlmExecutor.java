@@ -12,9 +12,9 @@ import java.time.Duration;
 import java.util.function.Supplier;
 
 /**
- * 模型调用韧性执行器（阶段4）：熔断 + 重试 + chaos 故障注入 + 留痕，四合一入口。
+ * 模型调用韧性执行器：熔断 + 重试 + chaos 故障注入 + 留痕，四合一入口。
  *
- * 手册要求"超时/重试/熔断 + 留痕；熔断时走人工流程"，各机制归属：
+ * 设计目标"超时/重试/熔断 + 留痕；熔断时走人工流程"，各机制归属：
  * - 熔断（本类）：连续 failureThreshold 次执行失败 → OPEN，快速失败不再触达模型；
  * - 重试（本类，仅非流式）：SSE 场景 token 已推给用户、不可重放，qa 传 allowRetry=false；
  * - 超时（不在此类）：问答模型流自身 .timeout(60s)、SseEmitter 120s 兜底——

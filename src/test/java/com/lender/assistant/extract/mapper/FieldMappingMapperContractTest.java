@@ -15,7 +15,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 /**
  * FieldMappingMapper.xml 契约测试：只解析 XML 文本，不建立数据库连接。
  *
- * 覆盖确认/修正两条 UPDATE 必须刷新 update_time（阶段 8 审计列统一）；
+ * 覆盖确认/修正两条 UPDATE 必须刷新 update_time（审计列统一）；
  * SQL 语义与真实约束仍由起服务后的手工路径验证（ADR-0006）。
  */
 class FieldMappingMapperContractTest {

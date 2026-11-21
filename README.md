@@ -76,12 +76,24 @@ cd lender-assistant
 # 国内网络先设镜像前缀（可选）
 export REGISTRY_PREFIX=docker.1ms.run/    # Windows PowerShell: $env:REGISTRY_PREFIX="docker.1ms.run/"
 
+# 在项目根创建 .env（compose 自动读取）：模型密钥 + 初始管理员口令
+cat > .env <<'EOF'
+LLM_API_KEY=sk-xxx
+AUTH_BOOTSTRAP_ADMIN_PASSWORD=你的管理员口令
+EOF
+
 # 首次运行先创建数据卷（compose 以 external 方式复用它，不会新建平行卷）
 docker volume create lender_pgdata
 
 docker compose up -d --build
 # 等待构建完成后验证：curl -s localhost:8080/health 返回 status=UP
-# 文档列表：curl -s localhost:8080/api/admin/documents
+# 除登录接口外，/api/** 均需登录态；先登录拿令牌：
+curl -s -X POST localhost:8080/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"username":"admin","password":"你的管理员口令"}'
+# 用响应里的 data.token 访问业务接口：
+curl -s localhost:8080/api/admin/documents \
+  -H "Authorization: Bearer <data.token>"
 ```
 
 compose 首次启动会自动建库建表（schema SQL 挂载到初始化目录，已有数据的卷不会重复初始化）→ 数据库健康检查 → 启动应用（等它 ready 再对外）。
@@ -97,6 +109,11 @@ docker compose up -d lender-pg
 # 2. 打包并启动
 mvn package -DskipTests
 java -jar target/lender-assistant-0.1.0-SNAPSHOT.jar --server.port=8080
+
+# 3. 登录拿令牌（需先导出 AUTH_BOOTSTRAP_ADMIN_PASSWORD 再首启，否则不会建管理员号）
+curl -s -X POST localhost:8080/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"username":"admin","password":"你的管理员口令"}'
 ```
 
 前端（可选）本地起：`npm install && npm run dev`，端口 5173，Vite 已把 `/api` 代理到 8080。
@@ -148,8 +165,8 @@ Spring Boot 3.5 · Spring AI 1.1（ChatClient / @Tool）· PostgreSQL 16 + pgvec
 
 - 单测：JUnit 5 + Mockito，mock 数据访问层，不连真库。
 - 真库测试：Testcontainers 起 `pgvector/pgvector:pg16`，测试类标 `@Tag("docker")`。
-- 默认档 `mvn test`：345 个用例，不跑真库测试，无 Docker 也可执行。
-- 集成档 `mvn test -Pintegration-tests`：354 个用例，含 9 个真库用例；无 Docker 的机器上这 9 个跳过，不判失败。
+- 默认档 `mvn test`：343 个用例，不跑真库测试，无 Docker 也可执行。
+- 集成档 `mvn test -Pintegration-tests`：在默认档基础上追加 9 个真库用例；无 Docker 的机器上这 9 个跳过，不判失败。
 
 ## 项目文档
 

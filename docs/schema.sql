@@ -18,11 +18,10 @@ CREATE EXTENSION IF NOT EXISTS vector;
 -- pg_trgm: 三元组(trigram)模糊匹配扩展。
 -- 用途: 混合检索的"关键词通道"——向量检索管语义，trigram 管
 -- 精确字段子串(如"逾期文件第3列"这类必须命中原词的查询)。
--- 选型说明: 中文分词扩展 zhparser 需要自行编译安装，阶段 3 评估后
--- 若 trigram 效果不够再升级，先用最轻的方案。
+-- 选型说明: 中文分词扩展 zhparser 需要自行编译安装，若 trigram 效果不够再升级，先用最轻的方案。
 CREATE EXTENSION IF NOT EXISTS pg_trgm;
 
--- ========== 阶段 1：文档入库链路 ==========
+-- ========== 文档入库链路 ==========
 
 -- 文档切块表: RAG 的核心存储，一份解析后的文档按切分策略存成多行
 CREATE TABLE IF NOT EXISTS doc_chunk (
@@ -33,16 +32,16 @@ CREATE TABLE IF NOT EXISTS doc_chunk (
     section_path  TEXT,                  -- 章节路径，如 '3 日末文件 > 3.2 逾期文件格式'
     chunk_index   INT          NOT NULL, -- 文档内块序号，从 0 开始
     content       TEXT         NOT NULL, -- 切分后的正文
-    char_count    INT          NOT NULL, -- 字符数，阶段 3 分析"切分粒度 vs 召回率"用
+    char_count    INT          NOT NULL, -- 字符数，检索评估分析"切分粒度 vs 召回率"用
     embedding     VECTOR(1024) NOT NULL, -- 向量，维度见下方说明
     create_time   TIMESTAMPTZ  NOT NULL DEFAULT now(), -- 行创建时间
     update_time   TIMESTAMPTZ  NOT NULL DEFAULT now(), -- 最近一次入库时间（replaceDocument 删后插自动取 now()）
     UNIQUE (doc_id, chunk_index)         -- 幂等保障: 同一文档重复入库前先按 doc_id 删旧
 );
 
--- 阶段 6 迁移：审计列统一为通用命名 create_time / update_time。
+-- 迁移：审计列统一为通用命名 create_time / update_time。
 -- CREATE TABLE IF NOT EXISTS 不会给存量库改列名，故存量 created_at / ingested_at 先改名；
--- 再兜底 ADD COLUMN IF NOT EXISTS，覆盖"只跑过阶段 1、没有 ingested_at"的库。
+-- 再兜底 ADD COLUMN IF NOT EXISTS，覆盖"早期建库、没有 ingested_at"的库。
 -- 存量行的 update_time 会统一变成迁移时间，属已知偏差，不回填。
 DO $$
 BEGIN
@@ -75,9 +74,9 @@ CREATE INDEX IF NOT EXISTS idx_doc_chunk_content_trgm
 -- 设计决策: embedding 为什么是 1024 维？
 -- 智谱 embedding-3 原生输出 2048 维，但 API 支持 dimensions 参数
 -- 降维。选 1024: 存储减半、HNSW 检索更快，语义损失对召回率的
--- 影响在阶段 3 的 20 条评估集上实测——这个数字就是简历素材。
+-- 影响在 20 条评估集上实测——这个数字是检索调优依据。
 
--- ========== 阶段 4：字段映射 + 模型调用留痕 ==========
+-- ========== 字段映射 + 模型调用留痕 ==========
 
 -- 字段映射表：抽取结果落库 + 人工确认状态机
 -- 状态流转: PENDING(模型抽出待确认) -> CONFIRMED(人工确认) / CORRECTED(人工修正过)
@@ -95,7 +94,7 @@ CREATE TABLE IF NOT EXISTS field_mapping (
     UNIQUE (doc_id, internal_field_id)
 );
 
--- 阶段 8 迁移：审计列统一为 create_time / update_time（与 doc_chunk / conversation / message 同口径）。
+-- 迁移：审计列统一为 create_time / update_time（与 doc_chunk / conversation / message 同口径）。
 -- CREATE TABLE IF NOT EXISTS 不会给存量库改列名，故先改名再兜底补列。
 DO $$
 BEGIN
@@ -123,7 +122,7 @@ CREATE TABLE IF NOT EXISTS llm_call_log (
     create_time       TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
--- 阶段 8 迁移：审计列统一为 create_time（调用日志只追加、不更新，不设 update_time）。
+-- 迁移：审计列统一为 create_time（调用日志只追加、不更新，不设 update_time）。
 DO $$
 BEGIN
     IF EXISTS (SELECT 1 FROM information_schema.columns
@@ -194,7 +193,7 @@ CREATE TABLE IF NOT EXISTS message (
         REFERENCES conversation (conversation_id)
 );
 
--- 阶段 7 迁移：路由与计划快照。CREATE TABLE IF NOT EXISTS 不会给存量库加列，故用幂等 ADD。
+-- 迁移：路由与计划快照。CREATE TABLE IF NOT EXISTS 不会给存量库加列，故用幂等 ADD。
 ALTER TABLE message ADD COLUMN IF NOT EXISTS route JSONB;
 ALTER TABLE message ADD COLUMN IF NOT EXISTS execution_plan JSONB;
 

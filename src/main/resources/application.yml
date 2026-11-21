@@ -35,7 +35,7 @@ mybatis:
     # 下划线列名 → 驼峰属性（resultMap 的 <arg column> 仍显式写出，不依赖隐式映射）
     map-underscore-to-camel-case: true
 
-# 应用自定义配置（RAG 链路参数集中在这里，阶段 3 调优只动这里）
+# 应用自定义配置（RAG 链路参数集中在这里，调优只动这里）
 rag:
   embedding:
     # provider: hash=本地哈希向量(开发联调) / zhipu=智谱API(需 ZHIPU_API_KEY)
@@ -62,7 +62,7 @@ rag:
       # 本地样例数据源开关：默认关闭；只有联调需要 customer.profile / lender.product 时打开
       sample-enabled: ${RAG_PLAN_TOOLS_SAMPLE_ENABLED:false}
   search:
-    # 向量通道余弦距离阈值：> 该值的召回丢弃；-1 表示关闭（默认）。是否开启由阶段3评估数据决定
+    # 向量通道余弦距离阈值：> 该值的召回丢弃；-1 表示关闭（默认）。是否开启由评估集数据决定
     max-distance: -1
   resilience:
     # chaos=true 时模型调用确定性失败（测试/降级演练用，平时保持 false）

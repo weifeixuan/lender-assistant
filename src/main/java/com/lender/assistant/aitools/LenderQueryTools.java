@@ -9,7 +9,7 @@ import org.springframework.stereotype.Component;
 import java.util.List;
 
 /**
- * Function Calling 的业务查询工具（手册阶段4：模型可调用 1-2 个业务查询接口）。
+ * Function Calling 的业务查询工具：模型可自主调用的业务查询接口。
  *
  * 两个工具都直查 lender-pg 真实数据——工具返回的是真东西，
  * "模型自主决定调用"这层才值得验证。

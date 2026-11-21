@@ -8,7 +8,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * 代码草稿接口（阶段5）：映射表 → Java 适配层草稿。
+ * 代码草稿接口：映射表 → Java 适配层草稿。
  *
  * 响应固定携带 reviewNotice（人工复核声明）——前端据此渲染醒目提示条，
  * 这是"AI 代码必须人工复核"红线在 API 契约层的固化。

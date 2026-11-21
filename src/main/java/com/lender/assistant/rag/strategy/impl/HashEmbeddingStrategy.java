@@ -7,12 +7,12 @@ import org.springframework.stereotype.Component;
 import java.util.List;
 
 /**
- * 本地 Mock 向量化：确定性哈希向量，零外部依赖。
+ * 本地词面向量化（基线实现）：确定性哈希向量，零外部依赖。
  *
  * 用途：没有 API key 时把"解析→切分→向量化→入库→检索"整条链路跑通，
  * 并保证功能开发不被网络/费用阻塞。真实 API 就绪后切 rag.embedding.provider=zhipu。
  *
- * 原理（面试可讲）：
+ * 原理：
  * 1. 分词：中文按"相邻两字 bigram"切（"逾期天数"->逾期/期天/天数），
  *    英文/数字按词切，统一小写——bigram 比单字区分度高、比分词器简单；
  * 2. 每个 token 用 String.hashCode() 取模投进 [0, dimension) 的桶，
@@ -21,7 +21,7 @@ import java.util.List;
  *
  * 局限（必须知道）：哈希碰撞导致语义完全无关的文本可能有非零相似度；
  * 且它不懂语义——"逾期"和"过期末还"毫无关系。所以它只能验证"链路对不对"，
- * 不能用来评估"检索效果好不好"（那是阶段 3 换真向量后的事）。
+ * 不能用来评估"检索效果好不好"（那是切真向量后的事）。
  */
 @Component
 @ConditionalOnProperty(name = "rag.embedding.provider", havingValue = "hash")

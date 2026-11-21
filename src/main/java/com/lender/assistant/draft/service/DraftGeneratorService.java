@@ -5,7 +5,7 @@ import com.lender.assistant.extract.model.entity.FieldMappingEntity;
 import java.util.List;
 
 /**
- * 代码草稿生成模型调用服务（阶段5）：映射表 + Handler 骨架 → Java 适配层草稿文本。
+ * 代码草稿生成模型调用服务：映射表 + Handler 骨架 → Java 适配层草稿文本。
  */
 public interface DraftGeneratorService {
 

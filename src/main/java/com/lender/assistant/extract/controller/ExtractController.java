@@ -15,7 +15,7 @@ import org.springframework.web.bind.annotation.*;
 import java.util.List;
 
 /**
- * 结构化抽取 REST 接口（阶段4）：
+ * 结构化抽取 REST 接口：
  * - POST /api/extract/{docId}          对已入库文档跑抽取，结果落库并返回映射表
  * - GET  /api/extract/{docId}          查某文档当前映射表（含 PENDING/CONFIRMED 状态）
  * - POST /api/extract/{docId}/confirm  人工确认/修正一条映射
