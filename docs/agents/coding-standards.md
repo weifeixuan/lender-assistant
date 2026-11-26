@@ -27,8 +27,7 @@ com.lender.assistant
 ├── aitools/          # 模型可自主调用的 Function Calling 工具（无 HTTP 入口）
 ├── resilience/       # 模型调用韧性与留痕：+ mapper / model/entity
 ├── ops/              # 健康探针
-├── common/           # annotation / constant / exception / util / web
-├── config/           # @Configuration / @Bean
+├── common/           # 跨领域横切能力：annotation 注解 / component 有状态技术组件 / config 装配与启动钩子（@Configuration / @Bean / ApplicationRunner）/ constant 常量 / exception 异常体系 / util 无状态工具 / web HTTP 边界件（拦截器、advice、全局异常、日志切面、响应包装）
 └── LenderAssistantApplication.java
 ```
 
@@ -43,6 +42,7 @@ com.lender.assistant
 - `src/main/resources/` **不放 `.java`**：模板素材用 `*.java.tmpl` 放 `templates/<用途>/`，读取方路径在同一 commit 同步。
 - 可替换策略统一进 `strategy/`（接口 + `impl/`）；只有运行期按参数选实现才加 `factory/`。
 - 新类定位顺序：领域 → 层 → 都定不了才进 `common/`，并在 commit message 说明理由。
+- `@Configuration` / `@Bean` / `ApplicationRunner` 统一进 `common/config/`；HTTP 边界件（拦截器、advice、全局异常、切面）进 `common/web/`，两类不混放。
 - 禁止平行单类包、近义包（`extract` vs `extraction` 出过事故）、空包。
 
 ### 0.3 模型类归类与后缀对照
@@ -72,6 +72,7 @@ com.lender.assistant
 | `model/enums` | 落库 / 出参的枚举（`code` + `desc`） | 散落字符串比较 |
 | `model/entity` | DB 行对象（XML `resultMap` 指向） | 业务判断、直接当 HTTP 出参 |
 | `common/util/` | 无状态静态方法 | 持有 Spring Bean、实例状态 |
+| `common/component/` | 有状态底层技术组件（`@Component`，如进程内锁 `LocalLockComponent`） | 业务逻辑、领域词汇 |
 
 - 依赖方向 `controller → service → mapper | client`，禁止反向与跨层；跨领域只允许 service → 另一个领域的 service。
 - 可替换实现必须接口 + `@ConditionalOnProperty` 切换（`EmbeddingStrategy` / `DocumentParserStrategy` / `ChunkSplitterStrategy`）；实现选择交给 Spring 装配，**禁止业务代码 `if-else` 判实现类**。
@@ -92,6 +93,7 @@ com.lender.assistant
 
 1. 一个方法只做一件事；变长先想能否拆分（私有方法或 `util`）。
    - **新增代码时，一个类只承担一种职责：编排层只写步骤与顺序，状态、事件、文案、外部调用各自独立成类。**
+   - 拆类要有体量或复杂度依据：编排只是两三行胶水（转发调用、异步触发入口）时留在所属 Service 内，不单独建纯编排类；单类未超 300 行且无独立状态时不拆。
 2. Rule of Three：第 3 次出现前必须抽取；第 2 次出现时两处注释互标「与 XX 重复」。
 3. 魔法值零容忍：字面量出现 ≥2 次、或语义不自明（URL 前缀、阈值、场景名）必须提为常量，归 `common/constant/` 或所在类顶部。
    - **跨边界标签**（要落库 / 出现在 JSON 里的标识，如 `LlmScene`、`SearchMode`）：用 `code` / `desc` 双字段枚举，调用点直接传枚举，只在落库 / 出参处取 `code()`。
@@ -144,6 +146,7 @@ com.lender.assistant
 3. 韧性用编程式 `decorateSupplier`（`ResilientLlmExecutor`），不用注解 AOP；AOP 仅用于 controller 日志切面。
 4. 共享可变对象（`SimpleDateFormat` / `ArrayList` / `HashMap`）不作成员变量，时间用 `DateTimeFormatter`；`foreach` 中不增删元素；高并发计数用 `AtomicInteger` / `LongAdder`。
 5. `Collectors.toMap` 必须显式 merge function（能证明 key 唯一须注释说明）。
+6. 进程内按键互斥统一 `common/component/LocalLockComponent`；key 必须带领域命名空间前缀（会话锁见 `MessageConstants.CONVERSATION_LOCK_PREFIX`），禁止各领域自建 static Set / Map 互斥标记。
 
 ## 8. 常量、配置与密钥
 
@@ -168,7 +171,7 @@ com.lender.assistant
 
 1. commit 前 `mvn test` 全绿；测试数量下降必须说明原因。
 2. 改日志 / 启动期配置（`logback-spring.xml`、`logging.*`）时 `mvn test` 全绿不构成验证——单测进程不加载 `logback-spring.xml`，必须真启动一次应用确认落盘位置、格式与滚动行为。
-3. **执行 `git commit` 时**，message 按格式 `type(scope): 主题` 书写：type 取 `feat` / `fix` / `docs` / `refactor` / `test` / `chore`；scope 规则——改动来自本地票（`.scratch/`）时写 `ticket-xx`（如 `fix(ticket-06): 角色管理接口与权限点目录`），无对应票时写领域词（如 `docs(agents)` / `refactor(config)`）；body 列改动要点。一次 commit 只做一件事，不把不相关改动（如修 bug 与改文档）混进同一提交。
+3. **执行 `git commit` 时**，message 按格式 `type(scope): 主题` 书写：type 取 `feat` / `fix` / `docs` / `refactor` / `test` / `chore`；scope 规则——改动来自本地票（`.scratch/`）时写 `ticket-xx`（如 `fix(ticket-06): 角色管理接口与权限点目录`），无对应票时写领域词（如 `docs(agents)` / `refactor(common)`）；body 列改动要点。一次 commit 只做一件事，不把不相关改动（如修 bug 与改文档）混进同一提交。
 4. 禁止 `git add -A` 夹带无关文件；`app.log` / `target/` 不入库。
 5. 架构级取舍先写 `docs/adr/`。
 
