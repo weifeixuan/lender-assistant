@@ -64,6 +64,24 @@
             <artifactId>spring-boot-starter-aop</artifactId>
         </dependency>
 
+        <!-- Actuator + Micrometer Tracing：为日志链路生成 traceId/spanId。
+             actuator 提供 Observation 自动装配入口（HTTP 请求被观测并转成 trace），
+             自带的 /actuator/* 端点对本项目无价值——项目有自研 /health 探针（ops/），
+             故 application.yml 里 management.endpoints.enabled-by-default=false 全关，
+             只保留装配机制。注意：starter-security 未引入，/actuator 关闭后无额外暴露面 -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-actuator</artifactId>
+        </dependency>
+        <!-- Micrometer Tracing 的 Brave 桥接：请求进来时生成 32 位 traceId + 16 位 spanId
+             塞进 MDC，StructuredLogEncoder（logstash JSON）自动平铺成日志字段，
+             Kibana 按 traceId 即可串起一次调用的全部日志。选 brave 而非 otel 桥：
+             纯本地生成、不外发数据、依赖更小；将来接 Zipkin/OTel Collector 时再换 -->
+        <dependency>
+            <groupId>io.micrometer</groupId>
+            <artifactId>micrometer-tracing-bridge-brave</artifactId>
+        </dependency>
+
         <!-- 对话模型：走 OpenAI 兼容协议（DeepSeek/Kimi/通义/GLM 等均支持）。
              选它而非厂商专属 starter，是为了"只改 base-url + model + key 就能切换模型"，
              业务代码与策略实现无需改动。启动不依赖 key，调用时才需要 -->
