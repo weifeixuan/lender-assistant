@@ -111,7 +111,7 @@ ALTER TABLE field_mapping ADD COLUMN IF NOT EXISTS update_time TIMESTAMPTZ NOT N
 -- token 为 NULL 表示该次调用未返回计量信息；cost_cny 默认 0，DeepSeek 版按价目折算
 CREATE TABLE IF NOT EXISTS llm_call_log (
     id                BIGSERIAL PRIMARY KEY,
-    scene             TEXT NOT NULL,              -- 取值见 LlmScene：qa / extract / draft / route / plan / synthesis
+    scene             TEXT NOT NULL,              -- 取值见 LlmScene：qa / extract / draft / route / plan / synthesis / summary
     provider          TEXT NOT NULL,              -- 实际模型名（如 deepseek-chat）
     duration_ms       INTEGER,
     prompt_tokens     INTEGER,
@@ -137,7 +137,7 @@ ALTER INDEX IF EXISTS idx_llm_call_log_created RENAME TO idx_llm_call_log_create
 CREATE INDEX IF NOT EXISTS idx_llm_call_log_create_time ON llm_call_log (create_time DESC);
 
 COMMENT ON TABLE llm_call_log IS '模型调用留痕：每次模型调用一行';
-COMMENT ON COLUMN llm_call_log.scene IS '模型调用场景：qa / extract / draft / route / plan / synthesis';
+COMMENT ON COLUMN llm_call_log.scene IS '模型调用场景：qa / extract / draft / route / plan / synthesis / summary';
 COMMENT ON COLUMN llm_call_log.create_time IS '调用发生时间';
 
 -- ========== 多轮对话：会话与消息 ==========
@@ -152,8 +152,14 @@ CREATE TABLE IF NOT EXISTS conversation (
     status          TEXT        NOT NULL DEFAULT 'ACTIVE',
     create_time     TIMESTAMPTZ NOT NULL DEFAULT now(),
     update_time     TIMESTAMPTZ NOT NULL DEFAULT now(),
+    summary         TEXT,               -- 滚动摘要正文，NULL=尚无摘要
+    summary_boundary_round_id TEXT,     -- 摘要覆盖边界（被覆盖的最后一个完整轮 roundId）
     CONSTRAINT uk_conversation_conversation_id UNIQUE (conversation_id)
 );
+
+-- 迁移：滚动摘要两列。CREATE TABLE IF NOT EXISTS 不会给存量库加列，故用幂等 ADD。
+ALTER TABLE conversation ADD COLUMN IF NOT EXISTS summary TEXT;
+ALTER TABLE conversation ADD COLUMN IF NOT EXISTS summary_boundary_round_id TEXT;
 
 -- 会话列表按"用户 + 状态 + 最近更新"读取（GET /api/conversations）；
 -- 末尾带 id DESC 让 update_time 并列时也只靠索引排序，大表不触发 filesort
@@ -167,6 +173,8 @@ COMMENT ON COLUMN conversation.title IS '会话标题，取首问正文去空白
 COMMENT ON COLUMN conversation.status IS '会话状态：ACTIVE / DELETED（软删）';
 COMMENT ON COLUMN conversation.create_time IS '创建时间';
 COMMENT ON COLUMN conversation.update_time IS '最近一次消息落库时间，用于会话列表排序';
+COMMENT ON COLUMN conversation.summary IS '滚动摘要正文：回放窗口外更早轮次与已有摘要的合并产物，仅作背景补充；NULL=尚无摘要';
+COMMENT ON COLUMN conversation.summary_boundary_round_id IS '摘要覆盖边界：被摘要覆盖到的最后一个完整轮的 roundId；与 summary 同写同空；NULL=尚无摘要';
 
 -- 消息表：一轮问答由同一 round_id 的两条记录组成（USER + ASSISTANT，ADR-0008）。
 -- status: USER 恒为 DONE；ASSISTANT 为 DONE / FAILED / STOPPED。

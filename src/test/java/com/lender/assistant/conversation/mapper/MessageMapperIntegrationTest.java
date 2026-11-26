@@ -76,6 +76,25 @@ class MessageMapperIntegrationTest extends PostgresContainerSupport {
         assertTrue(row.executionPlanJson().contains("对比"));
     }
 
+    @Test
+    void isRoundStrictlyBeforeComparesByInsertionOrderAndNullWhenRoundMissing() {
+        conversationMapper.insert(CONVERSATION, "it-user", "轮次先后");
+        messageMapper.insert(userMessage("round-early", "早"));
+        messageMapper.insert(userMessage("round-late", "晚"));
+
+        // 插入顺序即 id 序：早轮严格早于晚轮
+        assertTrue(messageMapper.isRoundStrictlyBefore(CONVERSATION, "round-early", "round-late"));
+        // 反向不成立
+        assertEquals(Boolean.FALSE,
+                messageMapper.isRoundStrictlyBefore(CONVERSATION, "round-late", "round-early"));
+        // 同一轮对自身不成立（max 不可能严格小于 min）
+        assertEquals(Boolean.FALSE,
+                messageMapper.isRoundStrictlyBefore(CONVERSATION, "round-early", "round-early"));
+        // 任一轮不存在：标量子查询得 NULL，比较结果为 NULL —— 调用方按不成立处理
+        assertNull(messageMapper.isRoundStrictlyBefore(CONVERSATION, "round-gone", "round-late"));
+        assertNull(messageMapper.isRoundStrictlyBefore(CONVERSATION, "round-early", "round-gone"));
+    }
+
     private static MessageInsertDTO userMessage(String roundId, String content) {
         return new MessageInsertDTO(CONVERSATION, roundId, "msg-" + roundId, "USER",
                 content, "DONE", null, null, null, null);

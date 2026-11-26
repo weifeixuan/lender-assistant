@@ -18,6 +18,15 @@
 | 熔断（circuit breaker） | 模型连续失败后快速失败、降级为可读提示，不崩溃 | `resilience/ResilientLlmExecutor`、`QaServiceImpl` |
 | 留痕（llm call log） | 每次模型调用写一行（场景 / 供应商 / 耗时 / token / OK·FAIL），旁路降级：写库失败不挡主链路 | `resilience/LlmCallLogger`、`llm_call_log` 表 |
 
+## 多轮对话词
+
+| 词 | 含义 | 代码锚点 |
+|---|---|---|
+| 完整轮（complete round） | 同一 roundId 下 USER 与 ASSISTANT 消息均为 DONE 且非固定提示（rule）回复的一轮；不完整的轮次不参与模型上下文 | `ConversationHistoryAssembler`、ADR-0008 |
+| 回放窗口（replay window） | 单次追问回放给模型的最近完整轮序列；实际范围由轮数上限与字符预算共同决定，以更紧者为准 | `rag.qa.history-max-rounds` / `rag.qa.history-max-chars`、`ConversationHistoryAssembler` |
+| 滚动摘要（rolling summary） | 会话级背景梗概：回放窗口外更早轮次与已有摘要的合并产物；仅作背景补充，不参与检索 query 改写与路由判定 | `conversation.summary` 列、`docs/prd/conversation-rolling-summary.md` |
+| 摘要覆盖边界（summary boundary） | 被滚动摘要覆盖到的最后一个完整轮的 roundId；摘要是否注入以「边界轮早于窗口最旧轮」为准 | `conversation.summary_boundary_round_id` 列、ADR-0020 |
+
 ## 账户与权限词
 
 | 词 | 含义 | 代码锚点 |

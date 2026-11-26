@@ -1,10 +1,14 @@
 package com.lender.assistant.rag.service;
 
+import com.lender.assistant.common.component.LocalLockComponent;
+import com.lender.assistant.common.constant.MessageConstants;
+import com.lender.assistant.common.constant.QaPrompts;
 import com.lender.assistant.common.exception.BizException;
 import com.lender.assistant.common.exception.ErrorCode;
+import com.lender.assistant.conversation.model.dto.AssembledContextDTO;
 import com.lender.assistant.conversation.service.ConversationHistoryAssembler;
-import com.lender.assistant.conversation.service.ConversationLockRegistry;
 import com.lender.assistant.conversation.service.ConversationService;
+import com.lender.assistant.conversation.service.RollingSummaryService;
 import com.lender.assistant.conversation.model.dto.ConversationRoundDTO;
 import com.lender.assistant.rag.model.dto.ChatTurnDTO;
 import com.lender.assistant.rag.model.response.SearchItemResponse;
@@ -29,7 +33,6 @@ import java.util.function.Consumer;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
-import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.argThat;
@@ -57,8 +60,9 @@ class QaServiceTest {
 
     private SearchService searchService;
     private ConversationService conversationService;
-    private ConversationLockRegistry lockRegistry;
+    private LocalLockComponent lockRegistry;
     private ConversationHistoryAssembler historyAssembler;
+    private RollingSummaryService summaryService;
     private com.lender.assistant.resilience.ResilientLlmExecutor resilientExecutor;
     /** 桩生成器：抓取收到的 system Prompt、问题与召回结果，并回流一个固定 token */
     private RecordingGenerator generator;
@@ -92,18 +96,25 @@ class QaServiceTest {
     void setUp() {
         searchService = mock(SearchService.class);
         conversationService = mock(ConversationService.class);
-        lockRegistry = new ConversationLockRegistry();
+        lockRegistry = new LocalLockComponent();
         historyAssembler = mock(ConversationHistoryAssembler.class);
         generator = new RecordingGenerator();
+        summaryService = mock(RollingSummaryService.class);
         // 真实韧性执行器（chaos=false 直通）+ mock JDBC 的留痕器
         resilientExecutor = new com.lender.assistant.resilience.ResilientLlmExecutor(
                 new com.lender.assistant.resilience.LlmCallLogger(
                         mock(com.lender.assistant.resilience.mapper.LlmCallLogMapper.class)),
                 3, 10, 2, false);
         qaService = new QaServiceImpl(searchService, generator, resilientExecutor, conversationService,
-                lockRegistry, historyAssembler);
+                lockRegistry, historyAssembler, summaryService);
         round = new ConversationRoundDTO("conv-1", "round-1", "msg-user", "msg-assistant");
-        when(historyAssembler.assemble(anyList(), anyString())).thenReturn(List.of());
+        when(historyAssembler.assembleWithSummary(anyString(), anyString(), anyString()))
+                .thenReturn(new AssembledContextDTO(List.of(), List.of(), null));
+    }
+
+    /** 会话锁完整键（与被测服务取键口径一致：前缀来自 MessageConstants） */
+    private static String lockKey(String conversationId) {
+        return MessageConstants.CONVERSATION_LOCK_PREFIX + conversationId;
     }
 
     private SearchItemResponse hit(long chunkId, String title, String section, String content) {
@@ -159,10 +170,11 @@ class QaServiceTest {
     @Test
     @DisplayName("回归：历史为工具数据、本轮无相关资料时，上下文带来源标注且系统提示禁止否定历史")
     void toolBackedHistoryIsNotDiscredited() {
-        when(historyAssembler.assemble(anyList(), eq("round-1"))).thenReturn(List.of(
+        when(historyAssembler.assembleWithSummary(eq("conv-1"), anyString(), eq("round-1")))
+                .thenReturn(new AssembledContextDTO(List.of(), List.of(
                 new ChatTurnDTO("USER", "华信币种和 C10001 额度"),
                 new ChatTurnDTO("ASSISTANT", "客户 C10001：可用 180 万元"
-                        + "\n[上一轮回答包含业务工具数据：customer.profile，非知识库文档]")));
+                        + "\n[上一轮回答包含业务工具数据：customer.profile，非知识库文档]")), null));
         when(searchService.hybridSearch(any(), any(), anyInt()))
                 .thenReturn(List.of(hit(1, "华信银行_对公收付接口文档", "2 单笔代收接口", "单笔限额 500 万元")));
 
@@ -230,7 +242,8 @@ class QaServiceTest {
                 new com.lender.assistant.resilience.ResilientLlmExecutor(
                         new com.lender.assistant.resilience.LlmCallLogger(
                                 mock(com.lender.assistant.resilience.mapper.LlmCallLogMapper.class)),
-                        3, 10, 2, false), conversationService, lockRegistry, historyAssembler);
+                        3, 10, 2, false), conversationService, lockRegistry, historyAssembler,
+                summaryService);
 
         assertDoesNotThrow(() -> svc.answer("问题", 4, null, USER_ID),
                 "韧性契约底线：模型故障不允许把异常抛出 answer() 之外");
@@ -315,7 +328,7 @@ class QaServiceTest {
                 System.currentTimeMillis());
 
         verify(searchService, never()).hybridSearch(any(), any(), anyInt());
-        verify(historyAssembler, never()).assemble(anyList(), anyString());
+        verify(historyAssembler, never()).assembleWithSummary(anyString(), anyString(), anyString());
         verify(conversationService).completeRound(argThat(completion ->
                 completion.status().equals("STOPPED")
                         && completion.content().isEmpty()));
@@ -389,7 +402,8 @@ class QaServiceTest {
                 new com.lender.assistant.resilience.ResilientLlmExecutor(
                         new com.lender.assistant.resilience.LlmCallLogger(
                                 mock(com.lender.assistant.resilience.mapper.LlmCallLogMapper.class)),
-                        3, 10, 2, false), conversationService, lockRegistry, historyAssembler);
+                        3, 10, 2, false), conversationService, lockRegistry, historyAssembler,
+                summaryService);
 
         svc.streamAnswer(new RecordingEmitter(), "问题", 4, USER_ID, round,
                 System.currentTimeMillis());
@@ -447,7 +461,7 @@ class QaServiceTest {
             }
         };
         QaServiceImpl svc = new QaServiceImpl(searchService, longRunning, resilientExecutor,
-                conversationService, lockRegistry, historyAssembler);
+                conversationService, lockRegistry, historyAssembler, summaryService);
 
         long start = System.currentTimeMillis();
         // meta + sources + 第一片成功，第二片 send 抛 IOException → 模拟客户端 abort
@@ -499,10 +513,10 @@ class QaServiceTest {
 
         qaService.answer("第一问", 4, "conv-1", USER_ID);
         awaitAsyncDone(() -> searching.getCount() == 0);
-        assertTrue(lockRegistry.isBusy("conv-1"), "流进行中会话应被占用");
+        assertTrue(lockRegistry.isBusy(lockKey("conv-1")), "流进行中会话应被占用");
 
         resume.countDown();
-        awaitAsyncDone(() -> !lockRegistry.isBusy("conv-1"));
+        awaitAsyncDone(() -> !lockRegistry.isBusy(lockKey("conv-1")));
 
         when(searchService.hybridSearch(any(), any(), anyInt())).thenReturn(List.of());
         assertDoesNotThrow(() -> qaService.answer("第二问", 4, "conv-1", USER_ID),
@@ -519,7 +533,7 @@ class QaServiceTest {
                 () -> qaService.answer("问题", 4, "conv-1", USER_ID));
 
         assertEquals(ErrorCode.CONVERSATION_NOT_FOUND, exception.errorCode());
-        assertFalse(lockRegistry.isBusy("conv-1"));
+        assertFalse(lockRegistry.isBusy(lockKey("conv-1")));
         verify(conversationService, never()).startFollowUpRound(any(), any(), any());
     }
 
@@ -540,7 +554,7 @@ class QaServiceTest {
         ArgumentCaptor<ConversationRoundDTO> captor = ArgumentCaptor.forClass(ConversationRoundDTO.class);
         verify(conversationService).startNewRound(captor.capture(), eq(USER_ID), eq("首问"));
         String conversationId = captor.getValue().conversationId();
-        assertTrue(lockRegistry.isBusy(conversationId), "首问生成中也必须占锁");
+        assertTrue(lockRegistry.isBusy(lockKey(conversationId)), "首问生成中也必须占锁");
 
         BizException busy = assertThrows(BizException.class,
                 () -> qaService.answer("追问", 4, conversationId, USER_ID));
@@ -552,7 +566,7 @@ class QaServiceTest {
     @Test
     @DisplayName("他人会话：404 优先于 409，且不占用/释放他人的锁")
     void foreignConversationReturns404WithoutTouchingLock() {
-        lockRegistry.tryAcquire("conv-other");
+        lockRegistry.tryAcquire(lockKey("conv-other"));
         doThrow(new BizException(ErrorCode.CONVERSATION_NOT_FOUND))
                 .when(conversationService).validateOwnership("conv-other", "user-2");
 
@@ -560,15 +574,16 @@ class QaServiceTest {
                 () -> qaService.answer("问题", 4, "conv-other", "user-2"));
 
         assertEquals(ErrorCode.CONVERSATION_NOT_FOUND, exception.errorCode());
-        assertTrue(lockRegistry.isBusy("conv-other"), "校验失败不得触碰他人持有的锁");
+        assertTrue(lockRegistry.isBusy(lockKey("conv-other")), "校验失败不得触碰他人持有的锁");
         verify(conversationService, never()).startFollowUpRound(any(), any(), any());
     }
 
     @Test
     @DisplayName("追问：历史按序传给生成器，检索 query 拼接最近一条历史用户提问")
     void passesHistoryAndPrependsLastUserQuestionToRetrieval() {
-        when(historyAssembler.assemble(anyList(), eq("round-1"))).thenReturn(List.of(
-                new ChatTurnDTO("USER", "首轮问题"), new ChatTurnDTO("ASSISTANT", "首轮回答")));
+        when(historyAssembler.assembleWithSummary(eq("conv-1"), anyString(), eq("round-1")))
+                .thenReturn(new AssembledContextDTO(List.of(), List.of(
+                        new ChatTurnDTO("USER", "首轮问题"), new ChatTurnDTO("ASSISTANT", "首轮回答")), null));
         when(searchService.hybridSearch("追问", "首轮问题", 4))
                 .thenReturn(List.of(hit(1, "某文档", "某节", "内容")));
 
@@ -579,6 +594,58 @@ class QaServiceTest {
                 generator.history);
         assertEquals("追问", generator.question, "传给模型的是当前问题，历史单独成列");
         verify(searchService).hybridSearch("追问", "首轮问题", 4);
+    }
+
+    @Test
+    @DisplayName("无摘要会话：KNOWLEDGE 轮 system prompt 与现状逐字一致")
+    void systemPromptUnchangedWithoutSummary() {
+        when(historyAssembler.assembleWithSummary(eq("conv-1"), anyString(), eq("round-1")))
+                .thenReturn(new AssembledContextDTO(List.of(), List.of(
+                        new ChatTurnDTO("USER", "首轮问题"), new ChatTurnDTO("ASSISTANT", "首轮回答")), null));
+        when(searchService.hybridSearch(any(), any(), anyInt()))
+                .thenReturn(List.of(hit(1, "某文档", "某节", "内容")));
+
+        qaService.streamAnswer(new RecordingEmitter(), "追问", 4, USER_ID, round,
+                System.currentTimeMillis());
+
+        assertEquals(QaPrompts.KNOWLEDGE_SYSTEM_PROMPT, generator.system,
+                "无摘要时 system prompt 不得有任何变化");
+    }
+
+    @Test
+    @DisplayName("摘要可注入：KNOWLEDGE 轮 system 段尾部拼入摘要块，检索 query 不受影响")
+    void injectsSummaryBlockAtSystemPromptTail() {
+        String summary = "用户早期确认关注华信租赁小额产品线。";
+        when(historyAssembler.assembleWithSummary(eq("conv-1"), anyString(), eq("round-1")))
+                .thenReturn(new AssembledContextDTO(List.of(), List.of(
+                        new ChatTurnDTO("USER", "首轮问题"), new ChatTurnDTO("ASSISTANT", "首轮回答")),
+                        summary));
+        when(searchService.hybridSearch(any(), any(), anyInt()))
+                .thenReturn(List.of(hit(1, "某文档", "某节", "内容")));
+
+        qaService.streamAnswer(new RecordingEmitter(), "追问", 4, USER_ID, round,
+                System.currentTimeMillis());
+
+        assertEquals(QaPrompts.KNOWLEDGE_SYSTEM_PROMPT + QaPrompts.summaryBlock(summary),
+                generator.system, "摘要块只追加在 system 尾部，其余内容逐字不变");
+        verify(searchService).hybridSearch("追问", "首轮问题", 4);
+    }
+
+    @Test
+    @DisplayName("摘要不可注入（边界未早于窗口最旧轮）：system 不含摘要块")
+    void noSummaryBlockWhenSummaryNotInjectable() {
+        // 编排层视角：装配器判定不可注入即返回 null summary，system prompt 必须保持原样
+        when(historyAssembler.assembleWithSummary(eq("conv-1"), anyString(), eq("round-1")))
+                .thenReturn(new AssembledContextDTO(List.of(), List.of(
+                        new ChatTurnDTO("USER", "首轮问题"), new ChatTurnDTO("ASSISTANT", "首轮回答")), null));
+        when(searchService.hybridSearch(any(), any(), anyInt()))
+                .thenReturn(List.of(hit(1, "某文档", "某节", "内容")));
+
+        qaService.streamAnswer(new RecordingEmitter(), "追问", 4, USER_ID, round,
+                System.currentTimeMillis());
+
+        assertEquals(QaPrompts.KNOWLEDGE_SYSTEM_PROMPT, generator.system);
+        assertFalse(generator.system.contains("【更早对话摘要】"), "不可注入时不得出现摘要块");
     }
 
     @Test
@@ -631,7 +698,7 @@ class QaServiceTest {
 
         assertThrows(BizException.class, () -> svc.answer("追问", 4, "conv-1", USER_ID));
 
-        assertFalse(lockRegistry.isBusy("conv-1"));
+        assertFalse(lockRegistry.isBusy(lockKey("conv-1")));
         verify(conversationService).completeRound(argThat(completion ->
                 completion.status().equals("FAILED")));
     }
@@ -656,7 +723,7 @@ class QaServiceTest {
             }
         };
         QaServiceImpl svc = new QaServiceImpl(searchService, slow, resilientExecutor,
-                conversationService, lockRegistry, historyAssembler);
+                conversationService, lockRegistry, historyAssembler, summaryService);
 
         svc.streamAnswer(emitter, "问题", 4, USER_ID, round, System.currentTimeMillis());
 
@@ -665,12 +732,59 @@ class QaServiceTest {
                         && completion.content().equals("前半段")));
     }
 
+    @Test
+    @DisplayName("正常收尾（done 已发、锁已释放）后提交异步摘要任务")
+    void submitsSummaryTaskAfterNormalFinish() {
+        when(searchService.hybridSearch(any(), any(), anyInt()))
+                .thenReturn(List.of(hit(1, "某文档", "某节", "内容")));
+
+        qaService.answer("问题", 4, "conv-1", USER_ID);
+        awaitAsyncDone(() -> {
+            try {
+                verify(summaryService).submitAfterRound("conv-1", USER_ID);
+                return true;
+            } catch (AssertionError notYet) {
+                return false;
+            }
+        });
+    }
+
+    @Test
+    @DisplayName("rule 轮收尾（无召回固定引导）同样提交摘要任务，检测侧走幂等出口")
+    void submitsSummaryTaskAfterRuleRoundFinish() {
+        when(searchService.hybridSearch(any(), any(), anyInt())).thenReturn(List.of());
+
+        qaService.answer("随便问", 4, "conv-1", USER_ID);
+        awaitAsyncDone(() -> {
+            try {
+                verify(summaryService).submitAfterRound("conv-1", USER_ID);
+                return true;
+            } catch (AssertionError notYet) {
+                return false;
+            }
+        });
+    }
+
+    @Test
+    @DisplayName("非正常收尾（检索故障转 error 事件断流）：不提交滚动摘要任务")
+    void abnormalFinishDoesNotSubmitSummaryTask() {
+        // answer() 内部自建真实 SseEmitter（单测无 handler，send 只缓存不抛异常），
+        // 模拟断开需走异常收尾：检索抛异常 → events.failure → 非正常收尾
+        when(searchService.hybridSearch(any(), any(), anyInt()))
+                .thenThrow(new RuntimeException("模拟检索故障"));
+
+        qaService.answer("问题", 4, "conv-1", USER_ID);
+        awaitAsyncDone(() -> !lockRegistry.isBusy(lockKey("conv-1")));
+
+        verify(summaryService, never()).submitAfterRound(anyString(), anyString());
+    }
+
     /** 已 shutdown 的线程池：execute 必抛 RejectedExecutionException */
     private QaServiceImpl serviceWithRejectingExecutor() {
         ThreadPoolExecutor rejecting = new ThreadPoolExecutor(1, 1, 0, TimeUnit.MILLISECONDS,
                 new java.util.concurrent.ArrayBlockingQueue<>(1));
         rejecting.shutdown();
         return new QaServiceImpl(searchService, generator, resilientExecutor,
-                conversationService, lockRegistry, historyAssembler, rejecting);
+                conversationService, lockRegistry, historyAssembler, summaryService, rejecting);
     }
 }

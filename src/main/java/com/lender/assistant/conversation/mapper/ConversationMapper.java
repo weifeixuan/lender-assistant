@@ -35,6 +35,14 @@ public interface ConversationMapper {
     int touch(@Param("conversationId") String conversationId);
 
     /**
+     * 写回滚动摘要：只更 summary 两列、不 touch update_time（会话列表时间线不被后台任务推后）；
+     * 带 ACTIVE 条件，提交到执行之间会话被软删则命中 0 行。summary 与边界同写同空。
+     */
+    int updateSummary(@Param("conversationId") String conversationId,
+                      @Param("summary") String summary,
+                      @Param("summaryBoundaryRoundId") String summaryBoundaryRoundId);
+
+    /**
      * 历史归属迁移：只把仍属于 {@code fromUserId} 的会话改为 {@code toUserId}。
      * 重复执行时来源账户已无会话，自然命中 0 行；已删除会话同样迁移。
      */

@@ -44,9 +44,12 @@ rag:
     # 仅 provider=zhipu 时校验；缺失时启动直接失败
     api-key: ${ZHIPU_API_KEY:}
   qa:
-    # 追问回放给模型的历史上限：最近 6 个完整轮次、总字符 2000（超限从最旧一轮整轮丢弃）
-    history-max-rounds: ${RAG_QA_HISTORY_MAX_ROUNDS:6}
-    history-max-chars: ${RAG_QA_HISTORY_MAX_CHARS:2000}
+    # 追问回放给模型的历史上限：最近 10 个完整轮次、总字符 8000（≈4800 token，占 deepseek-chat 128K 窗口 <4%；超限从最旧一轮整轮丢弃）
+    history-max-rounds: ${RAG_QA_HISTORY_MAX_ROUNDS:10}
+    history-max-chars: ${RAG_QA_HISTORY_MAX_CHARS:8000}
+    # 滚动摘要正文上限（硬截断；不计入 history-max-chars 预算）
+    summary:
+      max-chars: ${RAG_QA_SUMMARY_MAX_CHARS:500}
   routing:
     # 路由置信度阈值：低于该值一律降级 KNOWLEDGE（fail-open）
     confidence-threshold: ${RAG_ROUTING_CONFIDENCE_THRESHOLD:0.6}
@@ -78,6 +81,17 @@ rag:
 
 server:
   port: 8080
+
+# 链路追踪（micrometer-tracing + brave，依赖见 pom 注释）
+management:
+  endpoints:
+    # 全关 actuator 端点：项目自带 /health 探针（ops/HealthController），
+    # 追踪只依赖 actuator 的 Observation 自动装配，不需要任何 HTTP 端点
+    enabled-by-default: false
+  tracing:
+    sampling:
+      # 采样率：1.0=全部请求生成 traceId（开发期）；生产大流量可调低（如 0.1）
+      probability: 1.0
 
 # 认证与账户体系（见 docs/design/auth-and-login-spec.md）
 auth:

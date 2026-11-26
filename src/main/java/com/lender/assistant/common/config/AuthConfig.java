@@ -1,4 +1,4 @@
-package com.lender.assistant.config;
+package com.lender.assistant.common.config;
 
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;

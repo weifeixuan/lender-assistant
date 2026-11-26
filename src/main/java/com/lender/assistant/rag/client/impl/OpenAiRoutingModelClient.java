@@ -1,5 +1,6 @@
 package com.lender.assistant.rag.client.impl;
 
+import com.lender.assistant.common.constant.LlmCallConstants;
 import com.lender.assistant.common.constant.LlmScene;
 import com.lender.assistant.rag.client.RoutingModelClient;
 import com.lender.assistant.resilience.LlmCallLogger;
@@ -11,8 +12,6 @@ import org.springframework.stereotype.Component;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 
-import java.time.Duration;
-
 /**
  * 真实路由模型：OpenAI 兼容非流式调用。
  *
@@ -21,9 +20,6 @@ import java.time.Duration;
  */
 @Component
 public class OpenAiRoutingModelClient implements RoutingModelClient {
-
-    /** 路由单次调用上限：分类输入 200–400 token、输出 ≤30 token，10s 足够宽 */
-    private static final Duration NON_STREAM_TIMEOUT = Duration.ofSeconds(10);
 
     private final ChatClient chatClient;
     private final ResilientLlmExecutor executor;
@@ -54,7 +50,7 @@ public class OpenAiRoutingModelClient implements RoutingModelClient {
                             return response.getResult().getOutput().getText();
                         })
                         .subscribeOn(Schedulers.boundedElastic())
-                        .timeout(NON_STREAM_TIMEOUT)
+                        .timeout(LlmCallConstants.NON_STREAM_TIMEOUT)
                         .block(),
                 true);
     }

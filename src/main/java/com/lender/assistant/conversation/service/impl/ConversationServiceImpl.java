@@ -63,7 +63,8 @@ public class ConversationServiceImpl implements ConversationService {
         List<MessageResponse> messages = messageMapper.listByConversation(conversationId).stream()
                 .map(this::toMessage)
                 .toList();
-        return new ConversationMessagesResponse(conversationId, messages);
+        return new ConversationMessagesResponse(conversationId,
+                conversation.summary(), conversation.summaryBoundaryRoundId(), messages);
     }
 
     @Override

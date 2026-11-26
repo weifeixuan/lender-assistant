@@ -92,7 +92,7 @@ class ConversationControllerTest {
     @DisplayName("GET /api/conversations/{id}/messages 返回扁平历史消息")
     void returnsMessages() throws Exception {
         when(service.getMessages("conv-1", USER_ID)).thenReturn(
-                new ConversationMessagesResponse("conv-1", List.of(
+                new ConversationMessagesResponse("conv-1", null, null, List.of(
                         new MessageResponse("msg-1", "round-1", "USER", "问题", "DONE",
                                 null, null, null, null, "2026-11-02 20:00:00"))));
 
@@ -104,6 +104,35 @@ class ConversationControllerTest {
                 .andExpect(jsonPath("$.data.messages[0].messageId").value("msg-1"))
                 .andExpect(jsonPath("$.data.messages[0].roundId").value("round-1"))
                 .andExpect(jsonPath("$.data.messages[0].sources").value(nullValue()));
+    }
+
+    @Test
+    @DisplayName("未生成过摘要的会话：summary 与 summaryBoundaryRoundId 均为 null")
+    void noSummaryReturnsNullFields() throws Exception {
+        when(service.getMessages("conv-1", USER_ID)).thenReturn(
+                new ConversationMessagesResponse("conv-1", null, null, List.of()));
+
+        mockMvc.perform(get("/api/conversations/conv-1/messages")
+                        .header(AuthConstants.AUTHORIZATION_HEADER, "Bearer " + TOKEN))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(200))
+                .andExpect(jsonPath("$.data.summary").value(nullValue()))
+                .andExpect(jsonPath("$.data.summaryBoundaryRoundId").value(nullValue()));
+    }
+
+    @Test
+    @DisplayName("已生成摘要的会话：summary 与 summaryBoundaryRoundId 非空且值正确")
+    void summaryFieldsAreExposed() throws Exception {
+        when(service.getMessages("conv-1", USER_ID)).thenReturn(
+                new ConversationMessagesResponse("conv-1", "用户早期确认关注华信租赁的小额产品线",
+                        "round-2", List.of()));
+
+        mockMvc.perform(get("/api/conversations/conv-1/messages")
+                        .header(AuthConstants.AUTHORIZATION_HEADER, "Bearer " + TOKEN))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(200))
+                .andExpect(jsonPath("$.data.summary").value("用户早期确认关注华信租赁的小额产品线"))
+                .andExpect(jsonPath("$.data.summaryBoundaryRoundId").value("round-2"));
     }
 
     @Test

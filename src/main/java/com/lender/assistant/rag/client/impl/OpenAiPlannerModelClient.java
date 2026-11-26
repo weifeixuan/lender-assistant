@@ -1,5 +1,6 @@
 package com.lender.assistant.rag.client.impl;
 
+import com.lender.assistant.common.constant.LlmCallConstants;
 import com.lender.assistant.common.constant.LlmScene;
 import com.lender.assistant.rag.client.PlannerModelClient;
 import com.lender.assistant.resilience.LlmCallLogger;
@@ -11,16 +12,12 @@ import org.springframework.stereotype.Component;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 
-import java.time.Duration;
-
 /**
  * 真实计划模型：OpenAI 兼容非流式调用。
  * 单次超时与路由侧一致（10s），与 {@code rag.plan.total-budget-ms} 由执行器统一核算。
  */
 @Component
 public class OpenAiPlannerModelClient implements PlannerModelClient {
-
-    private static final Duration NON_STREAM_TIMEOUT = Duration.ofSeconds(10);
 
     private final ChatClient chatClient;
     private final ResilientLlmExecutor executor;
@@ -51,7 +48,7 @@ public class OpenAiPlannerModelClient implements PlannerModelClient {
                             return response.getResult().getOutput().getText();
                         })
                         .subscribeOn(Schedulers.boundedElastic())
-                        .timeout(NON_STREAM_TIMEOUT)
+                        .timeout(LlmCallConstants.NON_STREAM_TIMEOUT)
                         .block(),
                 false);
     }

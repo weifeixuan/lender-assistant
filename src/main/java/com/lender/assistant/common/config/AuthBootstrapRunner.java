@@ -1,4 +1,4 @@
-package com.lender.assistant.config;
+package com.lender.assistant.common.config;
 
 import com.lender.assistant.account.service.AuthBootstrapService;
 import com.lender.assistant.conversation.service.ConversationOwnerMigrationService;

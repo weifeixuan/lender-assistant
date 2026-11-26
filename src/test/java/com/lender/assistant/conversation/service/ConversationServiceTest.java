@@ -48,7 +48,7 @@ class ConversationServiceTest {
     void mapsRowsToResponses() {
         when(conversationMapper.listActiveByUser(USER_ID)).thenReturn(List.of(
                 new ConversationEntity(CONVERSATION_ID, USER_ID, "首套贷款成数上限",
-                        "ACTIVE", "2026-11-02 20:00:00", "2026-11-02 20:05:00")));
+                        "ACTIVE", "2026-11-02 20:00:00", "2026-11-02 20:05:00", null, null)));
 
         List<ConversationSummaryResponse> result = service.listConversations(USER_ID);
 
@@ -323,6 +323,6 @@ class ConversationServiceTest {
 
     private static ConversationEntity activeConversation() {
         return new ConversationEntity(CONVERSATION_ID, USER_ID, "标题", "ACTIVE",
-                "2026-11-02 20:00:00", "2026-11-02 20:05:00");
+                "2026-11-02 20:00:00", "2026-11-02 20:05:00", null, null);
     }
 }

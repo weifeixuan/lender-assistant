@@ -2,7 +2,7 @@ package com.lender.assistant.rag.service;
 
 import com.lender.assistant.conversation.model.dto.ConversationRoundDTO;
 import com.lender.assistant.conversation.service.ConversationHistoryAssembler;
-import com.lender.assistant.conversation.service.ConversationLockRegistry;
+import com.lender.assistant.common.component.LocalLockComponent;
 import com.lender.assistant.conversation.service.ConversationService;
 import com.lender.assistant.rag.service.QuestionRoutingService;
 import com.lender.assistant.rag.model.dto.QuestionRoute;
@@ -24,10 +24,8 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
-import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.argThat;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -69,8 +67,9 @@ class QaRoutingFlowTest {
                 .thenReturn(List.of(new SearchItemResponse(1L, "doc", "标题", "节", "内容", null, null, false, null)));
         conversationService = mock(ConversationService.class);
         historyAssembler = mock(ConversationHistoryAssembler.class);
-        when(historyAssembler.assemble(anyList(), anyString())).thenReturn(List.of());
-        when(historyAssembler.listRows(anyString())).thenReturn(List.of());
+        when(historyAssembler.assembleWithSummary(anyString(), anyString(), anyString()))
+                .thenReturn(new com.lender.assistant.conversation.model.dto.AssembledContextDTO(
+                        List.of(), List.of(), null));
         routing = mock(QuestionRoutingService.class);
         generator = new FixedGenerator();
         qaService = new QaServiceImpl(searchService, generator,
@@ -78,7 +77,8 @@ class QaRoutingFlowTest {
                         new com.lender.assistant.resilience.LlmCallLogger(
                                 mock(com.lender.assistant.resilience.mapper.LlmCallLogMapper.class)),
                         3, 10, 2, false),
-                conversationService, new ConversationLockRegistry(), historyAssembler);
+                conversationService, new LocalLockComponent(), historyAssembler,
+                mock(com.lender.assistant.conversation.service.RollingSummaryService.class));
         ReflectionTestUtils.setField(qaService, "routingService", routing);
         ReflectionTestUtils.setField(qaService, "objectMapper",
                 new com.fasterxml.jackson.databind.ObjectMapper());
@@ -95,8 +95,7 @@ class QaRoutingFlowTest {
 
         qaService.streamAnswer(emitter, "单笔代收限额", 4, USER_ID, round, System.currentTimeMillis());
 
-        verify(historyAssembler, times(1)).listRows("conv-1");
-        verify(historyAssembler, times(1)).assemble(anyList(), eq("round-1"));
+        verify(historyAssembler, times(1)).assembleWithSummary("conv-1", USER_ID, "round-1");
     }
 
     @Test

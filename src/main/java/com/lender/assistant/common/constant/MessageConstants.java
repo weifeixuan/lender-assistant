@@ -17,6 +17,9 @@ public final class MessageConstants {
     /** 规则生成（无关问题固定提示）的 provider 标识，用于回放排除与前端展示 */
     public static final String RULE_PROVIDER = "rule";
 
+    /** 会话锁键命名空间前缀（LocalLockComponent）：回答生成与摘要任务共用同一把会话锁 */
+    public static final String CONVERSATION_LOCK_PREFIX = "conversation:";
+
     private MessageConstants() {
     }
 }

@@ -33,4 +33,14 @@ public interface MessageMapper {
                            @Param("roundId") String roundId,
                            @Param("routeJson") String routeJson,
                            @Param("executionPlanJson") String executionPlanJson);
+
+    /**
+     * 判断 boundaryRoundId 轮是否整体严格早于 referenceRoundId 轮（按消息自增 id 比较，
+     * 与 {@code listRecentByConversation} / {@code listByConversation} 的 ORDER BY id 同一时序基准）。
+     * 任一轮不存在时比较结果为 NULL，由调用方按「不成立」处理（宁缺勿重）。
+     * 供滚动摘要注入判定使用：边界轮滞后超出装配行窗口时，行内找不到只能靠 DB 判先后。
+     */
+    Boolean isRoundStrictlyBefore(@Param("conversationId") String conversationId,
+                                  @Param("boundaryRoundId") String boundaryRoundId,
+                                  @Param("referenceRoundId") String referenceRoundId);
 }

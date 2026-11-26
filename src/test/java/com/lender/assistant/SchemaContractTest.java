@@ -107,7 +107,7 @@ class SchemaContractTest {
     void llmSceneCommentListsActualValues() {
         assertTrue(SCHEMA.contains("COMMENT ON COLUMN llm_call_log.scene"),
                 "scene 缺少列注释");
-        assertTrue(SCHEMA.contains("qa / extract / draft / route / plan / synthesis"),
+        assertTrue(SCHEMA.contains("qa / extract / draft / route / plan / synthesis / summary"),
                 "scene 注释必须与 LlmScene 的实际取值一致");
     }
 
@@ -161,6 +161,23 @@ class SchemaContractTest {
         assertTrue(SCHEMA.contains(
                         "REFERENCES app_role (role_id) ON DELETE RESTRICT"),
                 "角色侧外键必须是 RESTRICT，避免删掉仍被账户使用的角色");
+    }
+
+    @Test
+    @DisplayName("conversation 声明滚动摘要两列，幂等迁移与列注释齐备")
+    void conversationDeclaresSummaryColumns() {
+        assertTrue(SCHEMA.contains("summary TEXT"),
+                "缺少 conversation.summary 列");
+        assertTrue(SCHEMA.contains("summary_boundary_round_id TEXT"),
+                "缺少 conversation.summary_boundary_round_id 列");
+        assertTrue(SCHEMA.contains("ADD COLUMN IF NOT EXISTS summary TEXT"),
+                "summary 必须由幂等语句补齐");
+        assertTrue(SCHEMA.contains("ADD COLUMN IF NOT EXISTS summary_boundary_round_id TEXT"),
+                "summary_boundary_round_id 必须由幂等语句补齐");
+        assertTrue(SCHEMA.contains("COMMENT ON COLUMN conversation.summary"),
+                "summary 缺少列注释");
+        assertTrue(SCHEMA.contains("COMMENT ON COLUMN conversation.summary_boundary_round_id"),
+                "summary_boundary_round_id 缺少列注释");
     }
 
     @Test

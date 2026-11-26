@@ -3,6 +3,7 @@ package com.lender.assistant.common.constant;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -35,6 +36,31 @@ class QaPromptsContractTest {
         assertTrue(prompt.contains("customer.profile"));
         assertTrue(prompt.contains("只输出 JSON"));
         assertFalse(prompt.contains("%d"), "prompt 里不能残留未替换的占位符");
+    }
+
+    @Test
+    @DisplayName("摘要 prompt：只依据输入、不编造、不加小标题、一段连贯中文梗概四条铁律保留")
+    void summaryPromptKeepsContract() {
+        String prompt = QaPrompts.summaryPrompt("已有摘要：用户关注华信租赁小额产品线。",
+                "【第1轮】用户：小额产品的额度上限是多少？\n助手：根据【来源1】……\n"
+                        + "【第2轮】用户：需要的材料有哪些？\n助手：资料中未提及。");
+
+        assertTrue(prompt.contains("只依据"), "铁律：只能依据输入的轮次原文与已有摘要");
+        assertTrue(prompt.contains("不得编造"), "铁律：不编造输入之外的事实");
+        assertTrue(prompt.contains("不要使用小标题"), "铁律：不加小标题");
+        assertTrue(prompt.contains("一段连贯"), "铁律：输出一段连贯的中文梗概");
+        assertTrue(prompt.contains("已有摘要：用户关注华信租赁小额产品线。"), "已有摘要必须逐字进入 prompt");
+        assertTrue(prompt.contains("【第1轮】用户：小额产品的额度上限是多少？"), "被裁轮次原文必须逐字进入 prompt");
+        assertFalse(prompt.contains("%s"), "prompt 里不能残留未替换的占位符");
+    }
+
+    @Test
+    @DisplayName("摘要注入块：固定标签、仅作背景参考声明与摘要正文逐字拼入")
+    void summaryBlockKeepsContract() {
+        // 逐字契约：注入块文案与 PRD §3 渲染样例一致，任何改动都必须同步评审
+        assertEquals("【更早对话摘要】以下是本会话回放窗口之外更早轮次的梗概，仅作背景参考：\n"
+                        + "用户早期确认关注华信租赁小额产品线。",
+                QaPrompts.summaryBlock("用户早期确认关注华信租赁小额产品线。"));
     }
 
     @Test

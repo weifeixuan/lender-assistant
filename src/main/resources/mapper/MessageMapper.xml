@@ -76,4 +76,14 @@
           AND round_id = #{roundId}
           AND role = 'ASSISTANT'
     </update>
+
+    <!-- 两轮先后用标量子查询按自增 id 比较：任一轮不存在则结果为 NULL（调用方按不成立处理） -->
+    <select id="isRoundStrictlyBefore" resultType="java.lang.Boolean">
+        SELECT (SELECT max(id) FROM message
+                 WHERE conversation_id = #{conversationId}
+                   AND round_id = #{boundaryRoundId})
+            &lt; (SELECT min(id) FROM message
+                 WHERE conversation_id = #{conversationId}
+                   AND round_id = #{referenceRoundId})
+    </select>
 </mapper>

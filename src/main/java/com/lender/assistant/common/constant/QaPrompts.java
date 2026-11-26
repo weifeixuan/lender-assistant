@@ -100,6 +100,36 @@ public final class QaPrompts {
                 nullToEmpty(knowledgeCatalog), toolNames, minSteps, maxSteps);
     }
 
+    /**
+     * 滚动摘要生成 prompt：把回放窗口外被裁轮次原文与已有摘要合并成一份滚动摘要（PRD §2.5/§4）。
+     * 铁律与问答 prompt 同构（只依据输入、不编造）：摘要是模型生成的内容，属治幻觉体系的新增面（PRD §3）。
+     * 已有摘要为 null 或空白时以「无」占位，避免模型对着空串自行脑补。
+     */
+    public static String summaryPrompt(String existingSummary, String roundsText) {
+        return """
+               你是融资租赁资金方对接场景的会话摘要助手。请把「已有摘要」与「被裁轮次原文」合并成一份滚动摘要。
+
+               【输入】
+               已有摘要：%s
+               被裁轮次原文：%s
+
+               【铁律】
+               1. 只依据上方输入的轮次原文与已有摘要概括，不得编造输入之外的任何事实；
+               2. 不要使用小标题或列表排版；
+               3. 输出一段连贯的中文梗概，用简体中文，简洁直接。
+               """.formatted(existingSummary == null || existingSummary.isBlank() ? "无" : existingSummary,
+                roundsText);
+    }
+
+    /**
+     * KNOWLEDGE 轮 system 段尾部的滚动摘要注入块（PRD §3）。
+     * 摘要是模型生成的内容，属治幻觉体系的新增面，注入文案显式声明「仅作背景参考」，
+     * 压制摘要错误向本轮回答扩散。文案是逐字契约，改动必须同步 QaPromptsContractTest。
+     */
+    public static String summaryBlock(String summary) {
+        return "【更早对话摘要】以下是本会话回放窗口之外更早轮次的梗概，仅作背景参考：\n" + summary;
+    }
+
     private static String nullToEmpty(String value) {
         return value == null ? "" : value;
     }

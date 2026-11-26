@@ -24,7 +24,10 @@ public enum LlmScene {
     PLAN("plan", "计划生成（非流式）"),
 
     /** 计划末尾的汇总合成（流式，allowRetry=false） */
-    SYNTHESIS("synthesis", "汇总合成（SSE 流式）");
+    SYNTHESIS("synthesis", "汇总合成（SSE 流式）"),
+
+    /** 会话滚动摘要生成（非流式，allowRetry=true）；失败静默降级由调用方处理：保留旧摘要、记 WARN，不挡主链路 */
+    SUMMARY("summary", "滚动摘要生成（非流式）");
 
     private final String code;
     private final String desc;

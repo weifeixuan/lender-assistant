@@ -1,16 +1,18 @@
 package com.lender.assistant.rag.service.impl;
 
+import com.lender.assistant.common.component.LocalLockComponent;
 import com.lender.assistant.common.constant.LlmScene;
 import com.lender.assistant.common.constant.MessageConstants;
 import com.lender.assistant.common.constant.QaPrompts;
 import com.lender.assistant.common.exception.BizException;
 import com.lender.assistant.common.exception.ErrorCode;
 import com.lender.assistant.common.util.ThreadPoolFactory;
+import com.lender.assistant.conversation.model.dto.AssembledContextDTO;
 import com.lender.assistant.conversation.model.dto.AssistantMessageCompletionDTO;
 import com.lender.assistant.conversation.model.dto.ConversationRoundDTO;
 import com.lender.assistant.conversation.service.ConversationHistoryAssembler;
-import com.lender.assistant.conversation.service.ConversationLockRegistry;
 import com.lender.assistant.conversation.service.ConversationService;
+import com.lender.assistant.conversation.service.RollingSummaryService;
 import com.lender.assistant.conversation.model.entity.MessageEntity;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lender.assistant.rag.service.PlanAndExecuteService;
@@ -90,8 +92,10 @@ public class QaServiceImpl implements QaService {
     private final AnswerGeneratorService generator;
     private final com.lender.assistant.resilience.ResilientLlmExecutor executor;
     private final ConversationService conversationService;
-    private final ConversationLockRegistry lockRegistry;
+    private final LocalLockComponent lockRegistry;
     private final ConversationHistoryAssembler historyAssembler;
+    /** 滚动摘要服务（PRD §2.4）：正常收尾且锁释放后提交异步任务，拒绝/锁竞争均静默让路 */
+    private final RollingSummaryService summaryService;
 
     /**
      * SSE 工作线程池：检索+生成+send 必须脱离请求线程执行，否则 Spring 会把事件缓冲到
@@ -130,9 +134,11 @@ public class QaServiceImpl implements QaService {
     public QaServiceImpl(SearchService searchService, AnswerGeneratorService generator,
                          com.lender.assistant.resilience.ResilientLlmExecutor executor,
                          ConversationService conversationService,
-                         ConversationLockRegistry lockRegistry,
-                         ConversationHistoryAssembler historyAssembler) {
+                         LocalLockComponent lockRegistry,
+                         ConversationHistoryAssembler historyAssembler,
+                         RollingSummaryService summaryService) {
         this(searchService, generator, executor, conversationService, lockRegistry, historyAssembler,
+                summaryService,
                 ThreadPoolFactory.create(STREAM_POOL_SIZE, STREAM_POOL_SIZE, STREAM_QUEUE_CAPACITY,
                         STREAM_THREAD_KEEP_ALIVE_SECONDS, STREAM_THREAD_NAME_PREFIX));
     }
@@ -141,8 +147,9 @@ public class QaServiceImpl implements QaService {
     public QaServiceImpl(SearchService searchService, AnswerGeneratorService generator,
                          com.lender.assistant.resilience.ResilientLlmExecutor executor,
                          ConversationService conversationService,
-                         ConversationLockRegistry lockRegistry,
+                         LocalLockComponent lockRegistry,
                          ConversationHistoryAssembler historyAssembler,
+                         RollingSummaryService summaryService,
                          ThreadPoolExecutor streamExecutor) {
         this.searchService = searchService;
         this.generator = generator;
@@ -150,6 +157,7 @@ public class QaServiceImpl implements QaService {
         this.conversationService = conversationService;
         this.lockRegistry = lockRegistry;
         this.historyAssembler = historyAssembler;
+        this.summaryService = summaryService;
         this.streamExecutor = streamExecutor;
     }
 
@@ -168,16 +176,22 @@ public class QaServiceImpl implements QaService {
         // 结果是 TTFB≈TOTAL 的"假流式"，且突发写入后立刻断连会让 Chrome 记 net::ERR_ABORTED。
         try {
             streamExecutor.execute(() -> {
+                boolean normallyFinished = false;
                 try {
-                    streamAnswer(emitter, question, topK, userId, round, t0);
+                    normallyFinished = streamAnswer(emitter, question, topK, userId, round, t0);
                 } finally {
-                    lockRegistry.release(round.conversationId());
+                    lockRegistry.release(conversationLockKey(round.conversationId()));
+                }
+                // 滚动摘要触发点（PRD §2.4）：done 已发、emitter 已 complete 且会话锁已释放之后提交；
+                // rule 轮收尾同样提交（检测会因边界未变走幂等出口），异常/断开收尾不提交
+                if (normallyFinished) {
+                    summaryService.submitAfterRound(round.conversationId(), userId);
                 }
             });
         } catch (RuntimeException e) {
             // 线程池饱和/已关闭：不留半开 SSE，落一条 FAILED 兜底后按 500 普通 JSON 返回
             log.error("SSE 任务提交失败，已落 FAILED 兜底: conversationId={}", round.conversationId(), e);
-            lockRegistry.release(round.conversationId());
+            lockRegistry.release(conversationLockKey(round.conversationId()));
             // 模型从未运行：provider 按 PRD §2.5 为 null；诊断信息只进日志（见上一行），不写进用户可见的 error
             conversationService.completeRound(new AssistantMessageCompletionDTO(
                     round.conversationId(), round.roundId(), round.assistantMessageId(),
@@ -204,7 +218,7 @@ public class QaServiceImpl implements QaService {
                 UUID.randomUUID().toString(),
                 UUID.randomUUID().toString(),
                 UUID.randomUUID().toString());
-        if (!lockRegistry.tryAcquire(round.conversationId())) {
+        if (!lockRegistry.tryAcquire(conversationLockKey(round.conversationId()))) {
             throw new BizException(ErrorCode.CONVERSATION_BUSY);
         }
         try {
@@ -215,14 +229,24 @@ public class QaServiceImpl implements QaService {
             }
             return round;
         } catch (RuntimeException e) {
-            lockRegistry.release(round.conversationId());
+            lockRegistry.release(conversationLockKey(round.conversationId()));
             throw e;
         }
     }
 
-    /** SSE 推送主流程，运行在 streamExecutor 工作线程上；每个 send 都是即时 flush 的真流式。 */
-    public void streamAnswer(SseEmitter emitter, String question, int topK, String userId,
-                             ConversationRoundDTO round, long t0) {
+    /** 与 RollingSummaryServiceImpl.conversationLockKey 重复（§3.2）：同一会话锁的两处取键点，前缀收敛于 MessageConstants */
+    private static String conversationLockKey(String conversationId) {
+        return MessageConstants.CONVERSATION_LOCK_PREFIX + conversationId;
+    }
+
+    /**
+     * SSE 推送主流程，运行在 streamExecutor 工作线程上；每个 send 都是即时 flush 的真流式。
+     *
+     * @return 本轮是否正常收尾（done 已发且 emitter 已 complete）；断开/异常收尾返回 false，
+     *         调用方据此决定是否提交滚动摘要任务（PRD §2.4 只在正常收尾后触发）
+     */
+    public boolean streamAnswer(SseEmitter emitter, String question, int topK, String userId,
+                                ConversationRoundDTO round, long t0) {
         RoundStateServiceImpl stream = new RoundStateServiceImpl(round, t0,
                 generator.name(), conversationService, objectMapper);
         // 超时 / 连接异常 / 提前完成都置位"客户端已断开"并落 STOPPED；
@@ -235,64 +259,72 @@ public class QaServiceImpl implements QaService {
             // meta 必须首事件：前端靠它把本轮增量回答挂到正确的会话/轮次上
             if (!events.send(emitter, "meta", new QaMetaResponse(round.conversationId(), round.roundId(),
                     round.userMessageId(), round.assistantMessageId()), stream)) {
-                return;
+                return false;
             }
 
             // 历史只在追问时非空；检索 query 带最近一条历史用户提问，让"那二套呢"这类指代能召回正确资料。
-            // 本轮只查一次库：同一份窗口行既用于历史装配，也用于上一轮路由解析（routeRound）。
-            List<MessageEntity> rows = historyAssembler.listRows(round.conversationId());
-            List<ChatTurnDTO> history = historyAssembler.assemble(rows, round.roundId());
+            // 本轮只查一次库：窗口行既用于历史装配，也用于上一轮路由解析（routeRound）；
+            // 滚动摘要的注入判定同样落点在装配器（PRD §3），编排层只把返回值拼进 KNOWLEDGE 轮 system 段尾部。
+            AssembledContextDTO assembled =
+                    historyAssembler.assembleWithSummary(round.conversationId(), userId, round.roundId());
+            List<MessageEntity> rows = assembled.rows();
+            List<ChatTurnDTO> history = assembled.history();
             // 追问时把「当前问题」与「上一轮问题」分段传给检索：关键词 token 配额按段分配，
             // 避免上一轮长问题按顺序把当前追问的关键词挤出配额（票 08）
             String lastUser = ConversationHistoryAssembler.lastUserContent(history);
             // 预算从路由开始计时：路由、计划、步骤、合成共用这 90s（票 10）
             RoundRequest request = new RoundRequest(question, lastUser, topK, round, stream,
-                    new PlanBudget(totalBudgetMillis, System::currentTimeMillis));
+                    new PlanBudget(totalBudgetMillis, System::currentTimeMillis),
+                    knowledgeSystemPrompt(assembled.summary()));
             PlanRoundOutcome planOutcome = null;
             RoutingDecisionDTO decision = routeRound(emitter, request, rows);
             if (decision == null) {
-                return;
+                return false;
             }
             if (decision.route() == QuestionRoute.IRRELEVANT) {
+                // rule 轮收尾同样算正常收尾（done 已发、emitter 已 complete）：触发不区分路由类型（PRD §2.4）
                 events.irrelevant(emitter, irrelevantReply, stream);
-                return;
+                return !stream.isDisconnected();
             }
             if (decision.route() == QuestionRoute.PLAN) {
                 planOutcome = runPlanRound(emitter, request);
                 if (stream.isDisconnected()) {
-                    return;
+                    return false;
                 }
             }
             // PLAN 轮用多步并集命中；计划弃用或无计划服务时退回单次检索（KNOWLEDGE 兜底）
             List<SearchItemResponse> hits = planOutcome != null ? planOutcome.hits()
                     : searchService.hybridSearch(question, lastUser, topK);
             if (!events.sources(emitter, hits, stream)) {
-                return;
+                return false;
             }
 
             // 零召回一律短路：PLAN 轮即便有业务工具产物也不再调合成模型——
             // 没有资料可引用时，让模型"根据工具产物自由发挥"正是幻觉的高发区。
             if (hits.isEmpty()) {
                 events.noRecall(emitter, stream);
-                return;
+                return !stream.isDisconnected();
             }
             if (planOutcome != null) {
                 synthesizePlan(emitter, request, planOutcome, hits);
             } else {
-                streamModelAnswer(emitter, question, history, hits, stream);
+                streamModelAnswer(emitter, request, history, hits);
             }
 
             long elapsedMillis = System.currentTimeMillis() - t0;
             stream.done();
             if (!events.send(emitter, "done",
                     new QaDoneResponse(generator.name(), elapsedMillis, hits.size()), stream)) {
-                return;
+                return false;
             }
             emitter.complete();
+            return true;
         } catch (io.github.resilience4j.circuitbreaker.CallNotPermittedException e) {
             events.circuitOpen(emitter, e, stream);
+            return false;
         } catch (Exception e) {
             events.failure(emitter, question, e, stream);
+            return false;
         }
     }
 
@@ -394,7 +426,17 @@ public class QaServiceImpl implements QaService {
 
     /** 单轮请求参数：收敛参数个数，避免编排方法超过 4 个入参 */
     private record RoundRequest(String question, String lastUser, int topK,
-                                ConversationRoundDTO round, RoundStateServiceImpl stream, PlanBudget budget) {
+                                ConversationRoundDTO round, RoundStateServiceImpl stream, PlanBudget budget,
+                                String knowledgeSystemPrompt) {
+    }
+
+    /**
+     * KNOWLEDGE 轮 system prompt：滚动摘要可注入时在常量尾部拼摘要块（PRD §3）；
+     * 无摘要 / 不可注入时与 QaPrompts.KNOWLEDGE_SYSTEM_PROMPT 逐字一致，现状行为不变。
+     */
+    private static String knowledgeSystemPrompt(String summary) {
+        return summary == null ? QaPrompts.KNOWLEDGE_SYSTEM_PROMPT
+                : QaPrompts.KNOWLEDGE_SYSTEM_PROMPT + QaPrompts.summaryBlock(summary);
     }
 
     /**
@@ -403,13 +445,14 @@ public class QaServiceImpl implements QaService {
      * 韧性：经 ResilientLlmExecutor 走 qa 链路——留痕 + 熔断；
      * allowRetry=false：SSE token 已推给用户，重试会导致内容重放。
      */
-    private void streamModelAnswer(SseEmitter emitter, String question, List<ChatTurnDTO> history,
-                                   List<SearchItemResponse> hits, RoundStateServiceImpl stream) {
+    private void streamModelAnswer(SseEmitter emitter, RoundRequest request,
+                                   List<ChatTurnDTO> history, List<SearchItemResponse> hits) {
         executor.execute(LlmScene.QA, generator.name(),
                 () -> {
-                    generator.generate(new AnswerGenerationRequestDTO(QaPrompts.KNOWLEDGE_SYSTEM_PROMPT, history,
-                            question, hits,
-                            token -> sendDeltaToken(emitter, token, stream), stream.cancellation()));
+                    generator.generate(new AnswerGenerationRequestDTO(request.knowledgeSystemPrompt(), history,
+                            request.question(), hits,
+                            token -> sendDeltaToken(emitter, token, request.stream()),
+                            request.stream().cancellation()));
                     return true;
                 }, false);
     }

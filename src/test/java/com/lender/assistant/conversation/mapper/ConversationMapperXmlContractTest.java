@@ -22,6 +22,7 @@ import java.sql.PreparedStatement;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -156,6 +157,29 @@ class ConversationMapperXmlContractTest {
         Method method = ConversationMapper.class.getMethod("migrateOwner",
                 String.class, String.class);
         assertParametersBind(CONVERSATION_MAPPER, statementId, method, "dev-user-001", "admin-id");
+    }
+
+    @Test
+    @DisplayName("updateSummary 只更摘要两列且限定 ACTIVE，不推后时间线")
+    void updateSummaryTouchesSummaryColumnsOnly() throws Exception {
+        Configuration configuration = parse(CONVERSATION_MAPPER);
+        String statementId =
+                "com.lender.assistant.conversation.mapper.ConversationMapper.updateSummary";
+        assertTrue(configuration.hasStatement(statementId), "缺少 updateSummary 语句");
+        String sql = configuration.getMappedStatement(statementId)
+                .getBoundSql(Map.of("conversationId", "conv-1",
+                        "summary", "早期关注华信小额产品线",
+                        "summaryBoundaryRoundId", "round-9"))
+                .getSql();
+        assertTrue(sql.contains("summary = ?"), "必须写入 summary");
+        assertTrue(sql.contains("summary_boundary_round_id = ?"), "必须写入 summary_boundary_round_id");
+        assertTrue(sql.contains("status = 'ACTIVE'"), "必须限定 ACTIVE，已删会话命中 0 行");
+        assertFalse(sql.contains("update_time"), "禁止更新 update_time，时间线不被后台任务推后");
+
+        Method method = ConversationMapper.class.getMethod("updateSummary",
+                String.class, String.class, String.class);
+        assertParametersBind(CONVERSATION_MAPPER, statementId, method,
+                "conv-1", "早期关注华信小额产品线", "round-9");
     }
 
     /**

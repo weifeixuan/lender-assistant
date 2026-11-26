@@ -3,7 +3,7 @@ package com.lender.assistant.rag.service;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lender.assistant.conversation.model.dto.ConversationRoundDTO;
 import com.lender.assistant.conversation.service.ConversationHistoryAssembler;
-import com.lender.assistant.conversation.service.ConversationLockRegistry;
+import com.lender.assistant.common.component.LocalLockComponent;
 import com.lender.assistant.conversation.service.ConversationService;
 import com.lender.assistant.rag.service.PlanAndExecuteService;
 import com.lender.assistant.rag.service.StepListener;
@@ -35,7 +35,6 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
-import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
@@ -71,9 +70,10 @@ class QaSynthesisFlowTest {
             return null;
         }).when(conversationService).completeRound(any());
         ConversationHistoryAssembler historyAssembler = mock(ConversationHistoryAssembler.class);
-        when(historyAssembler.assemble(anyList(), anyString()))
-                .thenReturn(List.of(new com.lender.assistant.rag.model.dto.ChatTurnDTO("USER", "上一轮问题")));
-        when(historyAssembler.listRows(anyString())).thenReturn(List.of());
+        when(historyAssembler.assembleWithSummary(anyString(), anyString(), anyString()))
+                .thenReturn(new com.lender.assistant.conversation.model.dto.AssembledContextDTO(List.of(),
+                        List.of(new com.lender.assistant.rag.model.dto.ChatTurnDTO("USER", "上一轮问题")),
+                        null));
         routing = mock(QuestionRoutingService.class);
         when(routing.route(any())).thenReturn(new RoutingDecisionDTO(QuestionRoute.PLAN, 0.9, "多步", "NONE"));
         planning = mock(PlanAndExecuteService.class);
@@ -83,7 +83,8 @@ class QaSynthesisFlowTest {
                         new com.lender.assistant.resilience.LlmCallLogger(
                                 mock(com.lender.assistant.resilience.mapper.LlmCallLogMapper.class)),
                         3, 10, 2, false),
-                conversationService, new ConversationLockRegistry(), historyAssembler);
+                conversationService, new LocalLockComponent(), historyAssembler,
+                mock(com.lender.assistant.conversation.service.RollingSummaryService.class));
         ReflectionTestUtils.setField(qaService, "routingService", routing);
         ReflectionTestUtils.setField(qaService, "objectMapper", new ObjectMapper());
         ReflectionTestUtils.setField(qaService, "planningService", planning);

@@ -7,5 +7,6 @@ package com.lender.assistant.conversation.model.entity;
  * 数值组件若新增必须用包装类型（ADR-0004 / §6.6）。
  */
 public record ConversationEntity(String conversationId, String userId, String title,
-                              String status, String createTime, String updateTime) {
+                              String status, String createTime, String updateTime,
+                              String summary, String summaryBoundaryRoundId) {
 }
